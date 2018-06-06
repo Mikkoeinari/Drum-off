@@ -106,21 +106,29 @@ PSA removes PCA step by learning prior $f$ from a set of drum samples and then a
 
 Independent Component Analysis (ICA) was proposed by {} it starts from the assumption that a signal is a composite of n subsignals that are mixed together. Principal Component Analysis is first applied to separate defining templates from the audio and ISA is then used to derive independent ISA approach to DT 
 
-\subsubsection{Nonnegative Matrix Factorization of a Spectrogram}
-
-Given the spectrogram \textbf{X} the matrix factorization is defined as follows:
+\subsubsection{Nonnegative Matrix Factorization of a Magnitude Spectrogram}
+Non-negative Matrix Factorization presents the following problem:
+\begin{center}
+Given the non-negative matrix \textbf{X} find the factorization to non-negative matrix factors  \textbf{W} and \textbf{H} that minimizes the cost function $D$ associated with the factorization:
+\end{center}
 \begin{equation}
-{X = WH}
+{\min_{W,H} D(X||WH)}
 \end{equation}
+Where $X\in \mathbb{R}^{I \times T}$, $W\in \mathbb{R}^{I \times K}$ and $H\in \mathbb{R}^{K \times T}$. 
 \\
+The cost functions most commonly used include the Eulidean Distance EU, Kullback-Leibler Divergence KL and the Itakura-Saito Divergence IS. All of these cost functions belong to a subset of Bregman Divergences known as beta-divergences:
 \begin{equation}
-{X = \sum_k^KW_kH_k +E_k}
+D_\beta =     \left\{ \begin{array}{rcl}\frac{x}{y}-\log \frac{x}{y}-1, & \beta = 0 \\ 
+x(\log \frac{x}{y}+y-x),  & \beta = 1
+\\
+\iffalse 
+(x-y)^2, & \beta = 2
+\\
+\fi
+\frac{x^\beta +(\beta -1)y^\beta -\beta xy^{\beta-1}}{\beta (\beta -1)}, & \beta \in \mathbb{R}\setminus \lbrace0,1,2\rbrace \end{array}\right.
 \end{equation}
-Where $W\in \Re^{I \times K}$ is the basis matrix i.e. the spectral response of unknown signals, $H\in \Re^{K \times T}$  the activations or the aplitude matrix of hidden signals. $T$ is the number of spectrogram frames, $I$ is the number of frequency bins and $K$ is the rank of the decomposition or the number of hidden signals. $E\in \Re^{K \times T}$ is the error of the approximation.
-\\
-Divergence:
 \begin{equation}
-D(X,\hat{X})=\sum(X(i,k)\log \frac{X(i,k)}{\hat{X}(i,k)} -X(i,k)+\hat{X}(i,k))
+D(X||\hat{X})=\sum(X(i,k)\log \frac{X(i,k)}{\hat{X}(i,k)} -X(i,k)+\hat{X}(i,k))
 \end{equation}
 
 Update rules according to Lee and Seung:
@@ -194,8 +202,8 @@ The Drum Object stores all of the gathered information :
 
 \end{center}
 
-\subsection{Semi Adaptive Non Negative Matrix Factorization}
-We use a Semi Adaptive Non Negative Matrix Factorization SANMF approach to decomposing the spectrogram to amplitude and frequency vectors corresponding to each drum.
+\subsection{Non Negative Matrix Factorization with sparsity constraint}
+We use Non Negative Matrix Factorization with a sparsity constraint to decompose the spectrogram to amplitude and frequency vectors corresponding to each drum.
 
 \subsection{Neural Network classifier}
 We prune the onset activations further with a NN classifier.This classifier is trained on 192 features that are MFCC0 MFCC1 MFCC2 MFCC3 Deltas..
@@ -207,6 +215,8 @@ The user interface will feature full audio control in order to avoid using hands
 The audio is captured and analysed as the audio arrives. When an onset is detected the relevant features are extracted at that position
 \subsection{Transcribing the Captured Audio}
 The stored onsets and their relevant features are submitted to a NN and the results are stored to a midi file.
+\subsection{Quantizing the transcription}
+The output of the transcription is quantized to a fixed tempo so that all transcribed parts can be compared to each other. 
 \subsection{Learning New Patterns Based On Stored Transcriptions}
 A Long Short-Term Memory Neural network is used to traverse the midinote space and learn to make new patterns based on that.
 \subsection{Playing the Pattern to the User}
