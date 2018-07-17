@@ -1,9 +1,10 @@
 from utils import *
+import pandas as pd
 import madmom
 from time import time
 t0=time()
 #live audio
-print('noniin')
+print("Souncheck")
 
 fpr = np.zeros((proc.shape[1], nrOfDrums * 2 * K, ConvFrames))
 # frames=np.zeros((8192,nrOfDrums*nrOfPeaks))
@@ -17,13 +18,15 @@ highEmph = [0, 0, 0, 1, 0, 0, 1, 1, 0]
 for i in range(nrOfDrums):
     try:
         soundcheck = False
-        print("{}drum{}.wav".format(DRUMKIT_PATH, i))
+        print("\rdrum{}.wav".format(i),end='', flush=True)
+
         buffer = madmom.audio.Signal("{}drum{}.wav".format(DRUMKIT_PATH, i), frame_size=2048, hop_size=HOP_SIZE)
         CC1, freqtemps, threshold = getPeaksFromBuffer(buffer, 1, nrOfPeaks, highEmph=highEmph[i])
         for j in range(K):
             ind = i * K
             fpr[:, ind + j, :] = freqtemps[0][:, :, j]
             fpr[:, ind + j + nrOfDrums * K, :] = freqtemps[1][:, :, j]
+
     except Exception as e:
         print(e)
         print('samples not found, please soundcheck!')
@@ -47,12 +50,12 @@ for i in range(nrOfDrums):
         drums.append(
             Drum(name=[i], highEmph=highEmph[i], peaks=CC1, templates=templates, samples=samples, threshold=threshold,
                  midinote=midinotes[i], probability_threshold=1))
-print ("Samples loaded")
+print ("\nSamples loaded")
 
-peakList = []
-for i in drums[:nrOfDrums]:
-    for k in range(K):
-        peakList.append(detector(i, hitlist=None))
+# peakList = []
+# for i in drums[:nrOfDrums]:
+#     for k in range(K):
+#         peakList.append(detector(i, hitlist=None))
 try:
 
     buffer = madmom.audio.Signal("{}drumBeatAnnod.wav".format(DRUMKIT_PATH), frame_size=2048, hop_size=HOP_SIZE)
@@ -61,10 +64,10 @@ try:
 except Exception as e:
     print(e)
     print('jotain meni vikaan!')
-plst = processLiveAudio(liveBuffer=buffer, peakList=peakList, basis=fpr, quant_factor=0.0)
+plst = processLiveAudio(liveBuffer=buffer, peakList=drums, basis=fpr, quant_factor=0.0)
 
 #print f-score:
-import pandas as pd
+print('\n\n')
 hits = pd.read_csv("{}midiBeatAnnod.csv".format(DRUMKIT_PATH), sep="\t", header=None)
 precision, recall, fscore, true_tot=0,0,0,0
 for i in plst:
@@ -74,7 +77,7 @@ for i in plst:
    actHits=hits[hits[1]==i.get_name()[0]]
    actHits = actHits.iloc[:,0]
    #print(actHits.values, actHits.shape[0])
-   trueHits=k_in_n(actHits.values,predHits, window=0.05)
+   trueHits=k_in_n(actHits.values,predHits, window=0.02)
    #print(trueHits)
 
    prec, rec, f_drum=f_score(trueHits, predHits.shape[0], actHits.shape[0])
@@ -107,7 +110,7 @@ for i in plst:
     times.extend(inst)
 times.sort()
 df = pd.DataFrame(times, columns=['time', 'inst'])
-df['duration'] = pd.Series(np.full((len(times)), 1, np.int64))
+df['duration'] = pd.Series(np.full((len(times)), 0, np.int64))
 df['vel'] = pd.Series(np.full((len(times)), 127, np.int64))
 df = df[df.time != 0]
 print('done!')

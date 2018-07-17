@@ -3,6 +3,7 @@ import numpy as np
 from scipy.ndimage.filters import maximum_filter, median_filter
 import scipy
 import librosa
+import matplotlib.pyplot as plt
 FRAME_SIZE=2**11
 HOP_SIZE=2**9
 SAMPLE_RATE=44100
@@ -10,8 +11,9 @@ FREQUENCY_PRE=np.ones((24))#[0,16384]#0-2^14
 MIDINOTE=36 #kickdrum in most systems
 THRESHOLD=0.0
 PROBABILITY_THRESHOLD=0.0
-DRUMKIT_PATH='../DXSamplet/'
-midinotes=[36,38,42,46,50,43,51,49,44] #BD, SN, CHH, OHH, TT, FT, RD, CR, SHH
+DEFAULT_TEMPO=120
+DRUMKIT_PATH='../trainSamplet/'
+midinotes=[36,38,42,46,50,43,51,49,44] #BD, SN, CHH, OHH, TT, FT, RD, CR, SHH, Here we need generality
 nrOfDrums=9
 nrOfPeaks=32
 ConvFrames=10
@@ -19,42 +21,6 @@ K=1
 MS_IN_MIN=60000
 SXTH_DIV=8
 proc=madmom.audio.filters.BarkFilterbank(madmom.audio.stft.fft_frequencies(num_fft_bins=int(FRAME_SIZE/2), sample_rate=SAMPLE_RATE) ,num_bands='double')
-
-
-# Tämä on vähän turha luokka, kaiken voi tallettaa drum objektiin
-class detector(object):
-    def __init__(self, drum, hitlist=None
-                 , **kwargs):
-        # set attributes
-        self.drum = drum
-        if hitlist:
-            self.hitlist = hitlist
-        else:
-            self.hitlist = None
-
-    def set_hits(self, hitlist):
-        self.hitlist = hitlist
-
-    def get_hits(self):
-        return self.hitlist
-
-    def get_name(self):
-        return self.drum.get_name()
-
-    def get_midinote(self):
-        return self.drum.get_midinote()
-
-    def get_threshold(self):
-        return self.drum.get_threshold()
-
-    def get_frequency_pre(self):
-        return self.drum.get_frequency_pre()
-
-    def get_probability_threshold(self):
-        return self.drum.get_probability_threshold()
-
-
-
 
 class Drum(object):
     """
@@ -82,7 +48,7 @@ class Drum(object):
 
     def __init__(self, name, highEmph, peaks, samples=None, templates=None, frequency_pre=FREQUENCY_PRE,
                  midinote=MIDINOTE, threshold=THRESHOLD, probability_threshold=PROBABILITY_THRESHOLD
-                 , **kwargs):
+                 ,hitlist=None, **kwargs):
 
         # set attributes
         self.name = name
@@ -100,7 +66,17 @@ class Drum(object):
             self.threshold = float(threshold)
         if probability_threshold:
             self.probability_threshold = float(probability_threshold)
+        if hitlist:
+            self.hitlist = hitlist
 
+
+    def set_hits(self, hitlist):
+        self.hitlist = hitlist
+
+    def get_hits(self):
+        return self.hitlist
+    def concat_hits(self, hitlist):
+        self.hitlist=np.concatenate((self.get_hits(),hitlist))
     def set_name(self, name):
         self.name = name
 
@@ -242,80 +218,41 @@ def processLiveAudio(liveBuffer=None, peakList=None, classifier='LGB', basis=Non
             HTot += H
     W = (WTot) / iters
     H = (HTot) / iters
-    # kernel=np.kaiser(20,0)
-    # from scipy.signal import convolve
-    # Hf=convolve(np.sum(H, axis=0), kernel, 'same')
-    # plt.figure()
-    # plt.plot(Hf)
+
     if quant_factor > 0:
         bdTempo = (librosa.beat.tempo(onset_envelope=np.sum(H, axis=0), sr=SAMPLE_RATE, hop_length=HOP_SIZE, ac_size=8,
                                       aggregate=None))
         bdAvg = movingAverage(bdTempo, window=1200)
-        # print(bdAvg.shape)
-        # snTempo=(librosa.beat.tempo( onset_envelope=H[1], sr=SAMPLE_RATE,hop_length=HOP_SIZE))
-        # plt.figure()
-        ##plt.plot(movingAverage(snTempo, 0,bdTempo.shape))
-        # plt.plot(bdTempo, color='r')
-        # plt.plot(bdAvg, color='g')
-        # print(np.mean(bdTempo))
-        # print(np.mean(bdAvg))
-        # win=2000
-        # plt.plot(librosa.beat.tempo(onset_envelope=H[0], sr=SAMPLE_RATE,hop_length=HOP_SIZE
-        #                             , aggregate=movingAverage), color='b')
         tempomask = tempoMask(bdAvg)
 
     for i in range(len(peakList)):
-
-        H0 = superflux(A=W.T[:, i, :].sum(), B=H[i])
-        # HFCX0=HFC_filter(Xpost[i.get_name()][0])
-        # H0=superflux(W[i.get_name()].T[0],HFCX0)
-        # print (peakList[i].get_threshold())
+        for k in range(K):
+            index = i * K + k
+            if k==0:
+                H0 = superflux(A=W.T[:, index, :].sum(), B=H[index])
+            else:
+                H0=H0+superflux(A=W.T[:, index, :].sum(), B=H[index])
         peaks = pick_onsets(H0, initialThreshold=0.15, delta=2.5)
-        # peaks=madmom.features.onsets.peak_picking(H0 ,i.get_threshold(),
-        #                                      smooth=None, pre_avg=0, post_avg=0,pre_max=1, post_max=1)
         if quant_factor > 0:
-            TEMPO = 120
+            TEMPO = DEFAULT_TEMPO
 
             qPeaks = quantize(peaks, tempomask, strength=quant_factor, tempo=TEMPO, conform=False)
         else:
             qPeaks = peaks
-        # cPeaks=conformToTempo(qPeaks, tempo, tempomask)
 
+        #if k==0:
         peakList[i].set_hits(qPeaks)
+        #else:
+        #    peakList[i].concat_hits(qPeaks)
 
-    def mergeKdrums(peakList):
-        newPeakList = []
-        for i in range(nrOfDrums):
-            ind = i * K
 
-            for k in range(K):
-
-                if k == 0:
-                    newPeakList.append(peakList[ind + k])
-
-                else:
-
-                    newPeakList[i].set_hits(np.hstack((newPeakList[i].get_hits(), peakList[ind + k].get_hits())))
-            a = newPeakList[i].get_hits()
-            newPeakList[i].set_hits(np.unique(a[a != np.array(None)]))
-
-        return newPeakList
-
-    finalList = mergeKdrums(peakList)
     duplicateResolution = 0.05
 
-    for i in finalList:
+    for i in peakList:
         precHits = frame_to_time(i.get_hits())
         i.set_hits(time_to_frame(cleanDoubleStrokes(precHits, resolution=duplicateResolution)))
 
-    # prune onsets with CNN classifier
-    if (classifier == 'CNN'):
-
-        for i in finalList:
-            prob_thresh = i.get_probability_threshold()
-            i.set_hits(pruneCNN(i.get_hits(), i.get_name(), cnn, prob_thresh, liveBuffer))
-
-    return finalList
+    return peakList
 # From https://stackoverflow.com/questions/24354279/python-spectral-centroid-for-a-wav-file
 def spectral_centroid(x, samplerate=44100):
     magnitudes = np.abs(np.fft.rfft(x))  # magnitudes of positive frequencies
@@ -514,10 +451,6 @@ def k_in_n(k, n, window=1):
     return float(hits)
 
 
-MS_IN_MIN = 60000
-SXTH_DIV = 8
-
-
 # Create a mask of 16th notes for the duration of the drumtake based on the tempomap
 def tempoMask(tempos):
     # Move all tempos to half-notes to counter erratic behaviour when tempo extraction doubles tempo value.
@@ -677,8 +610,8 @@ def NMFD(V, R=3, T=10, n_iter=50, init_W=[], init_H=[]):
     eps = 10 ** -18
 
     # data size
-    F = V.shape[0];
-    N = V.shape[1];
+    F = V.shape[0]
+    N = V.shape[1]
 
     # initialization
     if len(init_H):
@@ -686,19 +619,19 @@ def NMFD(V, R=3, T=10, n_iter=50, init_W=[], init_H=[]):
         R = H.shape[0]
     # if W inited R from W
     elif len(init_W):
-        H = np.random.rand(init_W.shape[1], N);
+        H = np.random.rand(init_W.shape[1], N)
     else:
-        H = np.random.rand(R, N);
+        H = np.random.rand(R, N)
 
     if len(init_W):
         W = init_W
         R = W.shape[1]
         T = W.shape[2]
     else:
-        W = np.random.rand(F, R, T);
+        W = np.random.rand(F, R, T)
 
-    One = np.ones((F, N));
-    Lambda = np.zeros((F, N));
+    One = np.ones((F, N))
+    Lambda = np.zeros((F, N))
 
     cost = np.zeros(n_iter)
 
@@ -706,43 +639,40 @@ def NMFD(V, R=3, T=10, n_iter=50, init_W=[], init_H=[]):
         return sum(sum(x * np.log(x / y + eps) + (y - x)))
 
     for it in range(n_iter):
-        sys.stdout.write('Computing NMFD. iteration : %d/%d' % (it + 1, n_iter));
-        sys.stdout.write('\r')
-        sys.stdout.flush()
-
+        print ('\rNMFD iter: %d' % (it + 1), end='', flush=True);
         # computation of Lambda
-        Lambda[:] = 0;
+        Lambda[:] = 0
         for f in range(F):
             for z in range(R):
-                cv = np.convolve(W[f, z, :], H[z, :]);
-                Lambda[f, :] = Lambda[f, :] + cv[0:Lambda.shape[1]];
-
-        # Halt = H.copy();
-
-        # Htu = np.zeros((T,R,N));
-        # Htd = np.zeros((T,R,N));
+                cv = np.convolve(W[f, z, :], H[z, :])
+                Lambda[f, :] = Lambda[f, :] + cv[0:Lambda.shape[1]]
 
         # update of H for each value of t (which will be averaged)
-        VonLambda = V / (Lambda + eps);
+        VonLambda = V / (Lambda + eps)
 
         cost[it] = (V * np.log(V / Lambda + eps) - V + Lambda).sum()
 
-        Hu = np.zeros((R, N));
-        Hd = np.zeros((R, N));
+        Hu = np.zeros((R, N))
+        Hd = np.zeros((R, N))
         for z in range(R):
             for f in range(F):
-                cv = np.convolve(VonLambda[f, :], np.flipud(W[f, z, :]));
-                Hu[z, :] = Hu[z, :] + cv[T - 1:T + N - 1];
-                cv = np.convolve(One[f, :], np.flipud(W[f, z, :]));
-                Hd[z, :] = Hd[z, :] + cv[T - 1:T + N - 1];
+                cv = np.convolve(VonLambda[f, :], np.flipud(W[f, z, :]))
+                Hu[z, :] = Hu[z, :] + cv[T - 1:T + N - 1]
+                cv = np.convolve(One[f, :], np.flipud(W[f, z, :]))
+                Hd[z, :] = Hd[z, :] + cv[T - 1:T + N - 1]
 
         # average along t
-        H = H * Hu / Hd;
+        H = H * Hu / Hd
 
-        # cost[it]=KLDiv(V,Lambda+eps)
+        #cost[it]=KLDiv(V,Lambda+eps)
         if (it >= 2):
-            if (abs(cost[it] - cost[it - 1]) / (cost[1] - cost[it]) + eps) < 0.0001:
-                # print('Iterations: {}'.format(i))
-                # print('Error: {}'.format(err[i]))
+            if (abs(cost[it] - cost[it - 1]) / (cost[1] - cost[it]) + eps) < 0.001:
                 break
     return cost, W, H
+
+def showEnvelope(env):
+    plt.figure()
+    plt.plot(env)
+def showFFT(env):
+    plt.figure()
+    plt.imshow(env, aspect='auto', origin='lower')
