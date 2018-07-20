@@ -103,19 +103,31 @@ todo: Normalize freq -bands locally to adjust to signal level changing during pe
 '''
 
 times = []
+bintimes=[]
 for i in plst:
-    hits = frame_to_time(i.get_hits())
-    labels = np.full(len(hits), i.get_midinote(), np.int64)
+    #hits = frame_to_time(i.get_hits())
+    hits=frame_to_time(i.get_hits())
+    binhits=i.get_hits()
+    labels = np.full(len(hits),i.get_midinote(),np.int64)
+    binlabels=np.full(len(binhits), i.get_name(), np.int64)
     inst = zip(hits, labels)
+    bininst=zip(binhits, binlabels)
     times.extend(inst)
+    bintimes.extend(bininst)
 times.sort()
-df = pd.DataFrame(times, columns=['time', 'inst'])
+bintimes.sort()
+bintimes=mergerowsandencode(bintimes)
+df = pd.DataFrame(times, columns=[ 'time','inst'])
 df['duration'] = pd.Series(np.full((len(times)), 0, np.int64))
 df['vel'] = pd.Series(np.full((len(times)), 127, np.int64))
+bindf=pd.DataFrame(bintimes, columns=['inst'])
+bindf.to_csv('testbeat.csv', index=True, header=False, sep="\t")
 df = df[df.time != 0]
 print('done!')
+
+#times=splitrowsanddecode(times)
 madmom.io.midi.write_midi(df.values, 'midi_testit_.mid')
-df.to_csv('testbeat.csv', index=False, header=False, sep="\t")
+
 
 print('Processing time:%0.2f' % (time()-t0))
 

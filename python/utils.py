@@ -4,6 +4,7 @@ from scipy.ndimage.filters import maximum_filter, median_filter
 import scipy
 import librosa
 import matplotlib.pyplot as plt
+import pandas as pd
 FRAME_SIZE=2**11
 HOP_SIZE=2**9
 SAMPLE_RATE=44100
@@ -418,12 +419,12 @@ def superflux(spec_x=[], A=None,B=None):
     return sf
 
 
-def frame_to_time(frames, sr=44100, hop_length=HOP_SIZE, hops_per_frame=1):
+def frame_to_time(frames, sr=SAMPLE_RATE, hop_length=HOP_SIZE, hops_per_frame=1):
     samples = (np.asanyarray(frames) * (hop_length / hops_per_frame)).astype(int)
     return np.asanyarray(samples) / float(sr)
 
 
-def time_to_frame(times, sr=44100, hop_length=HOP_SIZE, hops_per_frame=1):
+def time_to_frame(times, sr=SAMPLE_RATE, hop_length=HOP_SIZE, hops_per_frame=1):
     samples = (np.asanyarray(times) * float(sr))
     return (np.asanyarray(samples) / (hop_length / hops_per_frame)).astype(int)
 
@@ -676,3 +677,18 @@ def showEnvelope(env):
 def showFFT(env):
     plt.figure()
     plt.imshow(env, aspect='auto', origin='lower')
+
+def mergerowsandencode(a):
+
+    maxFrame=a[-1][0]-a[0][0]+1
+
+    frames=np.empty(maxFrame, dtype=object)
+    frames[:] = '000000000'
+
+    for i in range(len(a)):
+        index=a[i][0]-a[0][0]
+        value=a[i][1]
+        frames[index]=(np.bitwise_or(int(frames[index]),2**value))
+
+    return frames
+
