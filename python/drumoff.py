@@ -58,43 +58,44 @@ print ("\nSamples loaded")
 #         peakList.append(detector(i, hitlist=None))
 try:
 
-    buffer = madmom.audio.Signal("{}drumBeatAnnod.wav".format(DRUMKIT_PATH), frame_size=2048, hop_size=HOP_SIZE)
+    buffer = madmom.audio.Signal("{}drumBeat.wav".format(DRUMKIT_PATH), frame_size=2048, hop_size=HOP_SIZE)
 
 
 except Exception as e:
     print(e)
     print('jotain meni vikaan!')
-plst = processLiveAudio(liveBuffer=buffer, peakList=drums, basis=fpr, quant_factor=0.0)
+plst = processLiveAudio(liveBuffer=buffer, peakList=drums, basis=fpr, quant_factor=1.0)
+annotated=False
+if (annotated):
+    #print f-score:
+    print('\n\n')
+    hits = pd.read_csv("{}midiBeatAnnod.csv".format(DRUMKIT_PATH), sep="\t", header=None)
+    precision, recall, fscore, true_tot=0,0,0,0
+    for i in plst:
+       predHits=frame_to_time(i.get_hits())
 
-#print f-score:
-print('\n\n')
-hits = pd.read_csv("{}midiBeatAnnod.csv".format(DRUMKIT_PATH), sep="\t", header=None)
-precision, recall, fscore, true_tot=0,0,0,0
-for i in plst:
-   predHits=frame_to_time(i.get_hits())
+       #print(predHits, predHits.shape[0] )
+       actHits=hits[hits[1]==i.get_name()[0]]
+       actHits = actHits.iloc[:,0]
+       #print(actHits.values, actHits.shape[0])
+       trueHits=k_in_n(actHits.values,predHits, window=0.02)
+       #print(trueHits)
 
-   #print(predHits, predHits.shape[0] )
-   actHits=hits[hits[1]==i.get_name()[0]]
-   actHits = actHits.iloc[:,0]
-   #print(actHits.values, actHits.shape[0])
-   trueHits=k_in_n(actHits.values,predHits, window=0.02)
-   #print(trueHits)
-
-   prec, rec, f_drum=f_score(trueHits, predHits.shape[0], actHits.shape[0])
-   print(prec)
-   print(rec)
-   print(f_drum)
-   print(trueHits)
-   print('\n')
-   #Multiply by n. of hits to get real f-score in the end.
-   precision+=prec*actHits.shape[0]
-   recall+=rec*actHits.shape[0]
-   fscore+=(f_drum*actHits.shape[0])
-   true_tot+=actHits.shape[0]
-   #add_to_samples_and_dictionary(i.drum, buffer, i.get_hits())
-print('Precision: {}'.format(precision/true_tot))
-print('Recall: {}'.format(recall/true_tot))
-print('F-score: {}'.format(fscore/true_tot))
+       prec, rec, f_drum=f_score(trueHits, predHits.shape[0], actHits.shape[0])
+       print(prec)
+       print(rec)
+       print(f_drum)
+       print(trueHits)
+       print('\n')
+       #Multiply by n. of hits to get real f-score in the end.
+       precision+=prec*actHits.shape[0]
+       recall+=rec*actHits.shape[0]
+       fscore+=(f_drum*actHits.shape[0])
+       true_tot+=actHits.shape[0]
+       #add_to_samples_and_dictionary(i.drum, buffer, i.get_hits())
+    print('Precision: {}'.format(precision/true_tot))
+    print('Recall: {}'.format(recall/true_tot))
+    print('F-score: {}'.format(fscore/true_tot))
 
 '''
 todo: Normalize freq -bands locally to adjust to signal level changing during performance
@@ -105,9 +106,12 @@ todo: Normalize freq -bands locally to adjust to signal level changing during pe
 times = []
 bintimes=[]
 for i in plst:
-    #hits = frame_to_time(i.get_hits())
-    hits=frame_to_time(i.get_hits())
+
+    hits = i.get_hits()
     binhits=i.get_hits()
+
+    hits=frame_to_time(hits)
+    ##TÄHÄN VASTA QUANTIZE?????
     labels = np.full(len(hits),i.get_midinote(),np.int64)
     binlabels=np.full(len(binhits), i.get_name(), np.int64)
     inst = zip(hits, labels)
@@ -116,21 +120,27 @@ for i in plst:
     bintimes.extend(bininst)
 times.sort()
 bintimes.sort()
+print(bintimes)
 bintimes=mergerowsandencode(bintimes)
 df = pd.DataFrame(times, columns=[ 'time','inst'])
 df['duration'] = pd.Series(np.full((len(times)), 0, np.int64))
 df['vel'] = pd.Series(np.full((len(times)), 127, np.int64))
 bindf=pd.DataFrame(bintimes, columns=['inst'])
-bindf.to_csv('testbeat.csv', index=True, header=False, sep="\t")
+bindf.to_csv('testbeat2.csv', index=True, header=False, sep="\t")
 df = df[df.time != 0]
 print('done!')
 
-#times=splitrowsanddecode(times)
-madmom.io.midi.write_midi(df.values, 'midi_testit_.mid')
 
+madmom.io.midi.write_midi(df.values, 'midi_testit_.mid')
+generated=splitrowsanddecode(bintimes)
+gen=pd.DataFrame(generated, columns=[ 'time','inst'])
+gen.to_csv('generated_enc_dec.csv', index=False, header=None, sep='\t')
+print('pattern generating time:%0.2f' % (time()-t0))
+#change to time and midinotes
+gen['time']=frame_to_time(gen['time'])
+gen['inst']=to_midinote(gen['inst'])
+gen['duration'] = pd.Series(np.full((len(generated)), 0, np.int64))
+gen['vel'] = pd.Series(np.full((len(generated)), 127, np.int64))
+madmom.io.midi.write_midi(gen.values, 'midi_testit_enc_dec.mid')
 
 print('Processing time:%0.2f' % (time()-t0))
-
-# Thresholdit checkissä.
-
-

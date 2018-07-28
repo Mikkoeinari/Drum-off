@@ -13,7 +13,7 @@ MIDINOTE=36 #kickdrum in most systems
 THRESHOLD=0.0
 PROBABILITY_THRESHOLD=0.0
 DEFAULT_TEMPO=120
-DRUMKIT_PATH='../trainSamplet/'
+DRUMKIT_PATH='../oikeetsamplet/'
 midinotes=[36,38,42,46,50,43,51,49,44] #BD, SN, CHH, OHH, TT, FT, RD, CR, SHH, Here we need generality
 nrOfDrums=9
 nrOfPeaks=32
@@ -133,7 +133,8 @@ class Drum(object):
         return self.probability_threshold
 
 from sklearn.cluster import KMeans
-
+def to_midinote(notes):
+    return list(midinotes[i] for i in notes)
 def findDefBins(frames, filteredSpec):
     gaps = np.zeros((frames.shape[0], ConvFrames))
     for i in range(frames.shape[0]):
@@ -202,6 +203,15 @@ def getPeaksFromBuffer(buffer, resolution, numHits, highEmph=0):
     definingBins = findDefBins(peaks, filt_spec)
     return peaks, definingBins, threshold
 
+def getTempomap(H):
+    if H.ndim<2:
+        onsEnv=H
+    else:
+        onsEnv=np.sum(H, axis=0)
+    bdTempo = (librosa.beat.tempo(onset_envelope=onsEnv, sr=SAMPLE_RATE, hop_length=HOP_SIZE, ac_size=8,
+                                  aggregate=None))
+    bdAvg = movingAverage(bdTempo, window=1200)
+    return tempoMask(bdAvg)
 
 def processLiveAudio(liveBuffer=None, peakList=None, classifier='LGB', basis=None, quant_factor=0.0):
 
@@ -221,10 +231,7 @@ def processLiveAudio(liveBuffer=None, peakList=None, classifier='LGB', basis=Non
     H = (HTot) / iters
 
     if quant_factor > 0:
-        bdTempo = (librosa.beat.tempo(onset_envelope=np.sum(H, axis=0), sr=SAMPLE_RATE, hop_length=HOP_SIZE, ac_size=8,
-                                      aggregate=None))
-        bdAvg = movingAverage(bdTempo, window=1200)
-        tempomask = tempoMask(bdAvg)
+        tempomask=getTempomap(H)
 
     for i in range(len(peakList)):
         for k in range(K):
@@ -237,7 +244,7 @@ def processLiveAudio(liveBuffer=None, peakList=None, classifier='LGB', basis=Non
         if quant_factor > 0:
             TEMPO = DEFAULT_TEMPO
 
-            qPeaks = quantize(peaks, tempomask, strength=quant_factor, tempo=TEMPO, conform=False)
+            qPeaks = quantize(peaks, tempomask, strength=quant_factor, tempo=TEMPO, conform=True)
         else:
             qPeaks = peaks
 
@@ -477,11 +484,17 @@ def quantize(X, mask, strength=1, tempo=120, conform=False):
         # drop less than 100 to half
         if tempo < 100:
             tempo = tempo / 2
+        #A mask with True at 16th notes
         conformMask = tempoMask(np.full(mask.size * 2, tempo))
+        #The tempomask of drumtake
         trueInd = np.where(mask == True)[0]
+        #Shorter of the masks
         dim = min(np.where(conformMask == True)[0].size, trueInd.size)
+        #Shift length to nearest true conformMask index(backwards)
         cMask = np.where(conformMask == True)[0][:dim] - trueInd[:dim]
+        #Mask to store shift values
         shiftMask = mask.astype(int)
+        #Store shift lengths to shiftMask for lookup when conforming to tempo
         n = 0
         for i in trueInd:
             shiftMask[i] = cMask[n]
@@ -533,8 +546,8 @@ def quantize(X, mask, strength=1, tempo=120, conform=False):
         retX[n] = int((k * strength + i * (1 - strength)))
         # increase return list index
         n += 1
-
-    return retX[retX != np.array(None)]
+        #retX=retX[retX != np.array(None)]
+    return retX[retX!=0]
 
 
 def get_cmask(tempo, tempomask):
@@ -679,16 +692,34 @@ def showFFT(env):
     plt.imshow(env, aspect='auto', origin='lower')
 
 def mergerowsandencode(a):
-
+    sixtDivider=SAMPLE_RATE/FRAME_SIZE/2
+    for i in range(len(a)):
+        a[i] = (np.rint(a[i][0]/sixtDivider),) + a[i][1:]
     maxFrame=a[-1][0]-a[0][0]+1
-
-    frames=np.empty(maxFrame, dtype=object)
-    frames[:] = '000000000'
-
+    frames=np.zeros(maxFrame, dtype=int)
     for i in range(len(a)):
         index=a[i][0]-a[0][0]
         value=a[i][1]
-        frames[index]=(np.bitwise_or(int(frames[index]),2**value))
-
+        frames[index]=np.bitwise_or(frames[index],2**value)
     return frames
 
+def splitrowsanddecode(a):
+    decodedFrames=[]
+    #multiplier to make tempo 120 after generation. Could be arbitrary also.
+    frameMul=SAMPLE_RATE/FRAME_SIZE/2
+    for i in range(len(a)):
+        for j, k in enumerate(dec_to_binary(a[i])):
+            if int(k)==1:
+                #store framenumber(index) and drum name to list, (nrOfDrums-1) to flip drums to right places,
+                decodedFrames.append([i*frameMul,abs(j-(nrOfDrums-1))])
+    return decodedFrames
+
+def dec_to_binary(f):
+        return format(f,"0{}b".format(nrOfDrums))
+
+#hh=ride 2=6 8-2
+#sn=crash 1=7 8-1
+#bd=tamb 0=8 8-0
+#cd=tt-hi 7=4
+#ohh=ttlow 3=5 8-3
+#ride=hh 6=2
