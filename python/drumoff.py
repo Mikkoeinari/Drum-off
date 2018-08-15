@@ -20,7 +20,7 @@ for i in range(nrOfDrums):
         soundcheck = False
         print("\rdrum{}.wav".format(i),end='', flush=True)
 
-        buffer = madmom.audio.Signal("{}drum{}.wav".format(DRUMKIT_PATH, i), frame_size=2048, hop_size=HOP_SIZE)
+        buffer = madmom.audio.Signal("{}drum{}.wav".format(DRUMKIT_PATH, i), frame_size=FRAME_SIZE, hop_size=HOP_SIZE)
         CC1, freqtemps, threshold = getPeaksFromBuffer(buffer, 1, nrOfPeaks, highEmph=highEmph[i])
         for j in range(K):
             ind = i * K
@@ -33,7 +33,7 @@ for i in range(nrOfDrums):
         print("Play drum nr. {}".format(i + 1))
         CC1, freqtemps, threshold, buffer = getStompTemplate(nrOfPeaks, recordingLength=2, highEmph=highEmph[i])
         # outBuffer=unFrameSignal(buffer)
-        madmom.io.audio.write_wave_file(buffer, './drum{}.wav'.format(i), sample_rate=44100)
+        madmom.io.audio.write_wave_file(buffer, './drum{}.wav'.format(i), sample_rate=SAMPLE_RATE)
 
     if (True):
         templates = []
@@ -58,13 +58,13 @@ print ("\nSamples loaded")
 #         peakList.append(detector(i, hitlist=None))
 try:
 
-    buffer = madmom.audio.Signal("{}drumBeat.wav".format(DRUMKIT_PATH), frame_size=2048, hop_size=HOP_SIZE)
+    buffer = madmom.audio.Signal("{}drumBeatAnnod.wav".format(DRUMKIT_PATH), frame_size=FRAME_SIZE, hop_size=HOP_SIZE)
 
 
 except Exception as e:
     print(e)
     print('jotain meni vikaan!')
-plst = processLiveAudio(liveBuffer=buffer, peakList=drums, basis=fpr, quant_factor=1.0)
+plst = processLiveAudio(liveBuffer=buffer, peakList=drums, Wpre=fpr, quant_factor=1.0)
 annotated=False
 if (annotated):
     #print f-score:
@@ -120,13 +120,12 @@ for i in plst:
     bintimes.extend(bininst)
 times.sort()
 bintimes.sort()
-print(bintimes)
 bintimes=mergerowsandencode(bintimes)
 df = pd.DataFrame(times, columns=[ 'time','inst'])
 df['duration'] = pd.Series(np.full((len(times)), 0, np.int64))
 df['vel'] = pd.Series(np.full((len(times)), 127, np.int64))
 bindf=pd.DataFrame(bintimes, columns=['inst'])
-bindf.to_csv('testbeat2.csv', index=True, header=False, sep="\t")
+bindf.to_csv('testbeat0.csv', index=True, header=False, sep="\t")
 df = df[df.time != 0]
 print('done!')
 
@@ -134,7 +133,7 @@ print('done!')
 madmom.io.midi.write_midi(df.values, 'midi_testit_.mid')
 generated=splitrowsanddecode(bintimes)
 gen=pd.DataFrame(generated, columns=[ 'time','inst'])
-gen.to_csv('generated_enc_dec.csv', index=False, header=None, sep='\t')
+gen.to_csv('generated_enc_dec0.csv', index=False, header=None, sep='\t')
 print('pattern generating time:%0.2f' % (time()-t0))
 #change to time and midinotes
 gen['time']=frame_to_time(gen['time'])

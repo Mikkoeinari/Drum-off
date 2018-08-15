@@ -1,0 +1,205 @@
+<CCheckBox>:
+    canvas:
+        Clear:
+        Color:
+            rgba: 1, .5, 1, .5
+        Rectangle:
+            size: 32, 32
+            pos: int(self.center_x - 16), int(self.center_y - 16)
+        Color:
+            rgba: 1, 1, 0, 1
+        Rectangle:
+            source: 'atlas://data/images/defaulttheme/checkbox%s_%s' % (('_radio' if self.group else ''), ('on' if self.active else 'off'))
+            size: 32, 32
+            pos: int(self.center_x - 16), int(self.center_y - 16)
+
+<StartScreen>:
+
+    FloatLayout:
+        Label:
+            id:status
+            text:   root.getStatus()
+            size_hint:(.5, .2)
+            pos_hint: {"x": 0, 'y':0.8}
+        Button:
+            size_hint:(.5, .2)
+            pos:(20, 80)
+            text: 'Soundcheck new drumkit'
+            pos_hint: {"x": 0, 'y':0.6}
+            on_press: root.manager.current = 'SoundCheck'
+        Button:
+            size_hint:(.5, .2)
+            pos:(20, 60)
+            pos_hint: {"x": 0, 'y':0.4}
+            text: 'Load Drumkit'
+            on_press: root.manager.current = 'LoadKit'
+        Button:
+            size_hint:(.5, .2)
+            pos:(20, 40)
+            pos_hint: {"x": 0, 'y':0.2}
+            text: 'Drum-Off!'
+            on_press: root.manager.current = 'PlayScreen'
+        Button:
+            size_hint:(.5, .2)
+            pos_hint: {"x": 0, 'y':0.0}
+            pos:(20, 20)
+            text: 'Quit'
+            on_press: app.stop()
+<PlayScreen>:
+    FloatLayout:
+
+        Label:
+            text: 'Play Motherfucker!'
+            size_hint:(.5, .2)
+            pos_hint: {"x": 0, 'y':0.8}
+        Button:
+            text: 'Back to menu'
+            size_hint:(.5, .2)
+            pos_hint: {"x": .0, 'y':0.0}
+            on_press: root.manager.current = 'MainMenu'
+<LoadScreen>:
+    FloatLayout:
+
+        Label:
+            text: 'Choose a kit'
+            size_hint:(.5, .2)
+            pos_hint: {"x": 0, 'y':0.8}
+        FileChooser:
+            size_hint:(.5, .9)
+            pos_hint: {"x": .5, 'y':0.1}
+            id: fc
+            path: "./Kits"
+            rootpath:"./Kits"
+            FileChooserIconLayout
+            FileChooserListLayout
+        Button:
+            text:   'Load'
+            size_hint:(.5, .2)
+            pos_hint: {"x": .0, 'y':0.6}
+            on_release: root.loadKit(txt.text)
+        Button:
+            size_hint:(.5, .2)
+            pos_hint: {"x": .0, 'y':0.0}
+            text: 'Back to menu'
+            on_press: root.manager.current = 'MainMenu'
+<SoundCheckScreen>:
+    FloatLayout:
+        Label:
+            text: 'Kit Name'
+            size_hint:(.25, .05)
+            pos_hint: {"x": 0, 'y':0.95}
+        TextInput:
+            id: txt
+            size_hint:(.5, .05)
+            pos_hint: {"x": .5, 'y':0.95}
+        Label:
+            text: 'Drum Name'
+            size_hint:(.25, .05)
+            pos_hint: {"x": 0, 'y':0.90}
+        Label:
+            text:'Number of drums in kit, type 0 if not present'
+            size_hint:(.5, .05)
+            pos_hint: {"x": .5, 'y':0.90}
+        Label:
+            text: 'Kick'
+            size_hint:(.25, .05)
+            pos_hint: {"x": 0, 'y':0.85}
+        TextInput:
+            id: kdn
+            input_filter: 'int'
+            hint_text:'# of Kickdrums'
+            size_hint:(.25, .05)
+            pos_hint: {"x": .625, 'y':0.85}
+        Label:
+            text: 'Snare'
+            size_hint:(.25, .05)
+            pos_hint: {"x": 0, 'y':0.80}
+        TextInput:
+            id: snn
+            input_filter: 'int'
+            hint_text:'# of Snaredrums'
+            size_hint:(.25, .05)
+            pos_hint: {"x": .625, 'y':0.80}
+        Label:
+            text: 'Hihat'
+            size_hint:(.25, .05)
+            pos_hint: {"x": 0, 'y':0.75}
+        TextInput:
+            id: hhn
+            input_filter: 'int'
+            hint_text:'# of Hi-Hats'
+            size_hint:(.25, .05)
+            pos_hint: {"x": .625, 'y':0.75}
+        Label:
+            text: 'Toms'
+            size_hint:(.25, .05)
+            pos_hint: {"x": 0, 'y':0.70}
+        TextInput:
+            id: ttn
+            input_filter: 'int'
+            hint_text:'# of Tom-Toms'
+            size_hint:(.25, .05)
+            pos_hint: {"x": .625, 'y':0.70}
+        Label:
+            text: 'Ride'
+            size_hint:(.25, .05)
+            pos_hint: {"x": 0, 'y':0.65}
+        TextInput:
+            id: rdn
+            input_filter: 'int'
+            hint_text:'# of Ride cymbals'
+            size_hint:(.25, .05)
+            pos_hint: {"x": .625, 'y':0.65}
+        Label:
+            text: 'Crashes'
+            size_hint:(.25, .05)
+            pos_hint: {"x": 0, 'y':0.60}
+        TextInput:
+            id: crn
+            input_filter: 'int'
+            hint_text:'# of Crash cymbals'
+            size_hint:(.25, .05)
+            pos_hint: {"x": .625, 'y':0.60}
+        Label:
+            text: 'Toys'
+            size_hint:(.25, .05)
+            pos_hint: {"x": 0, 'y':0.55}
+        TextInput:
+            id: ton
+            input_filter: 'int'
+            hint_text:'# of Misc. drums/cymbals'
+            size_hint:(.25, .05)
+            pos_hint: {"x": .625, 'y':0.55}
+        Button:
+            text:   'Start soundcheck'
+            size_hint:(.5, .2)
+            pos_hint: {"x": .0, 'y':0.2}
+            on_press: if(txt.text==''):txt.text='Default'
+            on_press: if(kdn.text==''):kdn.text='0'
+            on_press: if(snn.text==''):snn.text='0'
+            on_press: if(hhn.text==''):hhn.text='0'
+            on_press: if(hhn.text=='1'):hhn.text='3' #for ohh, chh and hh-stomp
+            on_press: if(ttn.text==''):ttn.text='0'
+            on_press: if(rdn.text==''):rdn.text='0'
+            on_press: if(crn.text==''):crn.text='0'
+            on_press: if(ton.text==''):ton.text='0'
+            on_release: root.saveKitTemplate(*args)
+            on_release: root.manager.current = 'SoundCheckPerform'
+        Button:
+            text: 'Back to menu'
+            size_hint:(.5, .2)
+            pos_hint: {"x": .0, 'y':0.0}
+            on_press: root.manager.current = 'MainMenu'
+<SoundCheckPerformScreen>:
+    FloatLayout:
+
+        Label:
+            id:nDrums
+            text: root.getTxt()
+            size_hint:(.5, .2)
+            pos_hint: {"x": 0, 'y':0.8}
+        Button:
+            text: 'Back to menu'
+            size_hint:(.5, .2)
+            pos_hint: {"x": .0, 'y':0.0}
+            on_press: root.manager.current = 'MainMenu'

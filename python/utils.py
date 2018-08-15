@@ -1,11 +1,15 @@
 import madmom
 import numpy as np
 from scipy.ndimage.filters import maximum_filter, median_filter
+from scipy import signal
+from scipy.signal import convolve
+from sklearn.cluster import KMeans
+from scipy.signal import argrelmax
 import scipy
 import librosa
 import matplotlib.pyplot as plt
 import pandas as pd
-FRAME_SIZE=2**11
+FRAME_SIZE=2**10
 HOP_SIZE=2**9
 SAMPLE_RATE=44100
 FREQUENCY_PRE=np.ones((24))#[0,16384]#0-2^14
@@ -13,16 +17,16 @@ MIDINOTE=36 #kickdrum in most systems
 THRESHOLD=0.0
 PROBABILITY_THRESHOLD=0.0
 DEFAULT_TEMPO=120
-DRUMKIT_PATH='../oikeetsamplet/'
+DRUMKIT_PATH='../trainSamplet/'
+REQUEST_RESULT=False
 midinotes=[36,38,42,46,50,43,51,49,44] #BD, SN, CHH, OHH, TT, FT, RD, CR, SHH, Here we need generality
 nrOfDrums=9
 nrOfPeaks=32
 ConvFrames=10
 K=1
 MS_IN_MIN=60000
-SXTH_DIV=8
+SXTH_DIV=16
 proc=madmom.audio.filters.BarkFilterbank(madmom.audio.stft.fft_frequencies(num_fft_bins=int(FRAME_SIZE/2), sample_rate=SAMPLE_RATE) ,num_bands='double')
-
 class Drum(object):
     """
     A Drum is any user playable drumkit part representation
@@ -132,10 +136,17 @@ class Drum(object):
     def get_probability_threshold(self):
         return self.probability_threshold
 
-from sklearn.cluster import KMeans
+
 def to_midinote(notes):
     return list(midinotes[i] for i in notes)
+
 def findDefBins(frames, filteredSpec):
+    """
+    Calculate the prior vectors for W to use in NMF
+    :param frames: Numpy array of hit locations (frame numbers)
+    :param filteredSpec: Spectrogram, the spectrogram where the vectors are extracted from
+    :return: tuple of Numpy arrays, prior vectors Wpre,heads for actual hits and tails for decay part of the sound
+     """
     gaps = np.zeros((frames.shape[0], ConvFrames))
     for i in range(frames.shape[0]):
         for j in range(gaps.shape[1]):
@@ -170,7 +181,7 @@ def getStompTemplate(numHits=2, recordingLength=1, highEmph=0):
     stompResolution = 1
     buffer = np.zeros(shape=(227792 * recordingLength))
     j = 0
-    strm = madmom.audio.signal.Stream(sample_rate=44100, num_channels=1, frame_size=2048, hop_size=HOP_SIZE)
+    strm = madmom.audio.signal.Stream(sample_rate=SAMPLE_RATE, num_channels=1, frame_size=FRAME_SIZE, hop_size=HOP_SIZE)
     for i in strm:
         # print(i.shape)
         buffer[j:j + HOP_SIZE] = i[:HOP_SIZE]
@@ -210,41 +221,43 @@ def getTempomap(H):
         onsEnv=np.sum(H, axis=0)
     bdTempo = (librosa.beat.tempo(onset_envelope=onsEnv, sr=SAMPLE_RATE, hop_length=HOP_SIZE, ac_size=8,
                                   aggregate=None))
-    bdAvg = movingAverage(bdTempo, window=1200)
-    return tempoMask(bdAvg)
+    bdAvg = movingAverage(bdTempo, window=12000)
+    avgTempo=np.mean(bdAvg)
+    return tempoMask(bdAvg), avgTempo
 
-def processLiveAudio(liveBuffer=None, peakList=None, classifier='LGB', basis=None, quant_factor=0.0):
+def processLiveAudio(liveBuffer=None, peakList=None, classifier='LGB', Wpre=None, quant_factor=0.0):
 
     filt_spec = get_preprocessed_spectrogram(liveBuffer)
     iters = 1.
     for i in range(int(iters)):
         # Xpost, W, H = semi_adaptive_NMFB(filt_spec.T,basis,n_iterations=2000,
         #                             alternate=False, adaptive=False, leeseung='bat', div=0, sp=0)
-        Xpost, W, H = NMFD(filt_spec.T, n_iter=500, init_W=basis)
+        H = NMFD(filt_spec.T, iters=500, Wpre=Wpre)
         if i == 0:
-            XpostTot, WTot, HTot = Xpost, W, H
+             WTot, HTot =  Wpre, H
         else:
-            XpostTot += Xpost
-            WTot += W
+
+            WTot += Wpre
             HTot += H
-    W = (WTot) / iters
+    Wpre = (WTot) / iters
     H = (HTot) / iters
 
     if quant_factor > 0:
-        tempomask=getTempomap(H)
+        tempomask, avgTempo=getTempomap(H[:2])
 
     for i in range(len(peakList)):
         for k in range(K):
             index = i * K + k
             if k==0:
-                H0 = superflux(A=W.T[:, index, :].sum(), B=H[index])
+                H0 = superflux(A=Wpre.T[:, index, :].sum(), B=H[index])
             else:
-                H0=H0+superflux(A=W.T[:, index, :].sum(), B=H[index])
+                H0=H0+superflux(A=Wpre.T[:, index, :].sum(), B=H[index])
         peaks = pick_onsets(H0, initialThreshold=0.15, delta=2.5)
         if quant_factor > 0:
             TEMPO = DEFAULT_TEMPO
-
-            qPeaks = quantize(peaks, tempomask, strength=quant_factor, tempo=TEMPO, conform=True)
+            changeFactor=avgTempo/TEMPO
+            qPeaks = quantize(peaks, tempomask, strength=quant_factor, tempo=TEMPO, conform=False)
+            qPeaks=qPeaks*changeFactor
         else:
             qPeaks = peaks
 
@@ -262,7 +275,7 @@ def processLiveAudio(liveBuffer=None, peakList=None, classifier='LGB', basis=Non
 
     return peakList
 # From https://stackoverflow.com/questions/24354279/python-spectral-centroid-for-a-wav-file
-def spectral_centroid(x, samplerate=44100):
+def spectral_centroid(x, samplerate=SAMPLE_RATE):
     magnitudes = np.abs(np.fft.rfft(x))  # magnitudes of positive frequencies
     length = len(x)
     freqs = np.abs(np.fft.fftfreq(length, 1.0 / samplerate)[:length // 2 + 1])  # positive frequencies
@@ -332,7 +345,7 @@ def get_preprocessed_spectrogram(buffer):
     buffer = buffer / max(buffer)
     buffer = madmom.audio.FramedSignal(buffer, sample_rate=SAMPLE_RATE, frame_size=FRAME_SIZE, hop_size=HOP_SIZE)
     spec = madmom.audio.spectrogram.FilteredSpectrogram(buffer, filterbank=proc, sample_rate=SAMPLE_RATE,
-                                                        frame_size=FRAME_SIZE, hop_size=HOP_SIZE, fmin=20)
+                                                        frame_size=FRAME_SIZE, hop_size=HOP_SIZE)
     # spec=muLaw(spec,mu=10**8)
     spec = spec / spec.max()
     return spec
@@ -386,7 +399,7 @@ def playSample(data):
     stream = p.open(format=pyaudio.paFloat32,
                     frames_per_buffer=HOP_SIZE,
                     channels=1,
-                    rate=44100,
+                    rate=SAMPLE_RATE,
                     output=True)
     # play stream (3)
     f = 0
@@ -410,14 +423,24 @@ class prettyfloat(float):
 
 #superlux from madmom (Boeck et al)
 def superflux(spec_x=[], A=None,B=None):
+    """
+    Calculate the superflux envelope according to Böck et al.
+    :param spec_x: optional, A Spectrogram the superflux envelope is calculated from, X
+    :param A: optional, frequency response of the decomposed spectrogram, W
+    :param B: optional, activations of a decomposed spectrogram, H
+    :return: Superflux envelope of a spectrogram
+    :notes: Must fix inputs so that A and B have to be input together
+    """
+    #if A and B are input the spec_x is recalculated
     if A!=None:
         kernel=np.hamming(8)
-        from scipy.signal import convolve
+
         B=convolve(B, kernel, 'same')
         B=B/max(B)
         spec_x=np.outer(A,B)
     diff = np.zeros_like(spec_x.T)
-    size = (2,16)
+    #This affects the results
+    size = (2,1)
     max_spec = maximum_filter(spec_x.T, size=size)
     diff[1:] = (spec_x.T[1:] - max_spec[: -1])
     pos_diff = np.maximum(0, diff)
@@ -427,16 +450,40 @@ def superflux(spec_x=[], A=None,B=None):
 
 
 def frame_to_time(frames, sr=SAMPLE_RATE, hop_length=HOP_SIZE, hops_per_frame=1):
+    """
+    Transforms frame numbers to time values
+    :param frames: list of integers to transform
+    :param sr: int, Sample rate of the FFT
+    :param hop_length: int, Hop length of FFT
+    :param hops_per_frame: ??
+    :return: Numpy array of time values
+    """
     samples = (np.asanyarray(frames) * (hop_length / hops_per_frame)).astype(int)
     return np.asanyarray(samples) / float(sr)
 
 
 def time_to_frame(times, sr=SAMPLE_RATE, hop_length=HOP_SIZE, hops_per_frame=1):
+    """
+    Transforms time values to frame numbers
+    :param times: list of timevalues to transform
+    :param sr: int, Sample rate of the FFT
+    :param hop_length: int, Hop length of FFT
+    :param hops_per_frame: ??
+    :return: Numpy array of frame numbers
+    """
     samples = (np.asanyarray(times) * float(sr))
     return (np.asanyarray(samples) / (hop_length / hops_per_frame)).astype(int)
 
 
 def f_score(hits, hitNMiss, actual):
+    """
+    Function to calculate precisionm, recall and f-score
+    :param hits: array of true positive hits
+    :param hitNMiss: array of all detected hits
+    :param actual: array of pre annotated hits
+    :return: list of floats (precision, recall, fscore)
+    :exception: e if division by zero occurs when no hits are detected, or there are no true hits returns zero values
+    """
     try:
         precision = (float(hits) / hitNMiss)
         recall = (float(hits) / actual)
@@ -448,6 +495,14 @@ def f_score(hits, hitNMiss, actual):
 
 
 def k_in_n(k, n, window=1):
+    """
+    Helper function to calculate true positive hits for precision, recall and f-score calculation
+
+    :param k: numpy array, list of automatic annotation hits
+    :param n: numpy array, list of pre annotated hits
+    :param window: float, the windoe in which the hit is regarded as true positive
+    :return: float, true positive hits
+    """
     hits = 0
     for i in n:
         for j in k:
@@ -459,13 +514,18 @@ def k_in_n(k, n, window=1):
     return float(hits)
 
 
-# Create a mask of 16th notes for the duration of the drumtake based on the tempomap
+
 def tempoMask(tempos):
+    """
+    Create a mask of 16th notes for the duration of the drumtake based on the tempomap
+    :param tempos: numpy array of tempos
+    :return: list of 16th note indices
+    """
     # Move all tempos to half-notes to counter erratic behaviour when tempo extraction doubles tempo value.
-    for i in range(tempos.size):
-        if tempos[i] > 100:
-            while tempos[i] > 100:
-                tempos[i] = tempos[i] / 2
+    #for i in range(tempos.size):
+    #    if tempos[i] > 100:
+    #        while tempos[i] > 100:
+    #            tempos[i] = tempos[i] / 2
     # define the length of a sixteenthnote in ms in relation to tempo at time t
     sixtLength = MS_IN_MIN / tempos / SXTH_DIV
     # define the length of a frame in ms
@@ -477,13 +537,23 @@ def tempoMask(tempos):
     return invertedIndices
 
 
-# Quantize hits accordng to 16th Note mask
-def quantize(X, mask, strength=1, tempo=120, conform=False):
+
+def quantize(X, mask, strength=1, tempo=DEFAULT_TEMPO, conform=False):
+    """
+    Quantize hits accordng to 16th Note mask
+    :param X: np.array List of Drumhits
+    :param mask: np.array Precalculated tempo mask of performance
+    :param strength:, float [0,1] Strength of quantization
+    :param tempo: Int, Tempo to quantize to
+    :param conform: Boolean, Weather to quantize to tempo or just to mask
+    :return: numpy array of quantized drumhits
+    """
     # Create a mask of constant tempo
     if conform:
+#### Tämä pitää tehä jotenkin niin että kertoo tempojen suhteella indeksin!
         # drop less than 100 to half
-        if tempo < 100:
-            tempo = tempo / 2
+        #if tempo < 100:
+        #    tempo = tempo / 2
         #A mask with True at 16th notes
         conformMask = tempoMask(np.full(mask.size * 2, tempo))
         #The tempomask of drumtake
@@ -557,7 +627,7 @@ def get_cmask(tempo, tempomask):
 #aloita ikkuna x[:-window]
 def movingAverage(x,window=500):
         return median_filter(x, size=(window))
-from scipy.signal import argrelmax
+
 
 def pick_onsets(F, initialThreshold=0, delta=0):
     # dynamic threshold from Bello et. al. sigma_hat[T]=initialThreshold+delta(median(window_at_T))
@@ -581,7 +651,7 @@ def pick_onsets(F, initialThreshold=0, delta=0):
     #onsets=np.logical_and(onsets,Tf)
     return localMaximaInd[0][onsets]
 
-from scipy import signal
+
 def HFC_filter(X):
     #b, a = signal.butter(4,0.5)
     Xi=np.zeros(X.shape[1])
@@ -595,65 +665,46 @@ def HFC_filter(X):
 import sys
 
 
-def NMFD(V, R=3, T=10, n_iter=50, init_W=[], init_H=[]):
+def NMFD(X, iters=50, Wpre=[]):
     """
-     NMFD(V, R=3 ,T=10, n_iter=50, init_W=None, init_H=None)
-        NMFD as proposed by Smaragdis (Non-negative Matrix Factor
-        Deconvolution; Extraction of Multiple Sound Sources from Monophonic
-        Inputs). KL divergence minimization. The proposed algorithm was
-        corrected.
-    Input :
-       - V : magnitude spectrogram to factorize (is a FxN numpy array)
-       - R : number of templates (unused if init_W or init_H is set)
-       - T : template size (in number of frames in the spectrogram) (unused if init_W is set)
-       - n_iter : number of iterations
-       - init_W : initial value for W.
-       - init_H : initial value for H.
-    Output :
-       - W : time/frequency template (FxRxT array, each template is TxF)
-       - H : activities for each template (RxN array)
-     Copyright (C) 2015 Romain Hennequin
-    """
+    :param :
+       - X : The spectrogram
+       - iters : # of iterations
+       - Wpre : Prior vectors of W
+
+    :return :
+       - W : unchanged prior vectors of W
+       - H : Activations of different drums in X
 
     """
-     V : spectrogram FxN
-     H : activation RxN
-     Wt : spectral template FxR t = 0 to T-1
-     W : FxRxT
-    """
+    #epsilon to ensure non-negativity in meny places
     eps = 10 ** -18
 
     # data size
-    F = V.shape[0]
-    N = V.shape[1]
+    F = X.shape[0]
+    N = X.shape[1]
 
-    # initialization
-    if len(init_H):
-        H = init_H
-        R = H.shape[0]
-    # if W inited R from W
-    elif len(init_W):
-        H = np.random.rand(init_W.shape[1], N)
-    else:
-        H = np.random.rand(R, N)
+    #Initial random H
+    H = np.random.rand(Wpre.shape[1], N)
 
-    if len(init_W):
-        W = init_W
-        R = W.shape[1]
-        T = W.shape[2]
-    else:
-        W = np.random.rand(F, R, T)
+
+    W = Wpre
+    R = W.shape[1]
+    T = W.shape[2]
 
     One = np.ones((F, N))
     Lambda = np.zeros((F, N))
 
-    cost = np.zeros(n_iter)
+    cost = np.zeros(iters)
 
-    def KLDiv(x, y):
-        return sum(sum(x * np.log(x / y + eps) + (y - x)))
+    #KLDivergence for cost calculation
+    def D(x, y):
+        return (x * np.log(x / y + eps) + (y - x)).sum()
 
-    for it in range(n_iter):
-        print ('\rNMFD iter: %d' % (it + 1), end='', flush=True);
+    for i in range(iters):
+        if REQUEST_RESULT:
+            return H
+        print ('\rNMFD iter: %d' % (i + 1), end='', flush=True);
         # computation of Lambda
         Lambda[:] = 0
         for f in range(F):
@@ -662,9 +713,9 @@ def NMFD(V, R=3, T=10, n_iter=50, init_W=[], init_H=[]):
                 Lambda[f, :] = Lambda[f, :] + cv[0:Lambda.shape[1]]
 
         # update of H for each value of t (which will be averaged)
-        VonLambda = V / (Lambda + eps)
+        VonLambda = X / (Lambda + eps)
 
-        cost[it] = (V * np.log(V / Lambda + eps) - V + Lambda).sum()
+        #cost[it] = (X * np.log(X / Lambda + eps) - X + Lambda).sum()
 
         Hu = np.zeros((R, N))
         Hd = np.zeros((R, N))
@@ -678,48 +729,112 @@ def NMFD(V, R=3, T=10, n_iter=50, init_W=[], init_H=[]):
         # average along t
         H = H * Hu / Hd
 
-        #cost[it]=KLDiv(V,Lambda+eps)
-        if (it >= 2):
-            if (abs(cost[it] - cost[it - 1]) / (cost[1] - cost[it]) + eps) < 0.001:
+        cost[i]=D(X,Lambda)
+        if (i >= 2):
+            if (abs(cost[i] - cost[i - 1]) / (cost[1] - cost[i]) + eps) < 0.0001:
                 break
-    return cost, W, H
+
+    return H
 
 def showEnvelope(env):
+    """
+    Plots an envelope
+    i.e. an onset envelope or some other 2d data
+    :param env: the data to plot
+    :return: None
+    """
     plt.figure()
     plt.plot(env)
+
 def showFFT(env):
+    """
+    Plots a spectrogram
+
+    :param env: the data to plot
+    :return: None
+    """
     plt.figure()
     plt.imshow(env, aspect='auto', origin='lower')
 
+
 def mergerowsandencode(a):
-    sixtDivider=SAMPLE_RATE/FRAME_SIZE/2
+    """
+        Merges hits occuring at the same frame.
+        i.e. A kick drum hit  and a closed hihat hit at
+        frame 100 are encoded from
+            100 0
+            100 2
+        to
+            100 5
+        where 5 is decoded into char array 000000101 in the GRU-NN.
+
+        Also the hits are assumed to be in tempo 120bpm and all the
+        frames not in 120bpm 16th notes are discarded.
+
+        :param a: numpy array of hits
+
+        :return: numpy array of merged hits
+
+        Notes
+        -----
+        The tempo is assumed to be the global value
+
+        """
+    #Sixteenth notes length in this sample rate and frame size
+    sixtDivider=SAMPLE_RATE/FRAME_SIZE/8
+
     for i in range(len(a)):
+        #Move frames to nearest sixteenth note
         a[i] = (np.rint(a[i][0]/sixtDivider),) + a[i][1:]
+    #Define max frames from the first detected hit to end
     maxFrame=a[-1][0]-a[0][0]+1
+    #spaceholder for return array
     frames=np.zeros(maxFrame, dtype=int)
     for i in range(len(a)):
+        #define true index by substracting the leading empty frames
         index=a[i][0]-a[0][0]
+        #The actual hit information
         value=a[i][1]
+        #Encode the hit into a charachter array, place 1 on the index of the drum #
         frames[index]=np.bitwise_or(frames[index],2**value)
+    #return array of merged hits starting from the first occurring hit event
     return frames
 
 def splitrowsanddecode(a):
+    """
+        Split hits occuring at the same frame to separate lines containing one row per hit.
+        i.e. A kick drum hit  and a closed hihat hit at
+        frame 100 are decoded from
+            100 5
+        to
+            100 0
+            100 2
+
+        :param a: numpy array of hits
+
+        :return: numpy array of separated hits
+
+        """
     decodedFrames=[]
-    #multiplier to make tempo 120 after generation. Could be arbitrary also.
-    frameMul=SAMPLE_RATE/FRAME_SIZE/2
+    #multiplier to make tempo the global tempo after generation.
+    frameMul=SAMPLE_RATE/FRAME_SIZE/8
     for i in range(len(a)):
+        #split integer values to a binary array
         for j, k in enumerate(dec_to_binary(a[i])):
             if int(k)==1:
                 #store framenumber(index) and drum name to list, (nrOfDrums-1) to flip drums to right places,
                 decodedFrames.append([i*frameMul,abs(j-(nrOfDrums-1))])
+    #return the split hits
     return decodedFrames
 
-def dec_to_binary(f):
-        return format(f,"0{}b".format(nrOfDrums))
 
-#hh=ride 2=6 8-2
-#sn=crash 1=7 8-1
-#bd=tamb 0=8 8-0
-#cd=tt-hi 7=4
-#ohh=ttlow 3=5 8-3
-#ride=hh 6=2
+def dec_to_binary(f):
+    """
+        Returns a binary representation on a given integer
+
+        :param  f: an integer
+        :return: A binary array representation of f
+
+
+            """
+    return format(f,"0{}b".format(nrOfDrums))

@@ -18,14 +18,14 @@ from keras.models import Model, Sequential
 from keras.layers import Dense, Activation,GRU, Dropout, LSTM, Convolution1D, TimeDistributed, MaxPooling1D, Flatten
 # Thresholdit checkissä.
 seqLen=64
-layerSize=64
+layerSize=32
 data=[]
-d=pd.read_csv('funkydrummer.csv',header=None, sep="\t").as_matrix()
-data=list(d[:, 1])
+#d=pd.read_csv('funkydrummer.csv',header=None, sep="\t").as_matrix()
+#data=list(d[:, 1])
 d=pd.read_csv('kakkosnelonen.csv',header=None, sep="\t").as_matrix()
 data.extend(list(d[:, 1]))
-for i in range(1):
-   d=pd.read_csv('testbeat{}.csv'.format(i+1),header=None, sep="\t").as_matrix()
+for i in range(3):
+   d=pd.read_csv('testbeat{}.csv'.format(i),header=None, sep="\t").as_matrix()
    data.extend(list(d[:, 1]))
 #d=pd.read_csv('funkydrummer.csv',header=None, sep="\t").as_matrix()
 #data=list(d[:, 1])
@@ -53,33 +53,33 @@ for i, word in enumerate(words):
     for t, char in enumerate(word):
         X[i, t, charI[char]] = 1
     y[i, charI[outchar[i]]] = 1
-X,y=resample(np.array(X),np.array(y), n_samples=len(words))
+X,y=resample(np.array(X),np.array(y), n_samples=2000, replace=True)
 #X = X.reshape(X.shape[0], X.shape[1],X.shape[2], 1)
 model = Sequential()
 
-# model.add(TimeDistributed(Convolution1D(1,1, activation='relu',input_shape=(seqLen, numDiffHits,1)), input_shape=(seqLen, numDiffHits,1)))
-# model.add(TimeDistributed(MaxPooling1D(1)))
-# model.add(TimeDistributed(Flatten()))
+#model.add(TimeDistributed(Convolution1D(16,16, activation='relu',input_shape=(seqLen, numDiffHits,1)), input_shape=(seqLen, numDiffHits,1)))
+#model.add(TimeDistributed(MaxPooling1D(2)))
+#model.add(TimeDistributed(Flatten()))
 model.add(GRU(layerSize,
-       return_sequences=False,input_shape=(seqLen, numDiffHits)))
+       return_sequences=False,input_shape=(seqLen, numDiffHits),dropout_W=0.25, dropout_U=0.75))
 #model.add(Dropout(0.2))
 #model.add(GRU(layerSize,return_sequences=False))
-model.add(Dropout(0.2))
+#model.add(Dropout(0.6))
 # model.add(GRU(layerSize))
 # model.add(Dropout(0.2))
 model.add(Dense(numDiffHits, init='normal', activation='softmax'))
 #print(model.summary())
 
 modelsaver=ModelCheckpoint(filepath="weights_testivedot2.hdf5", verbose=1, save_best_only=True)
-earlystopper=EarlyStopping(monitor="val_loss", patience=3, mode='auto')
+earlystopper=EarlyStopping(monitor="val_loss", patience=10, mode='auto')
 model.compile(loss='categorical_crossentropy',metrics=['accuracy'], optimizer='nadam')
 print("learning...")
 rerun =True
 if rerun == True or not os.path.isfile('weights_testivedot2.hdf5'):
     model.fit(X, y, batch_size=10, nb_epoch=40
               , callbacks=[modelsaver, earlystopper]
-              ,validation_split=0.1
-              ,verbose=0)
+              ,validation_split=0.33
+              ,verbose=2)
     #model.save_weights("weights_testivedot2.hdf5")
     #model.load_weights("weights_testivedot2.hdf5")
     print("Loaded model from disk")
@@ -106,13 +106,14 @@ def sample(a, temperature=1.0):
     #return np.random.choice(choices, p=a)
     return np.argmax(np.random.multinomial(1, a, 1))
 
-for i in range(2560):
+for i in range(2048 ):
+    #x = np.zeros((1, seqLen, numDiffHits,1))
     x = np.zeros((1, seqLen, numDiffHits))
     for t, k in enumerate(seed):
         x[0, t, charI[k]] = 1
     pred = model.predict(x, verbose=0)
     #print (np.argmax(pred[0]))
-    next_index = sample(pred[0], 0.92)
+    next_index = sample(pred[0], 0.850)
     #next_index=np.argmax(pred[0])
     next_char = Ichar[next_index]
     generated.append(next_char)

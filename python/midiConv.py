@@ -45,5 +45,5 @@ def midi_to_simple(filename):
     #print(markup.head(20))
     markup.to_csv(filename, index=False, header=False, sep="\t")
 
-midi_to_simple('./funkydrummer.csv')
-simple_to_binary('./funkydrummer.csv')
+midi_to_simple('./kakkosnelonen.csv')
+simple_to_binary('./kakkosnelonen.csv')
