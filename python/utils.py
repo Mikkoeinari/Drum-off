@@ -69,6 +69,8 @@ class Drum(object):
             self.midinote = midinote
         if threshold:
             self.threshold = float(threshold)
+        else:
+            self.threshold = 0.
         if probability_threshold:
             self.probability_threshold = float(probability_threshold)
         if hitlist:
@@ -94,7 +96,7 @@ class Drum(object):
     def get_highEmph(self):
         return self.highEmph
 
-    def set_peaks(self, name):
+    def set_peaks(self, peaks):
         self.name = peaks
 
     def get_peaks(self):
@@ -196,20 +198,26 @@ def getStompTemplate(numHits=2, recordingLength=1, highEmph=0):
 
 def getPeaksFromBuffer(buffer, resolution, numHits, highEmph=0):
     filt_spec = get_preprocessed_spectrogram(buffer)
-    threshold = 5
-    searchSpeed = 0.1
+    threshold =3
+    searchSpeed = .5
     # peaks=cleanDoubleStrokes(madmom.features.onsets.peak_picking(superflux_3,threshold),resolution)
     H0 = superflux(spec_x=filt_spec.T)
-    peaks = cleanDoubleStrokes(pick_onsets(H0, initialThreshold=0.15, delta=threshold), resolution)
+    peaks = cleanDoubleStrokes(pick_onsets(H0, initialThreshold=0.15, delta=0.25,lamb=threshold), resolution)
+    changed=False
     while (peaks.shape != (numHits,)):
+        #print (threshold)
         # Make sure we don't go over numHits
         # There is a chance of an infinite loop here!!! Make sure that don't happen
         if (peaks.shape[0] > numHits):
+            if changed==False:
+                searchSpeed = searchSpeed / 2
+            changed=True
             threshold += searchSpeed
-            searchSpeed = searchSpeed / 2
-        threshold -= searchSpeed
+        else:
+            changed=False
+            threshold -= searchSpeed
         # peaks=cleanDoubleStrokes(madmom.features.onsets.peak_picking(superflux_3,threshold),resolution)
-        peaks = cleanDoubleStrokes(pick_onsets(H0, initialThreshold=0.15, delta=threshold), resolution)
+        peaks = cleanDoubleStrokes(pick_onsets(H0, initialThreshold=0.15, delta=0.25,lamb=threshold), resolution)
 
     definingBins = findDefBins(peaks, filt_spec)
     return peaks, definingBins, threshold
@@ -252,7 +260,9 @@ def processLiveAudio(liveBuffer=None, peakList=None, classifier='LGB', Wpre=None
                 H0 = superflux(A=Wpre.T[:, index, :].sum(), B=H[index])
             else:
                 H0=H0+superflux(A=Wpre.T[:, index, :].sum(), B=H[index])
-        peaks = pick_onsets(H0, initialThreshold=0.15, delta=2.5)
+        #peaks = pick_onsets(H0, initialThreshold=0.15, delta=peakList[i].get_threshold())
+        peaks = pick_onsets(H0, initialThreshold=0.15, delta=.25, lamb=peakList[i].get_threshold())
+        #peaks = madmom.features.onsets.peak_picking(H0, threshold=0.1)
         if quant_factor > 0:
             TEMPO = DEFAULT_TEMPO
             changeFactor=avgTempo/TEMPO
@@ -429,7 +439,7 @@ def superflux(spec_x=[], A=None,B=None):
     :param A: optional, frequency response of the decomposed spectrogram, W
     :param B: optional, activations of a decomposed spectrogram, H
     :return: Superflux envelope of a spectrogram
-    :notes: Must fix inputs so that A and B have to be input together
+    :notes: Must check inputs so that A and B have to be input together
     """
     #if A and B are input the spec_x is recalculated
     if A!=None:
@@ -438,6 +448,7 @@ def superflux(spec_x=[], A=None,B=None):
         B=convolve(B, kernel, 'same')
         B=B/max(B)
         spec_x=np.outer(A,B)
+
     diff = np.zeros_like(spec_x.T)
     #This affects the results
     size = (2,1)
@@ -621,7 +632,7 @@ def quantize(X, mask, strength=1, tempo=DEFAULT_TEMPO, conform=False):
 
 
 def get_cmask(tempo, tempomask):
-    return cMask
+    pass
 
 
 #aloita ikkuna x[:-window]
@@ -629,24 +640,36 @@ def movingAverage(x,window=500):
         return median_filter(x, size=(window))
 
 
-def pick_onsets(F, initialThreshold=0, delta=0):
+def pick_onsets(F, initialThreshold=0, delta=0, lamb=1.5):
     # dynamic threshold from Bello et. al. sigma_hat[T]=initialThreshold+delta(median(window_at_T))
     localMaximaInd=argrelmax(F, order=1) #max indices
     localMaxima=F[localMaximaInd[0]]
     #localMaximaF=Hf[localMaximaInd[0]]
     #Tdyn=initialThreshold+delta*(np.mean(localMaxima))
     #Tdyn=delta*(np.mean(localMaxima))
-    #T1, T2, Tdyn=np.zeros(localMaxima.shape[0]),np.zeros(localMaxima.shape[0]),np.zeros(localMaxima.shape[0])
-    #for i in range(localMaxima.shape[0]):
-    #    n=localMaxima[i:i+50]
-    #
-    #    T1[i] = 0.15+1.5*(np.percentile(n,75)-np.percentile(n, 25)) + np.percentile(n, 50)
-    #    T2[i] =0.1*np.percentile(n, 100)
-    #    p=1
-    #    Tdyn[i]=((T1[i]**p+T2[i]**p)/2.)**(1./p)
-    Tdyn=delta*(np.mean(localMaxima))
+    #Arrays for different dynamic thresholds
+    arSize=localMaxima.shape[0]
+    T1, T2, Tdyn=np.zeros(arSize),np.zeros(arSize),np.zeros(arSize)
+    onsets=[]
+    for i in range(localMaxima.shape[0]):
+       #a smaller window
+        n=movingAverage(localMaxima, window=25)
+        #first dyn threshold
+        T1[i] = delta+lamb*(np.percentile(n,75)-np.percentile(n, 25)) + np.percentile(n, 50)
+        #second dyn threshold
+        T2[i] =0.1*np.percentile(n, 100)
+        p=4
+        #final Dyn threshold from battenberg
+        Tdyn[i]=((T1[i]**p+T2[i]**p)/2.)**(1./p)
+        # if localMaxima[i]>=Tdyn[i]:
+        #     if len(onsets)>0:
+        #         onsets.append(localMaxima[i])
+        #     else:
+        #         onsets=[localMaxima[i]]
+    #Tdyn=delta*(np.mean(localMaxima))
     #Tf=np.array(localMaximaF>=1)
-
+    #print(onsets)
+    #return np.array(onsets)
     onsets=np.array(localMaxima>=Tdyn)
     #onsets=np.logical_and(onsets,Tf)
     return localMaximaInd[0][onsets]
@@ -787,12 +810,13 @@ def mergerowsandencode(a):
         #Move frames to nearest sixteenth note
         a[i] = (np.rint(a[i][0]/sixtDivider),) + a[i][1:]
     #Define max frames from the first detected hit to end
-    maxFrame=a[-1][0]-a[0][0]+1
+    maxFrame=int(a[-1][0]-a[0][0]+1)
+
     #spaceholder for return array
     frames=np.zeros(maxFrame, dtype=int)
     for i in range(len(a)):
         #define true index by substracting the leading empty frames
-        index=a[i][0]-a[0][0]
+        index=int(a[i][0]-a[0][0])
         #The actual hit information
         value=a[i][1]
         #Encode the hit into a charachter array, place 1 on the index of the drum #

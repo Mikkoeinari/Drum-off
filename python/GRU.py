@@ -1,31 +1,31 @@
 from utils import *
 from time import time
-t0=time()
 
+t0=time()
+import os
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 import os
 import sys
 sys.setrecursionlimit(10000)
 from sklearn.utils import resample
 import numpy as np
-import random
-import keras
-from keras.utils.np_utils import to_categorical
+from MGU import MGU
 from keras.callbacks import EarlyStopping, ModelCheckpoint
-from keras.callbacks import Callback
-from scipy.io.wavfile import read, write
-from keras.activations import relu
 from keras.models import Model, Sequential
-from keras.layers import Dense, Activation,GRU, Dropout, LSTM, Convolution1D, TimeDistributed, MaxPooling1D, Flatten
+from keras.layers import Dense, GRU,BatchNormalization, GRUCell, Dropout
+
+
 # Thresholdit checkissä.
 seqLen=64
-layerSize=32
+layerSize=128
 data=[]
-#d=pd.read_csv('funkydrummer.csv',header=None, sep="\t").as_matrix()
+#d=pd.read_csv('funkydrummer.csv',header=None, sep="\t").values
 #data=list(d[:, 1])
-d=pd.read_csv('kakkosnelonen.csv',header=None, sep="\t").as_matrix()
-data.extend(list(d[:, 1]))
+#d=pd.read_csv('./kakkosnelonen.csv',header=None, sep="\t").values
+#data.extend(list(d[:, 1]))
 for i in range(3):
-   d=pd.read_csv('testbeat{}.csv'.format(i),header=None, sep="\t").as_matrix()
+   d=pd.read_csv('testbeat{}.csv'.format(i),header=None, sep="\t").values
    data.extend(list(d[:, 1]))
 #d=pd.read_csv('funkydrummer.csv',header=None, sep="\t").as_matrix()
 #data=list(d[:, 1])
@@ -53,30 +53,38 @@ for i, word in enumerate(words):
     for t, char in enumerate(word):
         X[i, t, charI[char]] = 1
     y[i, charI[outchar[i]]] = 1
-X,y=resample(np.array(X),np.array(y), n_samples=2000, replace=True)
+X,y=resample(np.array(X),np.array(y), n_samples=len(words)*2, replace=True)
 #X = X.reshape(X.shape[0], X.shape[1],X.shape[2], 1)
 model = Sequential()
+
+
 
 #model.add(TimeDistributed(Convolution1D(16,16, activation='relu',input_shape=(seqLen, numDiffHits,1)), input_shape=(seqLen, numDiffHits,1)))
 #model.add(TimeDistributed(MaxPooling1D(2)))
 #model.add(TimeDistributed(Flatten()))
-model.add(GRU(layerSize,
-       return_sequences=False,input_shape=(seqLen, numDiffHits),dropout_W=0.25, dropout_U=0.75))
+#model.add(CuDNNGRU(layerSize,
+#       return_sequences=False,input_shape=(seqLen, numDiffHits)))
+model.add(MGU(layerSize,activation='selu',# kernel_initializer='he_normal',
+              return_sequences=False,
+
+              input_shape=(seqLen, numDiffHits), dropout=0.5, recurrent_dropout=0.1))
 #model.add(Dropout(0.2))
-#model.add(GRU(layerSize,return_sequences=False))
+#model.add(MGU(layerSize,activation='relu', kernel_initializer='orthogonal',return_sequences=False))
 #model.add(Dropout(0.6))
 # model.add(GRU(layerSize))
-# model.add(Dropout(0.2))
-model.add(Dense(numDiffHits, init='normal', activation='softmax'))
+model.add(Dropout(0.2))
+#model.add(BatchNormalization())
+model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
+
 #print(model.summary())
 
 modelsaver=ModelCheckpoint(filepath="weights_testivedot2.hdf5", verbose=1, save_best_only=True)
-earlystopper=EarlyStopping(monitor="val_loss", patience=10, mode='auto')
+earlystopper=EarlyStopping(monitor="val_loss", patience=3, mode='auto')
 model.compile(loss='categorical_crossentropy',metrics=['accuracy'], optimizer='nadam')
 print("learning...")
-rerun =True
+rerun =False
 if rerun == True or not os.path.isfile('weights_testivedot2.hdf5'):
-    model.fit(X, y, batch_size=10, nb_epoch=40
+    model.fit(X, y, batch_size=200, epochs=400
               , callbacks=[modelsaver, earlystopper]
               ,validation_split=0.33
               ,verbose=2)
@@ -91,7 +99,7 @@ if rerun == True or not os.path.isfile('weights_testivedot2.hdf5'):
 model.load_weights("weights_testivedot2.hdf5")
 #seed_index = random.randint(0, len(data) - seqLen - 1)
 
-seed=data[-seqLen:]
+seed=data[:seqLen]
 print('Model learning time:%0.2f' % (time()-t0))
 t0=time()
 print('generating new sequence.')
@@ -106,14 +114,14 @@ def sample(a, temperature=1.0):
     #return np.random.choice(choices, p=a)
     return np.argmax(np.random.multinomial(1, a, 1))
 
-for i in range(2048 ):
+for i in range(2048):
     #x = np.zeros((1, seqLen, numDiffHits,1))
     x = np.zeros((1, seqLen, numDiffHits))
     for t, k in enumerate(seed):
         x[0, t, charI[k]] = 1
     pred = model.predict(x, verbose=0)
     #print (np.argmax(pred[0]))
-    next_index = sample(pred[0], 0.850)
+    next_index = sample(pred[0], 0.7)
     #next_index=np.argmax(pred[0])
     next_char = Ichar[next_index]
     generated.append(next_char)
@@ -129,7 +137,7 @@ print('pattern generating time:%0.2f' % (time()-t0))
 #change to time and midinotes
 gen['time']=frame_to_time(gen['time'])
 gen['inst']=to_midinote(gen['inst'])
-gen['duration'] = pd.Series(np.full((len(generated)), 0, np.int64))
+gen['duration'] = pd.Series(np.full((len(generated)), 1, np.int64))
 gen['vel'] = pd.Series(np.full((len(generated)), 127, np.int64))
 
 
