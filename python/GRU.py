@@ -24,7 +24,7 @@ data=[]
 #data=list(d[:, 1])
 #d=pd.read_csv('./kakkosnelonen.csv',header=None, sep="\t").values
 #data.extend(list(d[:, 1]))
-for i in range(3):
+for i in range(1):
    d=pd.read_csv('testbeat{}.csv'.format(i),header=None, sep="\t").values
    data.extend(list(d[:, 1]))
 #d=pd.read_csv('funkydrummer.csv',header=None, sep="\t").as_matrix()
@@ -53,7 +53,7 @@ for i, word in enumerate(words):
     for t, char in enumerate(word):
         X[i, t, charI[char]] = 1
     y[i, charI[outchar[i]]] = 1
-X,y=resample(np.array(X),np.array(y), n_samples=len(words)*2, replace=True)
+X,y=resample(np.array(X),np.array(y), n_samples=len(words)*8, replace=True)
 #X = X.reshape(X.shape[0], X.shape[1],X.shape[2], 1)
 model = Sequential()
 
@@ -121,7 +121,7 @@ for i in range(2048):
         x[0, t, charI[k]] = 1
     pred = model.predict(x, verbose=0)
     #print (np.argmax(pred[0]))
-    next_index = sample(pred[0], 0.7)
+    next_index = sample(pred[0], 0.8)
     #next_index=np.argmax(pred[0])
     next_char = Ichar[next_index]
     generated.append(next_char)

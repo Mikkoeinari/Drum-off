@@ -65,6 +65,7 @@ except Exception as e:
     print(e)
     print('jotain meni vikaan!')
 plst = processLiveAudio(liveBuffer=buffer, peakList=drums, Wpre=fpr, quant_factor=1.0)
+print('NMFDtime:%0.2f' % (time()-t0))
 annotated=False
 if (annotated):
     #print f-score:

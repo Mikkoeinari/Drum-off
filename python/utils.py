@@ -19,6 +19,7 @@ PROBABILITY_THRESHOLD=0.0
 DEFAULT_TEMPO=120
 DRUMKIT_PATH='../trainSamplet/'
 REQUEST_RESULT=False
+DELTA=0.15
 midinotes=[36,38,42,46,50,43,51,49,44] #BD, SN, CHH, OHH, TT, FT, RD, CR, SHH, Here we need generality
 nrOfDrums=9
 nrOfPeaks=32
@@ -198,14 +199,13 @@ def getStompTemplate(numHits=2, recordingLength=1, highEmph=0):
 
 def getPeaksFromBuffer(buffer, resolution, numHits, highEmph=0):
     filt_spec = get_preprocessed_spectrogram(buffer)
-    threshold =3
-    searchSpeed = .5
+    threshold =0.5
+    searchSpeed = .1
     # peaks=cleanDoubleStrokes(madmom.features.onsets.peak_picking(superflux_3,threshold),resolution)
     H0 = superflux(spec_x=filt_spec.T)
-    peaks = cleanDoubleStrokes(pick_onsets(H0, initialThreshold=0.15, delta=0.25,lamb=threshold), resolution)
+    peaks = cleanDoubleStrokes(pick_onsets(H0, delta=threshold), resolution)
     changed=False
     while (peaks.shape != (numHits,)):
-        #print (threshold)
         # Make sure we don't go over numHits
         # There is a chance of an infinite loop here!!! Make sure that don't happen
         if (peaks.shape[0] > numHits):
@@ -217,8 +217,7 @@ def getPeaksFromBuffer(buffer, resolution, numHits, highEmph=0):
             changed=False
             threshold -= searchSpeed
         # peaks=cleanDoubleStrokes(madmom.features.onsets.peak_picking(superflux_3,threshold),resolution)
-        peaks = cleanDoubleStrokes(pick_onsets(H0, initialThreshold=0.15, delta=0.25,lamb=threshold), resolution)
-
+        peaks = cleanDoubleStrokes(pick_onsets(H0, delta=threshold), resolution)
     definingBins = findDefBins(peaks, filt_spec)
     return peaks, definingBins, threshold
 
@@ -260,9 +259,18 @@ def processLiveAudio(liveBuffer=None, peakList=None, classifier='LGB', Wpre=None
                 H0 = superflux(A=Wpre.T[:, index, :].sum(), B=H[index])
             else:
                 H0=H0+superflux(A=Wpre.T[:, index, :].sum(), B=H[index])
-        #peaks = pick_onsets(H0, initialThreshold=0.15, delta=peakList[i].get_threshold())
-        peaks = pick_onsets(H0, initialThreshold=0.15, delta=.25, lamb=peakList[i].get_threshold())
-        #peaks = madmom.features.onsets.peak_picking(H0, threshold=0.1)
+
+        peaks = pick_onsets(H0, delta=DELTA)
+        #remove
+        # if i ==7:
+        #     H1=superflux(A=Wpre.T[:, 3, :].sum(), B=H[3])
+        #     ohPeaks=pick_onsets(H1, delta=DELTA)
+        #     common=np.intersect1d(peaks, ohPeaks)
+        #     for c in common:
+        #         # if H1[c]>=H0[c]:
+        #             print('found open!')
+        #             peaks=np.delete(peaks,np.argwhere(c))
+
         if quant_factor > 0:
             TEMPO = DEFAULT_TEMPO
             changeFactor=avgTempo/TEMPO
@@ -640,42 +648,76 @@ def movingAverage(x,window=500):
         return median_filter(x, size=(window))
 
 
-def pick_onsets(F, initialThreshold=0, delta=0, lamb=1.5):
-    # dynamic threshold from Bello et. al. sigma_hat[T]=initialThreshold+delta(median(window_at_T))
-    localMaximaInd=argrelmax(F, order=1) #max indices
+def pick_onsets(F, delta=0):
+    """
+    Simple onset peak picking algorithm, picks local maxima that are
+    greater than median of local maxima + correction factor.
+
+    :param F: numpy array, Detection Function
+    :param delta: float, threshold correction factor
+    :return: numpy array, peak indices
+    """
+    #Indices of local maxima in F
+    localMaximaInd=argrelmax(F, order=1)
+
+    #Values of local maxima in F
     localMaxima=F[localMaximaInd[0]]
-    #localMaximaF=Hf[localMaximaInd[0]]
-    #Tdyn=initialThreshold+delta*(np.mean(localMaxima))
-    #Tdyn=delta*(np.mean(localMaxima))
-    #Arrays for different dynamic thresholds
-    arSize=localMaxima.shape[0]
-    T1, T2, Tdyn=np.zeros(arSize),np.zeros(arSize),np.zeros(arSize)
-    onsets=[]
-    for i in range(localMaxima.shape[0]):
-       #a smaller window
-        n=movingAverage(localMaxima, window=25)
-        #first dyn threshold
-        T1[i] = delta+lamb*(np.percentile(n,75)-np.percentile(n, 25)) + np.percentile(n, 50)
-        #second dyn threshold
-        T2[i] =0.1*np.percentile(n, 100)
-        p=4
-        #final Dyn threshold from battenberg
-        Tdyn[i]=((T1[i]**p+T2[i]**p)/2.)**(1./p)
-        # if localMaxima[i]>=Tdyn[i]:
-        #     if len(onsets)>0:
-        #         onsets.append(localMaxima[i])
-        #     else:
-        #         onsets=[localMaxima[i]]
-    #Tdyn=delta*(np.mean(localMaxima))
-    #Tf=np.array(localMaximaF>=1)
-    #print(onsets)
-    #return np.array(onsets)
-    onsets=np.array(localMaxima>=Tdyn)
-    #onsets=np.logical_and(onsets,Tf)
-    return localMaximaInd[0][onsets]
 
+    #Pick local maxima greater than threshold
+    threshold=delta+np.median(localMaxima)
+    onsets=np.array(localMaxima>=threshold)
+    rets=localMaximaInd[0][onsets]
+    #remove peak if detFunc has not been under threshold.
+    i=0
+    while i in range(len(rets)-1):
+        if F[rets[i]:rets[i+1]].min()>=threshold:
+            rets=np.delete(rets,i+1)
+        else:
+            i+=1
+    # Return onset indices
+    return rets
 
-def HFC_filter(X):
+    ####Dynamic threshold testing.
+    #Not worth the processing time when using superflux envelope for separated audio
+    # #Size of local maxima array
+    # arSize=F.shape[0]
+    # #dynamic threshold arrays
+    # T1, T2, Tdyn=np.zeros(arSize),np.zeros(arSize),np.zeros(arSize)
+    # #calculate every threshold
+    # #n = movingAverage(F, window=23)
+    # for i in range(len(F)):
+    #     #n[i]=np.median(F[i:i+10])
+    #     #n[i] = np.percentile(F[i:i+10],50)
+    #     T1[i] = delta + lamb * (np.percentile(F[i:i+10],75) - np.percentile(F[i:i+10],25)) + np.percentile(F[i:i+10],50)
+    #     T2[i] = delta * np.percentile(F[i:i+10],100)
+    #     p = 2
+    #     # final Dyn threshold from battenberg
+    #     Tdyn[i]=((T1[i]**p+T2[i]**p)/2.)**(1./p)
+    # #nPerc = np.percentile(localMaxima, [25, 50, 75,100])
+    # if pics:
+    #     showEnvelope(F)
+    # if pics:
+    #     showEnvelope(T1)
+    # #first dyn threshold
+    # #T1 = delta+lamb*(nPerc[2]-nPerc[0]) + nPerc[1]
+    # #second dyn threshold
+    # #T2 =delta*nPerc[3]
+    # #Soft maximum variable
+    # #p=4
+    # #final Dyn threshold from battenberg
+    # #Tdyn=((T1**p+T2**p)/2.)**(1./p)
+    # #Create a boolean array of indices where local maxima is above Tdyn
+    # onsets=np.array(localMaxima>=T1[localMaximaInd[0]])
+
+#Turha
+def HFC_filter(X=[], A=None, B=None):
+    if A!=None:
+        kernel=np.hamming(8)
+
+        B=convolve(B, kernel, 'same')
+        B=B/max(B)
+        X=np.outer(A,B)
+
     #b, a = signal.butter(4,0.5)
     Xi=np.zeros(X.shape[1])
     for i in range(X.shape[0]):
