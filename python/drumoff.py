@@ -141,6 +141,6 @@ gen['time']=frame_to_time(gen['time'])
 gen['inst']=to_midinote(gen['inst'])
 gen['duration'] = pd.Series(np.full((len(generated)), 0, np.int64))
 gen['vel'] = pd.Series(np.full((len(generated)), 127, np.int64))
-madmom.io.midi.write_midi(gen.values, 'midi_testit_enc_dec.mid')
+madmom.io.midi.write_midi(gen.values, 'midi_testit_enc_dec0.mid')
 
 print('Processing time:%0.2f' % (time()-t0))

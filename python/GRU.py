@@ -1,39 +1,39 @@
 from utils import *
 from time import time
 
-t0=time()
-#import os
-#os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-#os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+t0 = time()
+# import os
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+# os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 import os
 import sys
+
 sys.setrecursionlimit(10000)
 from sklearn.utils import resample
 import numpy as np
 from MGU import MGU
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras.models import Model, Sequential
-from keras.layers import Dense, GRU,BatchNormalization, GRUCell, Dropout
-
-
+from keras.layers import Dense, GRU, BatchNormalization, GRUCell, Dropout
 
 # Thresholdit checkissä.
-seqLen=64
-layerSize=128
-data=[]
-#d=pd.read_csv('funkydrummer.csv',header=None, sep="\t").values
-#data=list(d[:, 1])
-#d=pd.read_csv('kakkosnelonen.csv',header=None, sep="\t").values
-#data.extend(list(d[:, 1]))
+seqLen =64
+layerSize = 128
+data = []
+d=pd.read_csv('funkydrummer.csv',header=None, sep="\t").values
+
+data=list(truncZeros(np.array(d[:, 1])))
+d=pd.read_csv('kakkosnelonen.csv',header=None, sep="\t").values
+data.extend(list(truncZeros(np.array(d[:, 1]))))
 for i in range(3):
-   d=pd.read_csv('testbeat{}.csv'.format(i),header=None, sep="\t").values
-   data.extend(list(d[:, 1]))
-#d=pd.read_csv('funkydrummer.csv',header=None, sep="\t").as_matrix()
-#data=list(d[:, 1])
+    d = pd.read_csv('testbeat{}.csv'.format(i), header=None, sep="\t").values
+    data.extend(list(d[:, 1]))
+# d=pd.read_csv('funkydrummer.csv',header=None, sep="\t").as_matrix()
+# data=list(d[:, 1])
 
 print('corpus length:', len(data))
 
-vocab=data
+vocab = data
 diffHits = set(data)
 data = vocab
 
@@ -43,7 +43,7 @@ numDiffHits = len(charI)
 print('total chars:', numDiffHits)
 words = []
 outchar = []
-for i in range(0, len(data) - seqLen,1):
+for i in range(0, len(data) - seqLen, 1):
     words.append(data[i: i + seqLen])
     outchar.append(data[i + seqLen])
 print('nb sequences:', len(words))
@@ -54,75 +54,75 @@ for i, word in enumerate(words):
     for t, char in enumerate(word):
         X[i, t, charI[char]] = 1
     y[i, charI[outchar[i]]] = 1
-X,y=resample(np.array(X),np.array(y), n_samples=len(words)*2, replace=True)
+X, y = resample(np.array(X), np.array(y), n_samples=len(words)*4, replace=True)
 
 model = Sequential()
-model.add(MGU(layerSize,activation='elu',#kernel_initializer='orthogonal',
-              return_sequences=False,dropout=0.5, recurrent_dropout=0.1,
+model.add(MGU(layerSize, activation='elu',  # kernel_initializer='orthogonal',
+              return_sequences=False, dropout=0.1, recurrent_dropout=0.1,
               input_shape=(seqLen, numDiffHits)))
-#model.add(MGU(layerSize,activation='selu', return_sequences=False))
-model.add(Dropout(0.2))
-#model.add(BatchNormalization())
+# model.add(MGU(layerSize,activation='selu', return_sequences=False))
+# model.add(Dropout(0.2))
+# model.add(BatchNormalization())
 model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
 
-#print(model.summary())
+# print(model.summary())
 
-modelsaver=ModelCheckpoint(filepath="weights_testivedot2.hdf5", verbose=1, save_best_only=True)
-earlystopper=EarlyStopping(monitor="val_loss", patience=3, mode='auto')
-model.compile(loss='categorical_crossentropy',metrics=['accuracy'], optimizer='nadam')
+modelsaver = ModelCheckpoint(filepath="weights_testivedot2.hdf5", verbose=1, save_best_only=True)
+earlystopper = EarlyStopping(monitor="val_loss", patience=3, mode='auto')
+model.compile(loss='categorical_crossentropy', metrics=['accuracy'], optimizer='nadam')
 print("learning...")
-rerun =True
+rerun = False
 if rerun == True or not os.path.isfile('weights_testivedot2.hdf5'):
     model.fit(X, y, batch_size=200, epochs=400
               , callbacks=[modelsaver, earlystopper]
-              ,validation_split=0.33
-              ,verbose=2)
+              , validation_split=0.33
+              , verbose=2)
 
 # #Vectorize a seed x
 model.load_weights("weights_testivedot2.hdf5")
-#seed_index = random.randint(0, len(data) - seqLen - 1)
+# seed_index = random.randint(0, len(data) - seqLen - 1)
 
-seed=data[:seqLen]
-print('Model learning time:%0.2f' % (time()-t0))
-t0=time()
+seed = data[-seqLen:]
+print('Model learning time:%0.2f' % (time() - t0))
+t0 = time()
 print('generating new sequence.')
-generated=[]
+generated = []
+
 
 def sample(a, temperature=1.0):
     # helper function to sample an index from a probability array
     a = np.asarray(a).astype('float64')
     a = np.log(a) / temperature
     a = np.exp(a) / np.sum(np.exp(a))
-    #choices = range(len(a))
-    #return np.random.choice(choices, p=a)
+    # choices = range(len(a))
+    # return np.random.choice(choices, p=a)
     return np.argmax(np.random.multinomial(1, a, 1))
 
+
 for i in range(2048):
-    #x = np.zeros((1, seqLen, numDiffHits,1))
+    # x = np.zeros((1, seqLen, numDiffHits,1))
     x = np.zeros((1, seqLen, numDiffHits))
     for t, k in enumerate(seed):
         x[0, t, charI[k]] = 1
     pred = model.predict(x, verbose=0)
-    #print (np.argmax(pred[0]))
-    next_index = sample(pred[0], 0.80)
-    #next_index=np.argmax(pred[0])
+    # print (np.argmax(pred[0]))
+    next_index = sample(pred[0], 0.1)
+    # next_index=np.argmax(pred[0])
     next_char = Ichar[next_index]
     generated.append(next_char)
     seed = seed[1:]
     seed.append(next_char)
-    #print(seed)
+    # print(seed)
 
-generated=splitrowsanddecode(generated)
-gen=pd.DataFrame(generated, columns=[ 'time','inst'])
+generated = splitrowsanddecode(generated)
+gen = pd.DataFrame(generated, columns=['time', 'inst'])
 
 gen.to_csv('generated.csv', index=False, header=None, sep='\t')
-print('pattern generating time:%0.2f' % (time()-t0))
-#change to time and midinotes
-gen['time']=frame_to_time(gen['time'])
-gen['inst']=to_midinote(gen['inst'])
-gen['duration'] = pd.Series(np.full((len(generated)), 1, np.int64))
+print('pattern generating time:%0.2f' % (time() - t0))
+# change to time and midinotes
+gen['time'] = frame_to_time(gen['time'])
+gen['inst'] = to_midinote(gen['inst'])
+gen['duration'] = pd.Series(np.full((len(generated)), 0, np.int64))
 gen['vel'] = pd.Series(np.full((len(generated)), 127, np.int64))
-
-
 
 madmom.io.midi.write_midi(gen.values, 'midi_testit_gen.mid')

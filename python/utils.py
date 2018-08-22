@@ -26,7 +26,8 @@ nrOfPeaks=32
 ConvFrames=10
 K=1
 MS_IN_MIN=60000
-SXTH_DIV=16
+SXTH_DIV=8
+ENCODE_PAUSE=True
 proc=madmom.audio.filters.BarkFilterbank(madmom.audio.stft.fft_frequencies(num_fft_bins=int(FRAME_SIZE/2), sample_rate=SAMPLE_RATE) ,num_bands='double')
 class Drum(object):
     """
@@ -560,7 +561,7 @@ def timequantize(X, tempomap, tempo):
     for i in range(X.shape[0]):
         timeX[i]=timeX[i]*(tempomap/tempo)
     frameX=time_to_frame(timeX, sr=SAMPLE_RATE, hop_length=HOP_SIZE)
-    return quantize(frameX,tempoMask(np.full(frameX.max()*2, tempo)))
+    return frameX
 
 def quantize(X, mask, strength=1, tempo=DEFAULT_TEMPO, conform=False):
     """
@@ -827,6 +828,25 @@ def showFFT(env):
     plt.imshow(env, aspect='auto', origin='lower')
 
 
+def truncZeros(frames):
+    zeros = 0
+    for i in range((frames.size)):
+        if frames[i] == 0:
+            zeros += 1
+            # longest pause
+            #if zeros == 8:
+
+                #frames[i - zeros + 1] = -zeros
+                #zeros = 0
+                #continue
+        elif zeros != 0 and frames[i] != 0:
+            # Encode pause to a negative integer
+            frames[i - zeros] = -zeros
+            zeros = 0
+
+    frames = frames[frames != 0]
+    return frames
+
 def mergerowsandencode(a):
     """
         Merges hits occuring at the same frame.
@@ -839,7 +859,7 @@ def mergerowsandencode(a):
         where 5 is decoded into char array 000000101 in the GRU-NN.
 
         Also the hits are assumed to be in tempo 120bpm and all the
-        frames not in 120bpm 16th notes are discarded.
+        frames not in 120bpm 16th notes are quantized.
 
         :param a: numpy array of hits
 
@@ -851,7 +871,7 @@ def mergerowsandencode(a):
 
         """
     #Sixteenth notes length in this sample rate and frame size
-    sixtDivider=SAMPLE_RATE/FRAME_SIZE/8
+    sixtDivider=SAMPLE_RATE/FRAME_SIZE/SXTH_DIV
 
     for i in range(len(a)):
         #Move frames to nearest sixteenth note
@@ -869,6 +889,8 @@ def mergerowsandencode(a):
         #Encode the hit into a charachter array, place 1 on the index of the drum #
         frames[index]=np.bitwise_or(frames[index],2**value)
     #return array of merged hits starting from the first occurring hit event
+    if ENCODE_PAUSE:
+        frames=truncZeros(frames)
     return frames
 
 def splitrowsanddecode(a):
@@ -888,13 +910,24 @@ def splitrowsanddecode(a):
         """
     decodedFrames=[]
     #multiplier to make tempo the global tempo after generation.
-    frameMul=SAMPLE_RATE/FRAME_SIZE/8
-    for i in range(len(a)):
-        #split integer values to a binary array
+    frameMul=SAMPLE_RATE/FRAME_SIZE/SXTH_DIV
+    #frameMul=1
+    i=0
+    pause=0
+    while i in range(len(a)):
+        #if we find a pause we add that to the pause offset
+        if ENCODE_PAUSE:
+            if a[i]<0:
+
+                pause+=(-1*a[i])-1
+                i+=1
+                continue
+        # split integer values to a binary array
         for j, k in enumerate(dec_to_binary(a[i])):
             if int(k)==1:
                 #store framenumber(index) and drum name to list, (nrOfDrums-1) to flip drums to right places,
-                decodedFrames.append([i*frameMul,abs(j-(nrOfDrums-1))])
+                decodedFrames.append([(i+pause)*frameMul,abs(j-(nrOfDrums-1))])
+        i+=1
     #return the split hits
     return decodedFrames
 
