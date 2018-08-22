@@ -126,7 +126,7 @@ df = pd.DataFrame(times, columns=[ 'time','inst'])
 df['duration'] = pd.Series(np.full((len(times)), 0, np.int64))
 df['vel'] = pd.Series(np.full((len(times)), 127, np.int64))
 bindf=pd.DataFrame(bintimes, columns=['inst'])
-bindf.to_csv('testbeat0.csv', index=True, header=False, sep="\t")
+bindf.to_csv('testbeat2.csv', index=True, header=False, sep="\t")
 df = df[df.time != 0]
 print('done!')
 

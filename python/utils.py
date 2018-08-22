@@ -17,7 +17,7 @@ MIDINOTE=36 #kickdrum in most systems
 THRESHOLD=0.0
 PROBABILITY_THRESHOLD=0.0
 DEFAULT_TEMPO=120
-DRUMKIT_PATH='../trainSamplet/'
+DRUMKIT_PATH='../oikeetsamplet/'
 REQUEST_RESULT=False
 DELTA=0.15
 midinotes=[36,38,42,46,50,43,51,49,44] #BD, SN, CHH, OHH, TT, FT, RD, CR, SHH, Here we need generality
@@ -228,7 +228,7 @@ def getTempomap(H):
         onsEnv=np.sum(H, axis=0)
     bdTempo = (librosa.beat.tempo(onset_envelope=onsEnv, sr=SAMPLE_RATE, hop_length=HOP_SIZE, ac_size=8,
                                   aggregate=None))
-    bdAvg = movingAverage(bdTempo, window=12000)
+    bdAvg = movingAverage(bdTempo, window=30000)
     avgTempo=np.mean(bdAvg)
     return tempoMask(bdAvg), avgTempo
 
@@ -274,8 +274,9 @@ def processLiveAudio(liveBuffer=None, peakList=None, classifier='LGB', Wpre=None
         if quant_factor > 0:
             TEMPO = DEFAULT_TEMPO
             changeFactor=avgTempo/TEMPO
-            qPeaks = quantize(peaks, tempomask, strength=quant_factor, tempo=TEMPO, conform=False)
-            qPeaks=qPeaks*changeFactor
+            qPeaks=timequantize(peaks, avgTempo, TEMPO)
+            #qPeaks = quantize(peaks, tempomask, strength=quant_factor, tempo=TEMPO, conform=False)
+            #qPeaks=qPeaks*changeFactor
         else:
             qPeaks = peaks
 
@@ -458,7 +459,6 @@ def superflux(spec_x=[], A=None,B=None):
         spec_x=np.outer(A,B)
 
     diff = np.zeros_like(spec_x.T)
-    #This affects the results
     size = (2,1)
     max_spec = maximum_filter(spec_x.T, size=size)
     diff[1:] = (spec_x.T[1:] - max_spec[: -1])
@@ -555,7 +555,12 @@ def tempoMask(tempos):
     invertedIndices = np.invert(indices.astype('bool'))
     return invertedIndices
 
-
+def timequantize(X, tempomap, tempo):
+    timeX=frame_to_time(X, sr=SAMPLE_RATE, hop_length=HOP_SIZE)
+    for i in range(X.shape[0]):
+        timeX[i]=timeX[i]*(tempomap/tempo)
+    frameX=time_to_frame(timeX, sr=SAMPLE_RATE, hop_length=HOP_SIZE)
+    return quantize(frameX,tempoMask(np.full(frameX.max()*2, tempo)))
 
 def quantize(X, mask, strength=1, tempo=DEFAULT_TEMPO, conform=False):
     """

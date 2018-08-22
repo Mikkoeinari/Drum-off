@@ -1,5 +1,5 @@
 import keras.backend as K
-from keras import  activations,initializers,regularizers,constraints
+from keras import  activations,regularizers,initializers,constraints
 from keras.layers import GRU,GRUCell
 
 def _generate_dropout_mask(ones, rate, training=None, count=1):
