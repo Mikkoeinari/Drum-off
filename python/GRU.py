@@ -14,14 +14,13 @@ import numpy as np
 from MGU import MGU
 from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras.models import Model, Sequential
-from keras.layers import Dense, GRU, BatchNormalization, GRUCell, Dropout
+from keras.layers import Dense, GRU, BatchNormalization, GRUCell, Dropout,TimeDistributed, Reshape
 
 # Thresholdit checkissä.
-seqLen =64
+seqLen =32
 layerSize = 128
 data = []
 d=pd.read_csv('funkydrummer.csv',header=None, sep="\t").values
-
 data=list(truncZeros(np.array(d[:, 1])))
 d=pd.read_csv('kakkosnelonen.csv',header=None, sep="\t").values
 data.extend(list(truncZeros(np.array(d[:, 1]))))
@@ -54,10 +53,10 @@ for i, word in enumerate(words):
     for t, char in enumerate(word):
         X[i, t, charI[char]] = 1
     y[i, charI[outchar[i]]] = 1
-X, y = resample(np.array(X), np.array(y), n_samples=len(words)*4, replace=True)
-
+X, y = resample(np.array(X), np.array(y), n_samples=len(words), replace=True)
 model = Sequential()
-model.add(MGU(layerSize, activation='elu',  # kernel_initializer='orthogonal',
+
+model.add(MGU(layerSize, activation='elu',#  kernel_initializer='lecun_normal',
               return_sequences=False, dropout=0.1, recurrent_dropout=0.1,
               input_shape=(seqLen, numDiffHits)))
 # model.add(MGU(layerSize,activation='selu', return_sequences=False))
@@ -65,21 +64,24 @@ model.add(MGU(layerSize, activation='elu',  # kernel_initializer='orthogonal',
 # model.add(BatchNormalization())
 model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
 
-# print(model.summary())
+print(model.summary())
 
 modelsaver = ModelCheckpoint(filepath="weights_testivedot2.hdf5", verbose=1, save_best_only=True)
 earlystopper = EarlyStopping(monitor="val_loss", patience=3, mode='auto')
 model.compile(loss='categorical_crossentropy', metrics=['accuracy'], optimizer='nadam')
 print("learning...")
-rerun = False
+rerun = True
 if rerun == True or not os.path.isfile('weights_testivedot2.hdf5'):
-    model.fit(X, y, batch_size=200, epochs=400
-              , callbacks=[modelsaver, earlystopper]
-              , validation_split=0.33
+    model.fit(X, y, batch_size=50, epochs=20
+              #, callbacks=[modelsaver, earlystopper]
+              #, validation_split=0.33
               , verbose=2)
 
 # #Vectorize a seed x
+model.save_weights("weights_testivedot2.hdf5")
 model.load_weights("weights_testivedot2.hdf5")
+
+
 # seed_index = random.randint(0, len(data) - seqLen - 1)
 
 seed = data[-seqLen:]
@@ -106,7 +108,7 @@ for i in range(2048):
         x[0, t, charI[k]] = 1
     pred = model.predict(x, verbose=0)
     # print (np.argmax(pred[0]))
-    next_index = sample(pred[0], 0.1)
+    next_index = sample(pred[0], 0.8)
     # next_index=np.argmax(pred[0])
     next_char = Ichar[next_index]
     generated.append(next_char)

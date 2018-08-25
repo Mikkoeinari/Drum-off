@@ -12,13 +12,12 @@
             source: 'atlas://data/images/defaulttheme/checkbox%s_%s' % (('_radio' if self.group else ''), ('on' if self.active else 'off'))
             size: 32, 32
             pos: int(self.center_x - 16), int(self.center_y - 16)
-
 <StartScreen>:
-
+    on_enter:root.SetText()
     FloatLayout:
         Label:
             id:status
-            text:   root.getStatus()
+            text:
             size_hint:(.5, .2)
             pos_hint: {"x": 0, 'y':0.8}
         Button:
@@ -49,34 +48,46 @@
     FloatLayout:
 
         Label:
-            text: 'Play Motherfucker!'
+            text: root.performMessage
             size_hint:(.5, .2)
             pos_hint: {"x": 0, 'y':0.8}
         Button:
-            text: 'Back to menu'
+            text: 'Back to menu!'
             size_hint:(.5, .2)
             pos_hint: {"x": .0, 'y':0.0}
             on_press: root.manager.current = 'MainMenu'
+        Button:
+            text: root.pBtnMessage
+            size_hint:(.5, .2)
+            pos_hint: {"x": .0, 'y':0.2}
+            on_press: root.performMessage='Get Ready!'
+            on_release: root.doPlayerTurn()
+        Button:
+            text: 'Computer'
+            size_hint:(.5, .2)
+            pos_hint: {"x": .0, 'y':0.4}
+            on_press: root.performMessage='WOHOO!'
+            on_release: root.doComputerTurn()
 <LoadScreen>:
     FloatLayout:
-
         Label:
             text: 'Choose a kit'
             size_hint:(.5, .2)
             pos_hint: {"x": 0, 'y':0.8}
-        FileChooser:
+        FileChooserListView:
             size_hint:(.5, .9)
             pos_hint: {"x": .5, 'y':0.1}
             id: fc
             path: "./Kits"
             rootpath:"./Kits"
-            FileChooserIconLayout
-            FileChooserListLayout
+            dirselect: True
+            filters:[root.is_dir]
+
         Button:
             text:   'Load'
             size_hint:(.5, .2)
             pos_hint: {"x": .0, 'y':0.6}
-            on_release: root.loadKit(txt.text)
+            on_release: root.loadKit(fc.selection)
         Button:
             size_hint:(.5, .2)
             pos_hint: {"x": .0, 'y':0.0}
@@ -89,7 +100,7 @@
             size_hint:(.25, .05)
             pos_hint: {"x": 0, 'y':0.95}
         TextInput:
-            id: txt
+            id: drumkit_name
             size_hint:(.5, .05)
             pos_hint: {"x": .5, 'y':0.95}
         Label:
@@ -174,11 +185,11 @@
             text:   'Start soundcheck'
             size_hint:(.5, .2)
             pos_hint: {"x": .0, 'y':0.2}
-            on_press: if(txt.text==''):txt.text='Default'
-            on_press: if(kdn.text==''):kdn.text='0'
-            on_press: if(snn.text==''):snn.text='0'
-            on_press: if(hhn.text==''):hhn.text='0'
-            on_press: if(hhn.text=='1'):hhn.text='3' #for ohh, chh and hh-stomp
+            on_press: if(drumkit_name.text==''):drumkit_name.text='Default'
+            on_press: if(kdn.text==''):kdn.text='1'
+            on_press: if(snn.text==''):snn.text='1'
+            on_press: if(hhn.text==''):hhn.text='1'
+            #on_press: if(hhn.text=='1'):hhn.text='3' #for ohh, chh and hh-stomp do this elsewhere
             on_press: if(ttn.text==''):ttn.text='0'
             on_press: if(rdn.text==''):rdn.text='0'
             on_press: if(crn.text==''):crn.text='0'
@@ -195,9 +206,37 @@
 
         Label:
             id:nDrums
-            text: root.getTxt()
+            text: root.drmMessage
             size_hint:(.5, .2)
             pos_hint: {"x": 0, 'y':0.8}
+        Label:
+            id:msg
+            text: root.performMessage
+            size_hint:(.5, .2)
+            pos_hint: {"x": 0.5, 'y':0.8}
+        Label:
+            id:drumNro
+            text:root.nrMessage
+            size_hint:(.5, .2)
+            pos_hint: {"x": 0.5, 'y':0.6}
+        Label:
+            id:finishStatus
+            text:root.finishStatus
+            size_hint:(.5, .2)
+            pos_hint: {"x": 0.5, 'y':0.2}
+        Button:
+            id:checkBtn
+            text: root.btnMessage
+            size_hint:(.5, .2)
+            pos_hint: {"x": .0, 'y':0.4}
+            on_press: root.performMessage='RECORDING DRUM Nr:{}'.format(root.nrMessage)
+            on_release: root.runSoundCheck(drumNro.text)
+        Button:
+            id:finishBtn
+            text: root.finishMessage
+            size_hint:(.5, .2)
+            pos_hint: {"x": .0, 'y':0.2}
+            on_release: root.finishSoundCheck()
         Button:
             text: 'Back to menu'
             size_hint:(.5, .2)
