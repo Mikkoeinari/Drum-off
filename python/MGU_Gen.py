@@ -46,7 +46,7 @@ def vectorizeCSV(filename, seqLen):
         for t, char in enumerate(word):
             X[i, t, charI[char]] = 1
         y[i, charI[outchar[i]]] = 1
-    return X,y, numDiffHits
+    return X,y, 200
 
 
 class drumSeq(Sequence):
@@ -69,7 +69,7 @@ class drumSeq(Sequence):
 
 
 
-X_train,y_train,numDiffHits=vectorizeCSV('kakkosnelonen.csv', seqLen)
+X_train,y_train,numDiffHits=vectorizeCSV('testbeat0.csv', seqLen)
 tr_gen = drumSeq(X_train,y_train,batch_size=200,shuffle=True)
 
 model = Sequential()

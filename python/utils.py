@@ -246,7 +246,6 @@ def liveTake():
     time.sleep(0.1)
     strm = madmom.audio.signal.Stream(sample_rate=SAMPLE_RATE, num_channels=1, frame_size=FRAME_SIZE, hop_size=HOP_SIZE)
     for i in strm:
-
         buffer[j:j + HOP_SIZE] = i[:HOP_SIZE]
         j += HOP_SIZE
         if j >= 2217920 or (not _ImRunning):
@@ -896,10 +895,10 @@ def truncZeros(frames):
         if frames[i] == 0:
             zeros += 1
             # longest pause
-            if zeros == 4:
-                frames[i - zeros + 1] = -zeros
-                zeros = 0
-                continue
+            #if zeros == 4:
+            #    frames[i - zeros + 1] = -zeros
+            #    zeros = 0
+            #    continue
         elif zeros != 0 and frames[i] != 0:
             # Encode pause to a negative integer
             frames[i - zeros] = -zeros

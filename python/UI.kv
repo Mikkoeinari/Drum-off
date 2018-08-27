@@ -51,6 +51,10 @@
             text: root.performMessage
             size_hint:(.5, .2)
             pos_hint: {"x": 0, 'y':0.8}
+        Label:
+            text: root.lastMessage
+            size_hint:(.5, .2)
+            pos_hint: {"x": 0.5, 'y':0.6}
         Button:
             text: 'Back to menu!'
             size_hint:(.5, .2)
@@ -68,6 +72,12 @@
             pos_hint: {"x": .0, 'y':0.4}
             on_press: root.performMessage='WOHOO!'
             on_release: root.doComputerTurn()
+        Button:
+            text: 'Play back last take'
+            size_hint:(.5, .2)
+            pos_hint: {"x": .0, 'y':0.6}
+            on_press: root.performMessage='playing...!'
+            on_release: root.playBackLast()
 <LoadScreen>:
     FloatLayout:
         Label:

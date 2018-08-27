@@ -18,12 +18,12 @@ from kivy.properties import StringProperty
 from kivy.clock import Clock, mainthread
 import drumoff
 import utils
-from os import mkdir
+from os import mkdir, listdir
 import threading
 from os.path import join, isdir
 import time
-
-
+from drumsynth import playFile
+import GRU as mgu
 # import GRU
 
 
@@ -32,6 +32,7 @@ class CCheckBox(CheckBox):
 
 
 Factory.register('CCheckBox', cls=CCheckBox)
+#model=mgu.initModel()
 
 drumNames = {'kick': 0,  # only one allowed
              'snare': 1,  # only one allowed
@@ -166,12 +167,39 @@ class PlayScreen(Screen):
     pBtnMessage = StringProperty()
     cBtnMessage = StringProperty()
     turnMessage = StringProperty()
-
+    lastMessage = StringProperty()
     def __init__(self, **kwargs):
         super(PlayScreen, self).__init__(**kwargs)
         self.performMessage = 'Press play to start'
         self.pBtnMessage = 'Play'
         self.turnMessage = 'Player'
+        self.lastMessage = ''
+
+    def playBackLast(self):
+        if(self.lastMessage==''):
+            return None
+        fullPath = self.lastMessage
+
+        def callback():
+            try:
+                playFile(fullPath)
+            except Exception as e:
+                print(e)
+        t = threading.Thread(target=callback)
+        t.start()
+
+    def doComputerTurn(self):
+        if (self.lastMessage == ''):
+            return None
+        fullPath = self.lastMessage
+        def callback():
+            try:
+                self.lastMessage = mgu.generatePart(mgu.train(fullPath))
+            except Exception as e:
+                print(e)
+        t = threading.Thread(target=callback)
+        t.start()
+        print ('c.puter')
 
     def doPlayerTurn(self):
         app = App.get_running_app()
@@ -179,7 +207,7 @@ class PlayScreen(Screen):
         fullPath = './Kits/{}'.format(app.KitName)
         utils._ImRunning = False
 
-        if self.turnMessage == 'Computer' or self.pBtnMessage == 'Stop':
+        if self.pBtnMessage == 'Stop':
             self.btnMessage = 'Play'
             return
         else:
@@ -189,7 +217,8 @@ class PlayScreen(Screen):
         time.sleep(1)
         def callback():
             try:
-                drumoff.playLive(fullPath)
+                self.lastMessage=drumoff.playLive(fullPath)
+                self.pBtnMessage = 'Play'
             except Exception as e:
                 print(e)
         t = threading.Thread(target=callback)

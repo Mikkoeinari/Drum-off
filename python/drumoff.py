@@ -116,10 +116,11 @@ def playLive(drumkit_path):
     df['duration'] = pd.Series(np.full((len(times)), 0, np.int64))
     df['vel'] = pd.Series(np.full((len(times)), 127, np.int64))
     bindf = pd.DataFrame(bintimes, columns=['inst'])
-    bindf.to_csv('{}/takes/testbeat{}.csv'.format(drumkit_path, time()), index=True, header=False, sep="\t")
+    fileName='{}/takes/testbeat{}.csv'.format(drumkit_path, time())
+    bindf.to_csv(fileName, index=True, header=False, sep="\t")
     df = df[df.time != 0]
     print('done!')
-    CreateMidi = True
+    CreateMidi = False
     if CreateMidi:
         madmom.io.midi.write_midi(df.values, 'midi_testit_.mid')
         generated = splitrowsanddecode(bintimes)
@@ -132,7 +133,7 @@ def playLive(drumkit_path):
         gen['duration'] = pd.Series(np.full((len(generated)), 0, np.int64))
         gen['vel'] = pd.Series(np.full((len(generated)), 127, np.int64))
         madmom.io.midi.write_midi(gen.values, 'midi_testit_enc_dec0.mid')
-
+    return fileName
     print('Processing time:%0.2f' % (time() - t0))
 
 
