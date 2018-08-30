@@ -6,7 +6,7 @@ t0 = time()
 import pickle
 
 # live audio
-print("Souncheck")
+#print("Souncheck")
 
 # fpr = np.zeros((proc.shape[1], nrOfDrums * 2 * K, ConvFrames))
 # drums = []
@@ -19,7 +19,7 @@ highEmph = [0, 0, 0, 1, 0, 0, 1, 1, 0]
 ###Tässä pitää napata talteen framet/sample
 def soundcheckDrum(drumkit_path, drumId):
     CC1, freqtemps, threshold, buffer = getStompTemplate(nrOfPeaks)
-    print('jessus')
+    #print('jessus')
     madmom.io.audio.write_wave_file(buffer, '{}/drum{}.wav'.format(drumkit_path, drumId), sample_rate=SAMPLE_RATE)
     # try:
     #
@@ -41,11 +41,12 @@ def soundcheckDrum(drumkit_path, drumId):
 
 def initKit(drumkit_path, nrOfDrums):
     global drums, fpr
+    #print(nrOfDrums)
     fpr = np.zeros((proc.shape[1], nrOfDrums * 2 * K, ConvFrames))
     drums = []
     for i in range(nrOfDrums):
 
-        buffer = madmom.audio.Signal("{}/drum{}.wav".format(drumkit_path, i + 1), frame_size=FRAME_SIZE,
+        buffer = madmom.audio.Signal("{}/drum{}.wav".format(drumkit_path, i), frame_size=FRAME_SIZE,
                                      hop_size=HOP_SIZE)
         CC1, freqtemps, threshold = getPeaksFromBuffer(buffer, 1, nrOfPeaks)
         for j in range(K):
@@ -188,25 +189,26 @@ def soundCheck(drumkit_path, nrOfDrums, drumkit_drums):
 # for i in drums[:nrOfDrums]:
 #     for k in range(K):
 #         peakList.append(detector(i, hitlist=None))
-def play():
+def play(filePath):
     try:
 
-        buffer = madmom.audio.Signal("{}drumBeatAnnod.wav".format(DRUMKIT_PATH), frame_size=FRAME_SIZE,
+        buffer = madmom.audio.Signal("{}drumBeatAnnod.wav".format(filePath), frame_size=FRAME_SIZE,
                                      hop_size=HOP_SIZE)
 
 
     except Exception as e:
         print(e)
         print('jotain meni vikaan!')
-    plst = processLiveAudio(liveBuffer=buffer, peakList=drums, Wpre=fpr, quant_factor=1.0)
-    print('NMFDtime:%0.2f' % (time() - t0))
-    annotated = False
+    t0=time()
+    plst = processLiveAudio(liveBuffer=buffer, peakList=drums, Wpre=fpr, quant_factor=0.0)
+    print('\nNMFDtime:%0.2f' % (time() - t0))
+    annotated = True
     if (annotated):
         # print f-score:
         print('\n\n')
-        hits = pd.read_csv("{}midiBeatAnnod.csv".format(DRUMKIT_PATH), sep="\t", header=None)
+        hits = pd.read_csv("{}midiBeatAnnod.csv".format(filePath), sep="\t", header=None)
         precision, recall, fscore, true_tot = 0, 0, 0, 0
-        for i in plst:
+        for i in plst[:-1]:
             predHits = frame_to_time(i.get_hits())
 
             # print(predHits, predHits.shape[0] )
@@ -231,6 +233,7 @@ def play():
         print('Precision: {}'.format(precision / true_tot))
         print('Recall: {}'.format(recall / true_tot))
         print('F-score: {}'.format(fscore / true_tot))
+
 
     '''
     todo: Normalize freq -bands locally to adjust to signal level changing during performance
@@ -276,3 +279,7 @@ def play():
     madmom.io.midi.write_midi(gen.values, 'midi_testit_enc_dec0.mid')
 
     print('Processing time:%0.2f' % (time() - t0))
+    return True
+#initKit('../DXSamplet/',9)
+loadKit('../DXSamplet/')
+play('../DXSamplet/')

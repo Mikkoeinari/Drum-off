@@ -22,7 +22,8 @@ from os import mkdir, listdir
 import threading
 from os.path import join, isdir
 import time
-from drumsynth import playFile
+#from drumsynth import playFile
+import drumsynth
 import GRU as mgu
 # import GRU
 
@@ -168,21 +169,31 @@ class PlayScreen(Screen):
     cBtnMessage = StringProperty()
     turnMessage = StringProperty()
     lastMessage = StringProperty()
+    lastGenPart = StringProperty()
+    playBackMessage = StringProperty()
     def __init__(self, **kwargs):
         super(PlayScreen, self).__init__(**kwargs)
         self.performMessage = 'Press play to start'
         self.pBtnMessage = 'Play'
         self.turnMessage = 'Player'
         self.lastMessage = ''
+        self.lastGenPart = ''
+        self.playBackMessage = ''
 
     def playBackLast(self):
         if(self.lastMessage==''):
             return None
         fullPath = self.lastMessage
-
+        if self.playBackMessage=='Play Back Computer Performance':
+            fullPath=self.lastGenPart
+        if self.playBackMessage=='Stop Playback':
+            drumsynth._imRunning=False
+            self.playBackMessage = 'Play Back Kumpi ny sit, Performance'
+            return None
         def callback():
             try:
-                playFile(fullPath)
+                self.playBackMessage = 'Stop Playback'
+                drumsynth.playFile(fullPath)
             except Exception as e:
                 print(e)
         t = threading.Thread(target=callback)
@@ -193,8 +204,9 @@ class PlayScreen(Screen):
             return None
         fullPath = self.lastMessage
         def callback():
-            try:
-                self.lastMessage = mgu.generatePart(mgu.train(fullPath))
+            try:##INIT MODEL!!
+                self.lastGenPart = mgu.generatePart(mgu.train(fullPath))
+                self.playBackMessage = 'Play Back Computer Performance'
             except Exception as e:
                 print(e)
         t = threading.Thread(target=callback)
@@ -206,6 +218,10 @@ class PlayScreen(Screen):
         print(app.KitName, sum(app.NrOfDrums))
         fullPath = './Kits/{}'.format(app.KitName)
         utils._ImRunning = False
+        try:
+            mkdir('{}/takes/'.format(fullPath))
+        except Exception as e:
+            pass
 
         if self.pBtnMessage == 'Stop':
             self.btnMessage = 'Play'
@@ -218,6 +234,7 @@ class PlayScreen(Screen):
         def callback():
             try:
                 self.lastMessage=drumoff.playLive(fullPath)
+                self.playBackMessage = 'Play Back Last Performance'
                 self.pBtnMessage = 'Play'
             except Exception as e:
                 print(e)

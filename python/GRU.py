@@ -7,6 +7,7 @@ t0 = time()
 # os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 import os
 import sys
+import tensorflow as tf
 
 sys.setrecursionlimit(10000)
 from sklearn.utils import resample
@@ -19,8 +20,10 @@ from keras.utils import Sequence
 # Thresholdit checkissä.
 seqLen =32
 numDiffHits=100
+partLength=0
 layerSize = 128
 Ichar={}
+global model, graph
 # data = []
 # d=pd.read_csv('funkydrummer.csv',header=None, sep="\t").values
 # data=list(truncZeros(np.array(d[:, 1])))
@@ -58,12 +61,13 @@ Ichar={}
 # X, y = resample(np.array(X), np.array(y), n_samples=len(words), replace=True)
 
 def vectorizeCSV(filename, seqLen=32):
-    global numDiffHits, charI, Ichar
+    global numDiffHits, charI, Ichar, partLength
     data = []
     d = pd.read_csv(filename, header=None, sep="\t").values
     data.extend(list(d[:, 1]))
 
     print('corpus length:', len(data))
+    partLength=len(data)
 
     vocab = data
     diffHits = set(data)
@@ -71,7 +75,7 @@ def vectorizeCSV(filename, seqLen=32):
 
     charI = dict((c, i) for i, c in enumerate(diffHits))
     Ichar = dict((i, c) for i, c in enumerate(diffHits))
-    numDiffHits = len(Ichar)
+    #numDiffHits = len(Ichar)
     print('total chars:', numDiffHits)
     words = []
     outchar = []
@@ -82,17 +86,51 @@ def vectorizeCSV(filename, seqLen=32):
     print('Vectorization...')
     X = np.zeros((len(words), seqLen, numDiffHits), dtype=np.bool)
     y = np.zeros((len(words), numDiffHits), dtype=np.bool)
+
     for i, word in enumerate(words):
         for t, char in enumerate(word):
-            X[i, t, charI[char]] = 1
-        y[i, charI[outchar[i]]] = 1
+            try:
+                X[i, t, charI[char]] = 1
+            except:
+                pass
+        try:
+            y[i, charI[outchar[i]]] = 1
+        except:
+            pass
     X, y = resample(np.array(X), np.array(y), n_samples=2000, replace=True)
     return X,y, numDiffHits
 
+#Just the hits: Not working
+def Vectorize(filename, seqLen=32):
+    data = []
+    d = pd.read_csv(filename, header=None, sep="\t").values
+    data.extend(list(d[:, 1]))
+    def binarize(a):
+        if a<0:
+            return map(int,['1', '0']+list(format(a, "0{}b".format(nrOfDrums)))[1:])
+        else:
+            return map(int,list(format(a, "0{}b".format(nrOfDrums+1))))
+    def binarize2(a):
+        return [x for x in bin(a)[2:]]
+    data=[list(binarize(i)) for i in data]
+    print (data)
+    words = []
+    outchar = []
+    print('corpus length:', len(data))
+    for i in range(0, len(data) - seqLen, 1):
+        words.append(data[i: i + seqLen])
+        outchar.append(data[i + seqLen])
+    print('nb sequences:', len(words))
+    X = np.array(words)
+    y = np.array(outchar)
+    print(X.shape)
+    X, y = resample(np.array(X), np.array(y), n_samples=len(words), replace=True)
+    return X, y, numDiffHits
 
 def initModel():
+    global model
     model = Sequential()
-    print (numDiffHits )
+    #print (numDiffHits )
     model.add(MGU(layerSize, activation='elu',#  kernel_initializer='lecun_normal',
                   return_sequences=False, dropout=0.1, recurrent_dropout=0.1,
                   input_shape=(seqLen, numDiffHits)))
@@ -100,12 +138,16 @@ def initModel():
     model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
     print(model.summary())
     model.compile(loss='categorical_crossentropy', metrics=['accuracy'], optimizer='nadam')
+    model.load_weights("./Kits/weights_testivedot2.hdf5")
+    global graph
+    graph = tf.get_default_graph()
     return model
+
 
 #print("learning...")
 #rerun = True
 #if rerun == True or not os.path.isfile('weights_testivedot2.hdf5'):
-def train( filename,model=None):
+def train( filename):
     class drumSeq(Sequence):
 
         def __init__(self, X_train, y_train, batch_size=200, shuffle=True):
@@ -128,34 +170,36 @@ def train( filename,model=None):
     earlystopper = EarlyStopping(monitor="val_loss", patience=3, mode='auto')
     X_train, y_train, numDiffHits = vectorizeCSV(filename, seqLen)
     tr_gen = drumSeq(X_train, y_train, batch_size=200, shuffle=True)
-    if model==None:
-        model=getModel()
+
+    #model=getModel()
     #model.fit_generator(generator=tr_gen, steps_per_epoch=200, max_queue_size=10,callbacks=[modelsaver, earlystopper],
     #                    workers=8, use_multiprocessing=True, verbose=1)
-    model.fit(X_train, y_train, batch_size=50, epochs=20,
-                callbacks=[modelsaver, earlystopper],
-                validation_split=0.33
-               , verbose=2)
+    with graph.as_default():
+        model.fit(X_train, y_train, batch_size=50, epochs=20,
+                    callbacks=[modelsaver, earlystopper],
+                    validation_split=0.33,
+                    verbose=2)
 
-    # #Vectorize a seed x
-    model.save_weights("./Kits/weights_testivedot2.hdf5")
-    return X_train[-1], model
-
-def getModel(model=None):
-    model=initModel()
-    try:
-        model.load_weights("./Kits/weights_testivedot2.hdf5")
-    except Exception as e:
-        return model
-    return model
+        # #Vectorize a seed x
+        model.save_weights("./Kits/weights_testivedot2.hdf5")
+    return X_train[-1]
+#
+# def getModel(model=None):
+#     try:
+#         model.load_weights("./Kits/weights_testivedot2.hdf5")
+#     except Exception as e:
+#         print(e)
+#         model = initModel()
+#         return model
+#     return model
 
 
 # seed_index = random.randint(0, len(data) - seqLen - 1)
-def generatePart(data, model=None):
-    if model==None:
-        model=getModel()
-    #print(data[0])
-    seed = data[0]
+def generatePart(data):
+
+    #model=getModel()
+    print(data.shape)
+    seed = data
     data=seed
     #print('Model learning time:%0.2f' % (time() - t0))
     #t0 = time()
@@ -173,7 +217,7 @@ def generatePart(data, model=None):
         return np.argmax(np.random.multinomial(1, a, 1))
 
 
-    for i in range(2048):
+    for i in range(partLength):
         # x = np.zeros((1, seqLen, numDiffHits,1))
         #x = np.zeros((1, seqLen, numDiffHits))
         #for t, k in enumerate(seed):
@@ -181,7 +225,8 @@ def generatePart(data, model=None):
         #print('here')
         data=data.reshape(1,seqLen, numDiffHits)
         #print(data.shape)
-        pred = model.predict(data, verbose=0)
+        with graph.as_default():
+            pred = model.predict(data, verbose=0)
         # print (np.argmax(pred[0]))
         next_index = sample(pred[0], 0.8)
         # next_index=np.argmax(pred[0])
@@ -213,4 +258,6 @@ def generatePart(data, model=None):
     gen['vel'] = pd.Series(np.full((len(generated)), 127, np.int64))
 
     madmom.io.midi.write_midi(gen.values, 'midi_testit_gen.mid')
+model=initModel()
+#vectorizeCSV('./Kits/Default/takes/testbeat1535385910.271116.csv')
 #generatePart(train('./Kits/Default/takes/testbeat1535385910.271116.csv'))

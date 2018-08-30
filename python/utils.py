@@ -1,15 +1,12 @@
+import time
+import librosa
 import madmom
 import numpy as np
-from scipy.ndimage.filters import median_filter, maximum_filter
-# from scipy import signal
-from scipy.signal import convolve
-from sklearn.cluster import KMeans
-from scipy.signal import argrelmax
-# import scipy
-import librosa
-# import matplotlib.pyplot as plt
 import pandas as pd
-import time
+import scipy
+from scipy.ndimage.filters import median_filter, maximum_filter
+from scipy.signal import argrelmax
+from sklearn.cluster import KMeans
 
 FRAME_SIZE = 2 ** 10
 HOP_SIZE = 2 ** 9
@@ -19,11 +16,11 @@ MIDINOTE = 36  # kickdrum in most systems
 THRESHOLD = 0.0
 PROBABILITY_THRESHOLD = 0.0
 DEFAULT_TEMPO = 120
-DRUMKIT_PATH = '../train Samplet/'
+DRUMKIT_PATH = '../trainSamplet/'
 REQUEST_RESULT = False
 DELTA = 0.15
 midinotes = [36, 38, 42, 46, 50, 43, 51, 49, 44]  # BD, SN, CHH, OHH, TT, FT, RD, CR, SHH, Here we need generality
-nrOfDrums = 9
+nrOfDrums = 24  # Maximum kit size
 nrOfPeaks = 32
 ConvFrames = 10
 K = 1
@@ -266,9 +263,10 @@ def getTempomap(H):
     return tempoMask(bdAvg), avgTempo
 
 
-def processLiveAudio(liveBuffer=None, peakList=None, classifier='LGB', Wpre=None, quant_factor=0.0):
+def processLiveAudio(liveBuffer=None, peakList=None, Wpre=None, quant_factor=0.0):
     filt_spec = get_preprocessed_spectrogram(liveBuffer)
     iters = 1.
+
     for i in range(int(iters)):
         # Xpost, W, H = semi_adaptive_NMFB(filt_spec.T,basis,n_iterations=2000,
         #                             alternate=False, adaptive=False, leeseung='bat', div=0, sp=0)
@@ -306,7 +304,6 @@ def processLiveAudio(liveBuffer=None, peakList=None, classifier='LGB', Wpre=None
 
         if quant_factor > 0:
             TEMPO = DEFAULT_TEMPO
-            changeFactor = avgTempo / TEMPO
             qPeaks = timequantize(peaks, avgTempo, TEMPO)
             # qPeaks = quantize(peaks, tempomask, strength=quant_factor, tempo=TEMPO, conform=False)
             # qPeaks=qPeaks*changeFactor
@@ -318,11 +315,10 @@ def processLiveAudio(liveBuffer=None, peakList=None, classifier='LGB', Wpre=None
         # else:
         #    peakList[i].concat_hits(qPeaks)
 
-    duplicateResolution = 0.05
-
-    for i in peakList:
-        precHits = frame_to_time(i.get_hits())
-        i.set_hits(time_to_frame(cleanDoubleStrokes(precHits, resolution=duplicateResolution)))
+    # duplicateResolution = 0.05
+    # for i in peakList:
+    #    precHits = frame_to_time(i.get_hits())
+    #    i.set_hits(time_to_frame(cleanDoubleStrokes(precHits, resolution=duplicateResolution)))
 
     return peakList
 
@@ -456,7 +452,7 @@ def playSample(data):
                     output=True)
     # play stream (3)
     f = 0
-    print(len(data))
+    # print(len(data))
     while data != '':
         stream.write(data[f])
         f += 1
@@ -491,7 +487,7 @@ def superflux(spec_x=[], A=None, B=None):
     if A != None:
         kernel = np.hamming(8)
 
-        B = convolve(B, kernel, 'same')
+        B = np.convolve(B, kernel, 'same')
         B = B / max(B)
         spec_x = np.outer(A, B)
 
@@ -691,7 +687,7 @@ def movingAverage(x, window=500):
     return median_filter(x, size=(window))
 
 
-def pick_onsets(F, delta=0):
+def pick_onsets(F, delta=0.):
     """
     Simple onset peak picking algorithm, picks local maxima that are
     greater than median of local maxima + correction factor.
@@ -786,62 +782,77 @@ def NMFD(X, iters=50, Wpre=[]):
        - H : Activations of different drums in X
 
     """
-    # epsilon to ensure non-negativity in meny places
+    # epsilon, added to matrix elements to ensure non-negativity in matrices
     eps = 10 ** -18
 
     # data size
-    F = X.shape[0]
-    N = X.shape[1]
-
-    # Initial random H
-    H = np.random.rand(Wpre.shape[1], N)
-
+    M, N = X.shape
     W = Wpre
-    R = W.shape[1]
-    T = W.shape[2]
+    M, R, T = W.shape
+    # Initial random H
+    H = np.ones((R, N))
 
-    One = np.ones((F, N))
-    Lambda = np.zeros((F, N))
+    repMat = np.ones((M, N))
+    Lambda = np.zeros((M, N))
 
-    cost = np.zeros(iters)
+    err = np.zeros(iters)
 
     # KLDivergence for cost calculation
-    def D(x, y):
-        return (x * np.log(x / y + eps) + (y - x)).sum()
+    def KLDiv(x, y, LambHat):
+        return (x * np.log(LambHat) + (y - x)).sum()
 
+    def computeConv(A, B):
+        ABC = np.zeros((B.shape[0], A.shape[1]))
+        for m in range(M):
+            for r in range(R):
+                ABC[m, :] += np.convolve(B[m, r, :], A[r, :])[0:ABC.shape[1]]
+        return ABC
+
+    Runner = 1
+    mu = 0.275
     for i in range(iters):
         if REQUEST_RESULT:
             return H
-        print('\rNMFD iter: %d' % (i + 1), end='', flush=True);
-        # computation of Lambda
-        Lambda[:] = 0
-        for f in range(F):
-            for z in range(R):
-                cv = np.convolve(W[f, z, :], H[z, :])
-                Lambda[f, :] = Lambda[f, :] + cv[0:Lambda.shape[1]]
+        print('\rNMFD iter: %d' % (i + 1), end='', flush=True)
 
-        # update of H for each value of t (which will be averaged)
-        VonLambda = X / (Lambda + eps)
+        if i == 0:
+            Lambda = computeConv(H, W)
+            LambHat = X / Lambda+eps
 
-        # cost[it] = (X * np.log(X / Lambda + eps) - X + Lambda).sum()
+        if Runner == 0:
+            shifter = np.zeros((M, N + T))
+            shifter[:, :-T] = LambHat
+            Hhat = np.zeros((R, N))
+            for t in range(T):
+                Wt = W[:, :, t].T
+                Hhat += Wt @ shifter[:, t: t + N] / (Wt @ repMat+eps)
+            H = H * Hhat
 
-        Hu = np.zeros((R, N))
-        Hd = np.zeros((R, N))
-        for z in range(R):
-            for f in range(F):
-                cv = np.convolve(VonLambda[f, :], np.flipud(W[f, z, :]))
-                Hu[z, :] = Hu[z, :] + cv[T - 1:T + N - 1]
-                cv = np.convolve(One[f, :], np.flipud(W[f, z, :]))
-                Hd[z, :] = Hd[z, :] + cv[T - 1:T + N - 1]
+        if Runner == 1:
+            # From https://github.com/romi1502/NMF-matlab
+            # Copyright (C) 2015 Romain Hennequin
+            # Seems to improve results a little! But is a little slower
+            # This seems to be due to the fact that each frequency sub band is donvoluted separately,
+            # not matrix multiplied as a whole 1d vs 2d convolution.
+            Hu = np.zeros((R, N))
+            Hd = np.zeros((R, N))
+            for r in range(R):
+                for m in range(M):
+                    Hu[r, :] += np.convolve(LambHat[m, :], np.flipud(W[m, r, :]))[T - 1:]
+                    Hd[r, :] += np.convolve(repMat[m, :], np.flipud(W[m, r, :]))[T - 1:]
+            H = H * Hu / (Hd+mu)
 
-        # average along t
-        H = H * Hu / Hd
+        # precompute for error and next round
+        Lambda = computeConv(H, W)
+        LambHat = X / Lambda+eps
 
-        cost[i] = D(X, Lambda)
-        if (i >= 2):
-            if (abs(cost[i] - cost[i - 1]) / (cost[1] - cost[i]) + eps) < 0.0001:
+        # 2*eps to ensure the eps don't cancel out each other in the division.
+        err[i] = KLDiv(X + eps, Lambda + 2 * (eps), LambHat)
+
+        if (i >= 1):
+            errDiff = (abs(err[i] - err[i - 1]) / (err[1] - err[i]))
+            if errDiff < 0.0005 or err[i] > err[i - 1]:
                 break
-
     return H
 
 
@@ -874,12 +885,24 @@ def acceptHit(value, hits):
     :param hits: binary string, The hits already found in that location
     :return: boolean, if it is ok to annotate this drum here.
     """
+    # Tähän pitää tehä se et vaan vaikka 3 iskua yhteen frameen!
+    # Pitää vielä testata
+
+    sum = 0
+    for i in range(nrOfDrums):
+        if np.bitwise_and(i, hits):
+            sum += 1
+        if sum > 3:
+            return False
+    ##Voiko tän jättää pois??
     offendingHits = np.array([
         value == 2 and np.bitwise_and(3, hits),
         value == 2 and np.bitwise_and(8, hits),
         value == 3 and np.bitwise_and(2, hits),
         value == 3 and np.bitwise_and(7, hits),
         value == 6 and np.bitwise_and(7, hits),
+        value == 6 and np.bitwise_and(3, hits),
+        value == 6 and np.bitwise_and(2, hits),
         value == 7 and np.bitwise_and(6, hits),
         value == 8 and np.bitwise_and(2, hits),
         value == 8 and np.bitwise_and(3, hits)
@@ -895,7 +918,7 @@ def truncZeros(frames):
         if frames[i] == 0:
             zeros += 1
             # longest pause
-            #if zeros == 4:
+            # if zeros == 4:
             #    frames[i - zeros + 1] = -zeros
             #    zeros = 0
             #    continue
