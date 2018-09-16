@@ -200,15 +200,15 @@ def play(filePath):
         print(e)
         print('jotain meni vikaan!')
     t0=time()
-    plst = processLiveAudio(liveBuffer=buffer, peakList=drums, Wpre=fpr, quant_factor=0.0)
+    plst = processLiveAudio(liveBuffer=buffer, peakList=drums, Wpre=fpr, quant_factor=1.0)
     print('\nNMFDtime:%0.2f' % (time() - t0))
-    annotated = True
+    annotated = False
     if (annotated):
         # print f-score:
         print('\n\n')
         hits = pd.read_csv("{}midiBeatAnnod.csv".format(filePath), sep="\t", header=None)
         precision, recall, fscore, true_tot = 0, 0, 0, 0
-        for i in plst[:-1]:
+        for i in plst:
             predHits = frame_to_time(i.get_hits())
 
             # print(predHits, predHits.shape[0] )

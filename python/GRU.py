@@ -17,6 +17,8 @@ from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras.models import Model, Sequential
 from keras.layers import Dense, GRU, BatchNormalization, GRUCell, Dropout,TimeDistributed, Reshape
 from keras.utils import Sequence
+from keras.optimizers import nadam
+from collections import Counter
 # Thresholdit checkissä.
 seqLen =32
 numDiffHits=100
@@ -70,13 +72,17 @@ def vectorizeCSV(filename, seqLen=32):
     partLength=len(data)
 
     vocab = data
-    diffHits = set(data)
+    counts = Counter(data)
+    new_list = sorted(data, key=counts.get, reverse=True)
+    diffHits = set(new_list)
+    print(new_list)
+    print('total chars:', len(diffHits))
     data = vocab
 
     charI = dict((c, i) for i, c in enumerate(diffHits))
     Ichar = dict((i, c) for i, c in enumerate(diffHits))
     #numDiffHits = len(Ichar)
-    print('total chars:', numDiffHits)
+    print('max chars:', numDiffHits)
     words = []
     outchar = []
     for i in range(0, len(data) - seqLen, 1):
@@ -89,6 +95,8 @@ def vectorizeCSV(filename, seqLen=32):
 
     for i, word in enumerate(words):
         for t, char in enumerate(word):
+            #If we find a hit not in vocabulary of #numDiffHits we simply omit that
+            #Pitääkö järjestää??
             try:
                 X[i, t, charI[char]] = 1
             except:
@@ -137,8 +145,12 @@ def initModel():
 
     model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
     print(model.summary())
-    model.compile(loss='categorical_crossentropy', metrics=['accuracy'], optimizer='nadam')
-    model.load_weights("./Kits/weights_testivedot2.hdf5")
+    nad=nadam(lr=0.001)
+    model.compile(loss='categorical_crossentropy', metrics=['accuracy'], optimizer=nad)
+    try:
+        model.load_weights("./Kits/weights_testivedot2.hdf5")
+    except:
+        pass
     global graph
     graph = tf.get_default_graph()
     return model
@@ -198,7 +210,7 @@ def train( filename):
 def generatePart(data):
 
     #model=getModel()
-    print(data.shape)
+    #print(data.shape)
     seed = data
     data=seed
     #print('Model learning time:%0.2f' % (time() - t0))

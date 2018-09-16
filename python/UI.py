@@ -188,7 +188,10 @@ class PlayScreen(Screen):
             fullPath=self.lastGenPart
         if self.playBackMessage=='Stop Playback':
             drumsynth._imRunning=False
-            self.playBackMessage = 'Play Back Kumpi ny sit, Performance'
+            if self.turnMessage=='computer':
+                self.playBackMessage = 'Play Back Computer Performance'
+            else:
+                self.playBackMessage = 'Play Back Player Performance'
             return None
         def callback():
             try:
@@ -207,6 +210,7 @@ class PlayScreen(Screen):
             try:##INIT MODEL!!
                 self.lastGenPart = mgu.generatePart(mgu.train(fullPath))
                 self.playBackMessage = 'Play Back Computer Performance'
+                self.turnMessage=('computer')
             except Exception as e:
                 print(e)
         t = threading.Thread(target=callback)
@@ -235,6 +239,7 @@ class PlayScreen(Screen):
             try:
                 self.lastMessage=drumoff.playLive(fullPath)
                 self.playBackMessage = 'Play Back Last Performance'
+                self.turnMessage=('player')
                 self.pBtnMessage = 'Play'
             except Exception as e:
                 print(e)

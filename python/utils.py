@@ -1,11 +1,13 @@
 import time
+
 import librosa
 import madmom
 import numpy as np
 import pandas as pd
 import scipy
+from scipy import fftpack as fft
 from scipy.ndimage.filters import median_filter, maximum_filter
-from scipy.signal import argrelmax
+from scipy.signal import argrelmax,stft
 from sklearn.cluster import KMeans
 
 FRAME_SIZE = 2 ** 10
@@ -15,7 +17,7 @@ FREQUENCY_PRE = np.ones((24))  # [0,16384]#0-2^14
 MIDINOTE = 36  # kickdrum in most systems
 THRESHOLD = 0.0
 PROBABILITY_THRESHOLD = 0.0
-DEFAULT_TEMPO = 120
+DEFAULT_TEMPO = 60
 DRUMKIT_PATH = '../trainSamplet/'
 REQUEST_RESULT = False
 DELTA = 0.15
@@ -256,11 +258,12 @@ def getTempomap(H):
         onsEnv = H
     else:
         onsEnv = np.sum(H, axis=0)
-    bdTempo = (librosa.beat.tempo(onset_envelope=onsEnv, sr=SAMPLE_RATE, hop_length=HOP_SIZE, ac_size=8,
-                                  aggregate=None))
-    bdAvg = movingAverage(bdTempo, window=30000)
-    avgTempo = np.mean(bdAvg)
-    return tempoMask(bdAvg), avgTempo
+    bdTempo = (librosa.beat.tempo(onset_envelope=onsEnv, sr=SAMPLE_RATE, hop_length=HOP_SIZE,
+                                  ac_size=2))#aggregate=None))
+    #bdAvg = movingAverage(bdTempo, window=30000)
+    #avgTempo = np.mean(bdAvg)
+    #return tempoMask(bdAvg), avgTempo
+    return bdTempo
 
 
 def processLiveAudio(liveBuffer=None, peakList=None, Wpre=None, quant_factor=0.0):
@@ -280,9 +283,8 @@ def processLiveAudio(liveBuffer=None, peakList=None, Wpre=None, quant_factor=0.0
     Wpre = (WTot) / iters
     H = (HTot) / iters
 
-    if quant_factor > 0:
-        tempomask, avgTempo = getTempomap(H[:2])
 
+    onsets=None
     for i in range(len(peakList)):
         for k in range(K):
             index = i * K + k
@@ -290,25 +292,21 @@ def processLiveAudio(liveBuffer=None, peakList=None, Wpre=None, quant_factor=0.0
                 H0 = superflux(A=Wpre.T[:, index, :].sum(), B=H[index])
             else:
                 H0 = H0 + superflux(A=Wpre.T[:, index, :].sum(), B=H[index])
+        if i==0:
+
+            onsets=H0
+        else:
+            onsets=np.add(onsets,H0)
 
         peaks = pick_onsets(H0, delta=DELTA)
-        # remove
-        # if i ==7:
-        #     H1=superflux(A=Wpre.T[:, 3, :].sum(), B=H[3])
-        #     ohPeaks=pick_onsets(H1, delta=DELTA)
-        #     common=np.intersect1d(peaks, ohPeaks)
-        #     for c in common:
-        #         # if H1[c]>=H0[c]:
-        #             print('found open!')
-        #             peaks=np.delete(peaks,np.argwhere(c))
 
-        if quant_factor > 0:
-            TEMPO = DEFAULT_TEMPO
-            qPeaks = timequantize(peaks, avgTempo, TEMPO)
+        # quant_factor > 0:
+        #    TEMPO = DEFAULT_TEMPO
+        #   qPeaks = timequantize(peaks, avgTempo, TEMPO)
             # qPeaks = quantize(peaks, tempomask, strength=quant_factor, tempo=TEMPO, conform=False)
             # qPeaks=qPeaks*changeFactor
-        else:
-            qPeaks = peaks
+        #else:
+        qPeaks = peaks
 
         # if k==0:
         peakList[i].set_hits(qPeaks)
@@ -319,7 +317,11 @@ def processLiveAudio(liveBuffer=None, peakList=None, Wpre=None, quant_factor=0.0
     # for i in peakList:
     #    precHits = frame_to_time(i.get_hits())
     #    i.set_hits(time_to_frame(cleanDoubleStrokes(precHits, resolution=duplicateResolution)))
-
+    if quant_factor > 0:
+        #avgTempo = getTempomap(onsets)
+        avgTempo=plp(onsets)
+        for i in peakList:
+            i.set_hits(timequantize(i.get_hits(), avgTempo))
     return peakList
 
 
@@ -565,6 +567,209 @@ def k_in_n(k, n, window=1):
                 break
     return float(hits)
 
+def plp(onsets=None):
+    # #return
+    # bpm_range=range(30,250, 1)
+    # #novelty curve
+    # #showEnvelope(onsets)
+    # #temps=librosa.feature.tempogram(onset_envelope = onsets, sr=SAMPLE_RATE,
+    # #hop_length = HOP_SIZE)
+    # #tempo=librosa.beat.tempo(onset_envelope=onsets, sr=SAMPLE_RATE,
+    # #hop_length = HOP_SIZE)
+    # #showEnvelope(onsets[3000:4000])
+    # def running_mean(x, N):
+    #     cumsum = np.cumsum(np.insert(x, 0, 0))
+    #     return (cumsum[N:] - cumsum[:-N]) / float(N)
+    #
+    # #onsets=onsets[:-99]-running_mean(onsets,100)
+    # #onsets = np.array([0 if i < 0 else i for i in onsets])
+    # #onsets=onsets/onsets.max()
+    # #from Peter Grosche and Meinard M̈uller
+    # def F(Delta_hat):
+    #     N = 345
+    #     W = scipy.hanning(2 * N + 1)
+    #
+    #     ftt=[]
+    #     for i in range(30, 120):
+    #         summa=[]
+    #         for t in range(Delta_hat.size):
+    #
+    #                 summa.append((Delta_hat[n]*W[t%N]*np.exp(-1j * 2 *np.pi*(i/60)*n)).sum())
+    #         ftt.append(summa)
+    #         print(len(summa))
+    #     return np.array(ftt)
+    #
+    # def tau(Taut):
+    #     return np.argmax(Taut)
+    #
+    # def phit(Taut):
+    #     return((1/(2*np.pi))*(Taut.real/np.abs(Taut)))
+    #
+    # def kernelt_n(W, Taut, t, n):
+    #     return (W(n-t)*np.cos(2*np.pi*(taut(Taut)/60*n-phit(Taut))))
+    # # def cn(n):
+    # #     c = y * np.exp(-1j * 2 * n * np.pi * time / period)
+    # #     return c.sum() / c.size
+    # #
+    # # def f(x, Nh):
+    # #     f = np.array([2 * cn(i) * np.exp(1j * 2 * i * np.pi * x / period) for i in range(1, Nh + 1)])
+    # #     return f.sum()
+    # #print('ny mennää')
+    # #sff=F(onsets)
+    # #print(sff.shape)
+    # #showFFT(np.abs(sff))
+    #
+    #
+    # #print(sff)
+    # win_length = np.asscalar(time_to_frame(4
+    #                                        , sr=SAMPLE_RATE,hop_length=HOP_SIZE))
+    # stft_bins=int(win_length*2)
+    # print(win_length)
+    # hop=64
+    # #onsets=np.append(onsets,np.zeros(win_length))
+    # #onsets = np.append(np.zeros(win_length),onsets)
+    # sff = np.abs(librosa.core.stft(onsets, hop_length=hop, win_length=win_length, n_fft=stft_bins,center=True))**2
+    # #sff = np.abs(scipy.signal.stft(onsets, fs=1.0, window='hann', nperseg=win_length, noverlap=8, nfft=win_length,
+    # #                        detrend=False, return_onesided=True, boundary='zeros', padded=True, axis=-1)[2])
+    # print(sff.shape)
+    #
+    # #showFFT(sff[0:240])
+    # #sff2= librosa.feature.tempogram(onset_envelope=onsets, win_length=win_length, hop_length=512)
+    # #print(sff2.shape)
+    # #showFFT(sff2)
+    # #sff3=sff*sff2
+    # #showFFT(sff3)
+    # #tg=np.mean(sff2,axis=1, keepdims=True)
+    # #showEnvelope(tg)
+    # #print(tg.shape)
+    #
+    # tg2 = np.mean(sff,axis=1, keepdims=True)
+    # tg2 = tg2.flatten()
+    # #showEnvelope(tg2)
+    # bin_frequencies = np.zeros(sff.shape[0], dtype=np.float)
+    # bin_frequencies[:] = win_length*25.53938/ (np.arange(sff.shape[0]))
+    # #prior = np.exp(-0.5 * ((np.log2(bin_frequencies) - np.log2(120)) / 1.) ** 2)
+    #
+    # #best_period = np.argmax(tg2[10:] * prior[:, np.newaxis], axis=0)+10
+    #
+    # print(np.argmax(tg2[10:], axis=0)+10)
+    # tempi = bin_frequencies[np.argmax(tg2[10:], axis=0)+10]
+    # # Wherever the best tempo is index 0, return start_bpm
+    # #tempi[best_period == 0] = 120
+    # print( tempi)
+    # #showEnvelope(tg)
+    #
+    # #[50]
+    # #[103.359375]   #[40]
+    #                 #[129.19921875]
+    #
+    #
+    # #tempogram
+    # #PLP
+    def running_mean(x, N):
+        cumsum = np.cumsum(np.insert(x, 0, 0))
+        return (cumsum[N:] - cumsum[:-N]) / float(N)
+
+    onsets=onsets[:-99]-running_mean(onsets,100)
+    onsets = np.array([0 if i < 0 else i for i in onsets])
+    onsets=onsets/onsets.max()
+    def F(novelty_curve, win, noverlap, omega, sr):
+        """
+
+        :param novelty_curve: onsets
+        :param win: window function
+        :param noverlap: hops
+        :param omega: range of tempos/60
+        :param sr: samplerate
+        :return: partial stft
+        """
+
+        win_len = len(win)
+        hopsize = win_len - noverlap
+        T = (np.arange(0,(win_len),1)/ sr).T
+
+        win_num = int((novelty_curve.size - noverlap) / (win_len - noverlap))
+        #print(novelty_curve.shape,T.shape,win_num, len(omega))
+        x = np.zeros((win_num, len(omega)))
+        t = np.arange(int(win_len / 2), int(novelty_curve.size - win_len / 2),hopsize)/sr
+
+        tpiT= 2 * np.pi * T
+
+        #for each frequency given in f
+        for i in range(omega.size):
+            tpift = omega[i]*tpiT
+            cosine = np.cos(tpift)
+            sine = np.sin(tpift)
+
+            for w in range(win_num):
+                start = (w) * hopsize
+                stop = start + win_len
+                sig = novelty_curve[start:stop]*win
+                co = sum(sig* cosine)
+                si = sum(sig* sine)
+                x[w, i] = (co + 1j * si)
+
+        return t, x.T
+    win_len_s=4
+    N=int(SAMPLE_RATE/HOP_SIZE*win_len_s)
+    W = scipy.hanning(N)
+    min_bpm=30
+    max_bpm=180
+    tic=time.clock()
+    # bpms=np.arange(min_bpm, max_bpm,1)
+    #
+    # times, sff=F(onsets,W,int((W.size/6)), bpms/60,int(SAMPLE_RATE/HOP_SIZE))
+    # #showFFT(sff)
+    # sff2=np.zeros((sff.shape))
+    # for i in range(sff.shape[1]):
+    #     j=max_bpm-min_bpm-1
+    #     while j>180:
+    #         sff2[int(j/2),i]+=sff[j,i]
+    #         j-=1
+    #     j = 0
+    #     while j < 60:
+    #         sff2[int(j *2), i] += sff[j, i]
+    #         j += 1
+    # #showFFT(sff2)
+    #
+    # showEnvelope(np.argmax(sff2, axis=0)+min_bpm/2)
+    #print(sff.shape)
+    #####
+    #sff=librosa.feature.tempogram(sr=SAMPLE_RATE, onset_envelope=onsets,hop_length=HOP_SIZE,win_length=N)
+    #Round to 60-120bpm
+
+    #sff=np.flipud(sff)
+    #showFFT(sff)
+
+    onsets = np.pad(onsets, int(N//2)+1,
+                            mode='mean')
+    fonsets=librosa.util.frame(onsets,
+                           frame_length=N,
+                           hop_length=int(1))[min_bpm:max_bpm,:]
+    #print(fonsets.shape)
+    powspec = np.abs(fft.fft(fonsets, n=2 * fonsets.shape[0] + 1, axis=0)) ** 2
+
+    autocorr = fft.ifft(powspec, axis=0, overwrite_x=True)[:int(powspec.shape[0]/2)]
+    sff=autocorr.real
+    #showFFT(sff)
+    bpms = librosa.core.tempo_frequencies(sff.shape[0], hop_length=HOP_SIZE, sr=SAMPLE_RATE)
+    tg=sff
+    prior = np.exp(-0.5 * ((np.log2(bpms) - np.log2(120))/1. ) ** 2)
+    best_period = np.argmax(tg * prior[:, np.newaxis], axis=0)
+    #showEnvelope(np.argmax(tg[10:], axis=0))
+    tempi = bpms[best_period]
+    # Wherever the best tempo is index 0, return start_bpm
+    tempi[best_period == 0] = min_bpm
+    list_y=movingAverage(tempi,N*6+1)
+    #list_y=tempi
+    showEnvelope(list_y)
+    #Tässä pitää saada temmot pysymään!!!
+    tempos = np.arange(60, 180, 60)
+    for i in range(list_y.size):
+        tempo = min(tempos, key=lambda x: abs(x - list_y[i]))
+        list_y[i] = list_y[i] / tempo
+
+    return (list_y)
 
 def tempoMask(tempos):
     """
@@ -588,12 +793,24 @@ def tempoMask(tempos):
     return invertedIndices
 
 
-def timequantize(X, tempomap, tempo):
-    timeX = frame_to_time(X, sr=SAMPLE_RATE, hop_length=HOP_SIZE)
-    for i in range(X.shape[0]):
-        timeX[i] = timeX[i] * (tempomap / tempo)
-    frameX = time_to_frame(timeX, sr=SAMPLE_RATE, hop_length=HOP_SIZE)
-    return frameX
+def timequantize(X, tempomap):
+    """
+
+    :param X: numpy array, The onsets to quantize
+    :param tempomap: numpy array, the tempo modifiers for each frame
+    :return: numpy array, quantized onsets
+
+    Notes: Toimii mutta kadottaako frameja??
+    """
+    retX=np.zeros((X.size))
+    newgap = sum(tempomap[:X[0]])
+    retX[0]=newgap
+    for i in range(1,X.size):
+            newgap=sum(tempomap[X[i-1]:X[i]])
+
+            retX[i] =retX[i-1]+newgap
+            #print(X[i],tempomap[X[i-1]],retX[i])
+    return retX
 
 
 def quantize(X, mask, strength=1, tempo=DEFAULT_TEMPO, conform=False):
@@ -789,9 +1006,14 @@ def NMFD(X, iters=50, Wpre=[]):
     M, N = X.shape
     W = Wpre
     M, R, T = W.shape
-    # Initial random H
-    H = np.ones((R, N))
 
+    # Initial H, non negative, non zero. any non zero value works
+    H = np.full((R, N),.5)
+
+
+    #Make sure the input is normalized
+    W = W / W.max()
+    X = X / X.max()
     repMat = np.ones((M, N))
     Lambda = np.zeros((M, N))
 
@@ -799,7 +1021,10 @@ def NMFD(X, iters=50, Wpre=[]):
 
     # KLDivergence for cost calculation
     def KLDiv(x, y, LambHat):
-        return (x * np.log(LambHat) + (y - x)).sum()
+        return (x * np.log(LambHat) - x + y).sum()
+
+    def ISDiv(x):
+        return (x-np.log(x)-1).sum()
 
     def computeConv(A, B):
         ABC = np.zeros((B.shape[0], A.shape[1]))
@@ -809,30 +1034,32 @@ def NMFD(X, iters=50, Wpre=[]):
         return ABC
 
     Runner = 1
-    mu = 0.275
+    mu = 0.275 #sparsity
+    beta=1
     for i in range(iters):
         if REQUEST_RESULT:
             return H
         print('\rNMFD iter: %d' % (i + 1), end='', flush=True)
 
         if i == 0:
-            Lambda = computeConv(H, W)
-            LambHat = X / Lambda+eps
+            Lambda = eps+computeConv(H, W)
+            LambHat = X / (Lambda+eps)
 
         if Runner == 0:
             shifter = np.zeros((M, N + T))
-            shifter[:, :-T] = LambHat
+            #shifter[:, :-T] = LambHat
+            shifter[:, :-T] = X*Lambda**(beta-2)
             Hhat = np.zeros((R, N))
             for t in range(T):
                 Wt = W[:, :, t].T
-                Hhat += Wt @ shifter[:, t: t + N] / (Wt @ repMat+eps)
+                Hhat += Wt @ ((shifter[:, t: t + N])) / (Wt @ (Lambda**(beta-1))+eps)
             H = H * Hhat
 
         if Runner == 1:
             # From https://github.com/romi1502/NMF-matlab
             # Copyright (C) 2015 Romain Hennequin
             # Seems to improve results a little! But is a little slower
-            # This seems to be due to the fact that each frequency sub band is donvoluted separately,
+            # This seems to be due to the fact that each frequency sub band is convoluted separately,
             # not matrix multiplied as a whole 1d vs 2d convolution.
             Hu = np.zeros((R, N))
             Hd = np.zeros((R, N))
@@ -844,17 +1071,19 @@ def NMFD(X, iters=50, Wpre=[]):
 
         # precompute for error and next round
         Lambda = computeConv(H, W)
-        LambHat = X / Lambda+eps
+        LambHat = X /  (Lambda+eps)
 
         # 2*eps to ensure the eps don't cancel out each other in the division.
-        err[i] = KLDiv(X + eps, Lambda + 2 * (eps), LambHat)
+        err[i] = KLDiv(X + eps, Lambda + 2 * (eps), LambHat+eps)
+        #err[i] = ISDiv(LambHat)
 
         if (i >= 1):
             errDiff = (abs(err[i] - err[i - 1]) / (err[1] - err[i]))
-            if errDiff < 0.0005 or err[i] > err[i - 1]:
+            #print(errDiff)
+            if errDiff < 0.0005 or err[i] > err[i - 1] :
                 break
     return H
-
+import matplotlib.pyplot as plt
 
 def showEnvelope(env):
     """
@@ -868,6 +1097,7 @@ def showEnvelope(env):
 
 
 def showFFT(env):
+
     """
     Plots a spectrogram
 
@@ -962,7 +1192,7 @@ def mergerowsandencode(a):
             a[i] = (np.rint(a[i][0] / sixtDivider),) + a[i][1:]
     # Define max frames from the first detected hit to end
     maxFrame = int(a[-1][0] - a[0][0] + 1)
-
+    #print(maxFrame)
     # spaceholder for return array
     frames = np.zeros(maxFrame, dtype=int)
     for i in range(len(a)):
