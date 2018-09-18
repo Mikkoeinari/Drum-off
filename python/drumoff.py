@@ -16,7 +16,7 @@ msg = ''
 highEmph = [0, 0, 0, 1, 0, 0, 1, 1, 0]
 
 
-###Tässä pitää napata talteen framet/sample
+###
 def soundcheckDrum(drumkit_path, drumId):
     CC1, freqtemps, threshold, buffer = getStompTemplate(nrOfPeaks)
     #print('jessus')
@@ -87,7 +87,7 @@ def loadKit(drumkit_path):
 
 
 def playLive(drumkit_path):
-    ###Tähän live input
+    ###T live input
     try:
         buffer = liveTake()
     except Exception as e:
@@ -103,7 +103,7 @@ def playLive(drumkit_path):
         binhits = i.get_hits()
 
         hits = frame_to_time(hits)
-        ##TÄHÄN VASTA QUANTIZE?????
+        ##TVASTA QUANTIZE?????
         labels = np.full(len(hits), i.get_midinote(), np.int64)
         binlabels = np.full(len(binhits), i.get_name(), np.int64)
         inst = zip(hits, labels)
@@ -248,7 +248,7 @@ def play(filePath):
         binhits = i.get_hits()
 
         hits = frame_to_time(hits)
-        ##TÄHÄN VASTA QUANTIZE?????
+        ##VASTA QUANTIZE?????
         labels = np.full(len(hits), i.get_midinote(), np.int64)
         binlabels = np.full(len(binhits), i.get_name(), np.int64)
         inst = zip(hits, labels)
@@ -259,7 +259,7 @@ def play(filePath):
     bintimes.sort()
     bintimes = mergerowsandencode(bintimes)
     df = pd.DataFrame(times, columns=['time', 'inst'])
-    df['duration'] = pd.Series(np.full((len(times)), 0, np.int64))
+    df['duration'] = pd.Series(np.full((len(times)), 1, np.int64))
     df['vel'] = pd.Series(np.full((len(times)), 127, np.int64))
     bindf = pd.DataFrame(bintimes, columns=['inst'])
     bindf.to_csv('testbeat0.csv', index=True, header=False, sep="\t")
@@ -274,12 +274,12 @@ def play(filePath):
     # change to time and midinotes
     gen['time'] = frame_to_time(gen['time'])
     gen['inst'] = to_midinote(gen['inst'])
-    gen['duration'] = pd.Series(np.full((len(generated)), 0, np.int64))
+    gen['duration'] = pd.Series(np.full((len(generated)), 1, np.int64))
     gen['vel'] = pd.Series(np.full((len(generated)), 127, np.int64))
     madmom.io.midi.write_midi(gen.values, 'midi_testit_enc_dec0.mid')
 
     print('Processing time:%0.2f' % (time() - t0))
     return True
-#initKit('../DXSamplet/',9)
-loadKit('../DXSamplet/')
-play('../DXSamplet/')
+#initKit('../trainSamplet/',9)
+#loadKit('../oikeetsamplet/')
+#play('../oikeetsamplet/')

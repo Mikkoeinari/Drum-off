@@ -17,7 +17,7 @@ FREQUENCY_PRE = np.ones((24))  # [0,16384]#0-2^14
 MIDINOTE = 36  # kickdrum in most systems
 THRESHOLD = 0.0
 PROBABILITY_THRESHOLD = 0.0
-DEFAULT_TEMPO = 60
+DEFAULT_TEMPO = 120
 DRUMKIT_PATH = '../trainSamplet/'
 REQUEST_RESULT = False
 DELTA = 0.15
@@ -188,8 +188,9 @@ def findDefBins(frames, filteredSpec):
 
 def getStompTemplate(numHits=2):
     """
-    Kutsutaan pari kertaa, eka vaikka kaks ja sit neljä iskua talteen
-    Niiden pohjalta lasketaan olennaisin taajuus ja threshold
+
+    :param numHits:
+    :return:
     """
     global _ImRunning
 
@@ -319,7 +320,7 @@ def processLiveAudio(liveBuffer=None, peakList=None, Wpre=None, quant_factor=0.0
     #    i.set_hits(time_to_frame(cleanDoubleStrokes(precHits, resolution=duplicateResolution)))
     if quant_factor > 0:
         #avgTempo = getTempomap(onsets)
-        avgTempo=plp(onsets)
+        avgTempo=extract_tempo(onsets)
         for i in peakList:
             i.set_hits(timequantize(i.get_hits(), avgTempo))
     return peakList
@@ -478,7 +479,7 @@ class prettyfloat(float):
 # superlux from madmom (Boeck et al)
 def superflux(spec_x=[], A=None, B=None):
     """
-    Calculate the superflux envelope according to Böck et al.
+    Calculate the superflux envelope according to Boeck et al.
     :param spec_x: optional, A Spectrogram the superflux envelope is calculated from, X
     :param A: optional, frequency response of the decomposed spectrogram, W
     :param B: optional, activations of a decomposed spectrogram, H
@@ -567,7 +568,7 @@ def k_in_n(k, n, window=1):
                 break
     return float(hits)
 
-def plp(onsets=None):
+def extract_tempo(onsets=None, window_size_in_s=8):
     # #return
     # bpm_range=range(30,250, 1)
     # #novelty curve
@@ -584,7 +585,7 @@ def plp(onsets=None):
     # #onsets=onsets[:-99]-running_mean(onsets,100)
     # #onsets = np.array([0 if i < 0 else i for i in onsets])
     # #onsets=onsets/onsets.max()
-    # #from Peter Grosche and Meinard M̈uller
+    # #from Peter Grosche and Meinard Muller
     # def F(Delta_hat):
     #     N = 345
     #     W = scipy.hanning(2 * N + 1)
@@ -614,7 +615,7 @@ def plp(onsets=None):
     # # def f(x, Nh):
     # #     f = np.array([2 * cn(i) * np.exp(1j * 2 * i * np.pi * x / period) for i in range(1, Nh + 1)])
     # #     return f.sum()
-    # #print('ny mennää')
+    # #print('gfo')
     # #sff=F(onsets)
     # #print(sff.shape)
     # #showFFT(np.abs(sff))
@@ -670,9 +671,9 @@ def plp(onsets=None):
         cumsum = np.cumsum(np.insert(x, 0, 0))
         return (cumsum[N:] - cumsum[:-N]) / float(N)
 
-    onsets=onsets[:-99]-running_mean(onsets,100)
-    onsets = np.array([0 if i < 0 else i for i in onsets])
-    onsets=onsets/onsets.max()
+    #onsets=onsets[:-99]-running_mean(onsets,100)
+    #onsets = np.array([0 if i < 0 else i for i in onsets])
+    #onsets=onsets/onsets.max()
     def F(novelty_curve, win, noverlap, omega, sr):
         """
 
@@ -710,66 +711,66 @@ def plp(onsets=None):
                 x[w, i] = (co + 1j * si)
 
         return t, x.T
-    win_len_s=4
+    win_len_s=window_size_in_s
     N=int(SAMPLE_RATE/HOP_SIZE*win_len_s)
     W = scipy.hanning(N)
-    min_bpm=30
-    max_bpm=180
+    tempo_div = int(DEFAULT_TEMPO / 2)
+    min_bpm=int(tempo_div/2)
+    max_bpm=int(tempo_div*3)
     tic=time.clock()
-    # bpms=np.arange(min_bpm, max_bpm,1)
-    #
-    # times, sff=F(onsets,W,int((W.size/6)), bpms/60,int(SAMPLE_RATE/HOP_SIZE))
-    # #showFFT(sff)
-    # sff2=np.zeros((sff.shape))
-    # for i in range(sff.shape[1]):
-    #     j=max_bpm-min_bpm-1
-    #     while j>180:
-    #         sff2[int(j/2),i]+=sff[j,i]
-    #         j-=1
-    #     j = 0
-    #     while j < 60:
-    #         sff2[int(j *2), i] += sff[j, i]
-    #         j += 1
-    # #showFFT(sff2)
-    #
-    # showEnvelope(np.argmax(sff2, axis=0)+min_bpm/2)
-    #print(sff.shape)
-    #####
-    #sff=librosa.feature.tempogram(sr=SAMPLE_RATE, onset_envelope=onsets,hop_length=HOP_SIZE,win_length=N)
-    #Round to 60-120bpm
-
-    #sff=np.flipud(sff)
-    #showFFT(sff)
-
+    def squeeze(sff, tempo_target):
+        sff2=np.zeros((sff.shape))
+        for i in range(sff.shape[1]):
+            j=max_bpm-min_bpm-1
+            while j>tempo_target*2:
+                sff2[int(j/2),i]+=sff[j,i]
+                j-=1
+            j = 0
+            while j < tempo_target/2:
+                sff2[int(j *2), i] += sff[j, i]
+                j += 1
+        return sff2
+    #Pad onsets and perform librosa Autocorrelation tempogram
     onsets = np.pad(onsets, int(N//2)+1,
                             mode='mean')
     fonsets=librosa.util.frame(onsets,
                            frame_length=N,
                            hop_length=int(1))[min_bpm:max_bpm,:]
-    #print(fonsets.shape)
     powspec = np.abs(fft.fft(fonsets, n=2 * fonsets.shape[0] + 1, axis=0)) ** 2
-
     autocorr = fft.ifft(powspec, axis=0, overwrite_x=True)[:int(powspec.shape[0]/2)]
     sff=autocorr.real
-    #showFFT(sff)
+    sff_mean=np.mean(sff, axis=1, keepdims=True)
+    #perform librosa tempo extraction with two iterations
     bpms = librosa.core.tempo_frequencies(sff.shape[0], hop_length=HOP_SIZE, sr=SAMPLE_RATE)
-    tg=sff
-    prior = np.exp(-0.5 * ((np.log2(bpms) - np.log2(120))/1. ) ** 2)
-    best_period = np.argmax(tg * prior[:, np.newaxis], axis=0)
-    #showEnvelope(np.argmax(tg[10:], axis=0))
+    prior = np.exp(-0.5 * ((np.log2(bpms) - np.log2(DEFAULT_TEMPO))/1.) ** 2)
+    best_period = np.argmax(sff_mean * prior[:, np.newaxis], axis=0)
+    #first find the most common tempo of the take
     tempi = bpms[best_period]
+    print(tempi)
+    #then force the tempi to that area
+    prior = np.exp(-0.5 * ((np.log2(bpms) - np.log2(tempi)) / 0.5) ** 2)
+    best_period = np.argmax(sff * prior[:, np.newaxis], axis=0)
+    tempi = bpms[best_period]
+
     # Wherever the best tempo is index 0, return start_bpm
     tempi[best_period == 0] = min_bpm
-    list_y=movingAverage(tempi,N*6+1)
-    #list_y=tempi
-    showEnvelope(list_y)
-    #Tässä pitää saada temmot pysymään!!!
-    tempos = np.arange(60, 180, 60)
-    for i in range(list_y.size):
-        tempo = min(tempos, key=lambda x: abs(x - list_y[i]))
-        list_y[i] = list_y[i] / tempo
 
-    return (list_y)
+    #Smooth the results so we dont get erratic tempoi changes in fills etc.
+    tempi=movingAverage(tempi,N)
+    #comment out for Without smoothing
+    showEnvelope(tempi)
+
+
+    #Tempo and it's derivatives
+    tempos = np.arange(tempo_div, int(tempo_div*3), tempo_div)
+
+    #Change tempi to tempo quantization multipliers
+    for i in range(tempi.size):
+        tempo = min(tempos, key=lambda x: abs(x - tempi[i]))
+        tempi[i] = tempi[i] / tempo
+
+    #print('\ntempomap time:{}'.format(time.clock()-tic))
+    return (tempi)
 
 def tempoMask(tempos):
     """
@@ -795,21 +796,21 @@ def tempoMask(tempos):
 
 def timequantize(X, tempomap):
     """
-
+    Quantizes the hits X according to a tempomap
     :param X: numpy array, The onsets to quantize
     :param tempomap: numpy array, the tempo modifiers for each frame
     :return: numpy array, quantized onsets
 
-    Notes: Toimii mutta kadottaako frameja??
+    Notes:
     """
     retX=np.zeros((X.size))
     newgap = sum(tempomap[:X[0]])
     retX[0]=newgap
     for i in range(1,X.size):
+            #Calculate the gap between two consecutive hits
             newgap=sum(tempomap[X[i-1]:X[i]])
-
+            #move the hit to last hit+newgap
             retX[i] =retX[i-1]+newgap
-            #print(X[i],tempomap[X[i-1]],retX[i])
     return retX
 
 
@@ -825,7 +826,7 @@ def quantize(X, mask, strength=1, tempo=DEFAULT_TEMPO, conform=False):
     """
     # Create a mask of constant tempo
     if conform:
-        #### Tämä pitää tehä jotenkin niin että kertoo tempojen suhteella indeksin!
+        ####
         # drop less than 100 to half
         # if tempo < 100:
         #    tempo = tempo / 2
@@ -1039,7 +1040,7 @@ def NMFD(X, iters=50, Wpre=[]):
     for i in range(iters):
         if REQUEST_RESULT:
             return H
-        print('\rNMFD iter: %d' % (i + 1), end='', flush=True)
+        print('\rNMFD iter: %d' % (i + 1), end="", flush=True)
 
         if i == 0:
             Lambda = eps+computeConv(H, W)
@@ -1078,7 +1079,7 @@ def NMFD(X, iters=50, Wpre=[]):
         #err[i] = ISDiv(LambHat)
 
         if (i >= 1):
-            errDiff = (abs(err[i] - err[i - 1]) / (err[1] - err[i]))
+            errDiff = (abs(err[i] - err[i - 1]) / (err[1] - err[i]+eps))
             #print(errDiff)
             if errDiff < 0.0005 or err[i] > err[i - 1] :
                 break
