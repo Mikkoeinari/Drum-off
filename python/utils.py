@@ -7,7 +7,7 @@ import pandas as pd
 import scipy
 from scipy import fftpack as fft
 from scipy.ndimage.filters import median_filter, maximum_filter
-from scipy.signal import argrelmax,stft
+from scipy.signal import argrelmax, stft
 from sklearn.cluster import KMeans
 
 FRAME_SIZE = 2 ** 10
@@ -24,7 +24,7 @@ DELTA = 0.15
 midinotes = [36, 38, 42, 46, 50, 43, 51, 49, 44]  # BD, SN, CHH, OHH, TT, FT, RD, CR, SHH, Here we need generality
 nrOfDrums = 24  # Maximum kit size
 nrOfPeaks = 32
-ConvFrames = 10
+#ConvFrames = 10
 K = 1
 MS_IN_MIN = 60000
 SXTH_DIV = 16
@@ -152,7 +152,7 @@ def to_midinote(notes):
     return list(midinotes[i] for i in notes)
 
 
-def findDefBins(frames, filteredSpec):
+def findDefBins(frames, filteredSpec, ConvFrames, K):
     """
     Calculate the prior vectors for W to use in NMF
     :param frames: Numpy array of hit locations (frame numbers)
@@ -207,12 +207,12 @@ def getStompTemplate(numHits=2):
         if j >= 2217920 or (not _ImRunning):
             buffer[j:j + 6000] = np.zeros(6000)
             # buffer=madmom.audio.signal.normalize(buffer)
-            peaks, bins, threshold = getPeaksFromBuffer(buffer[:j + 6000], stompResolution, numHits)
+            peaks, bins, threshold = getPeaksFromBuffer(buffer[:j + 6000], stompResolution, numHits, convFrames,K)
             strm.close()
             return peaks, bins, threshold, buffer[:j + 6000]
 
 
-def getPeaksFromBuffer(buffer, resolution, numHits):
+def getPeaksFromBuffer(buffer, resolution, numHits, convFrames,K):
     filt_spec = get_preprocessed_spectrogram(buffer)
     threshold = 0.5
     searchSpeed = .1
@@ -233,7 +233,7 @@ def getPeaksFromBuffer(buffer, resolution, numHits):
             threshold -= searchSpeed
         # peaks=cleanDoubleStrokes(madmom.features.onsets.peak_picking(superflux_3,threshold),resolution)
         peaks = cleanDoubleStrokes(pick_onsets(H0, delta=threshold), resolution)
-    definingBins = findDefBins(peaks, filt_spec)
+    definingBins = findDefBins(peaks, filt_spec, convFrames,K)
     return peaks, definingBins, threshold
 
 
@@ -260,32 +260,40 @@ def getTempomap(H):
     else:
         onsEnv = np.sum(H, axis=0)
     bdTempo = (librosa.beat.tempo(onset_envelope=onsEnv, sr=SAMPLE_RATE, hop_length=HOP_SIZE,
-                                  ac_size=2))#aggregate=None))
-    #bdAvg = movingAverage(bdTempo, window=30000)
-    #avgTempo = np.mean(bdAvg)
-    #return tempoMask(bdAvg), avgTempo
+                                  ac_size=2))  # aggregate=None))
+    # bdAvg = movingAverage(bdTempo, window=30000)
+    # avgTempo = np.mean(bdAvg)
+    # return tempoMask(bdAvg), avgTempo
     return bdTempo
 
 
-def processLiveAudio(liveBuffer=None, peakList=None, Wpre=None, quant_factor=0.0):
+def processLiveAudio(liveBuffer=None, peakList=None, Wpre=None, quant_factor=0.0, iters=0, method='NMFD', K=1):
     filt_spec = get_preprocessed_spectrogram(liveBuffer)
-    iters = 1.
+    stacks = 1.
 
-    for i in range(int(iters)):
+    for i in range(int(stacks)):
         # Xpost, W, H = semi_adaptive_NMFB(filt_spec.T,basis,n_iterations=2000,
         #                             alternate=False, adaptive=False, leeseung='bat', div=0, sp=0)
-        H = NMFD(filt_spec.T, iters=500, Wpre=Wpre)
+        if method=='NMFD' or method=='ALL' :
+            H, err1 = NMFD(filt_spec.T, iters=iters, Wpre=Wpre)
+        if method=='NMF'or method=='ALL' :
+            H, err2 = semi_adaptive_NMFB(filt_spec.T, Wpre=Wpre, iters=iters)
+        if method=='ALL':
+            errors=np.zeros((err1.size,2))
+            errors[:,0]=err1
+            errors[:,1]=err2
+            showEnvelope(errors,('NMFD Error','NMF Error'), ('iterations','error'))
         if i == 0:
             WTot, HTot = Wpre, H
         else:
 
             WTot += Wpre
             HTot += H
-    Wpre = (WTot) / iters
-    H = (HTot) / iters
+    Wpre = (WTot) / stacks
+    H = (HTot) / stacks
 
+    onsets = np.zeros(H[0].shape[0])
 
-    onsets=None
     for i in range(len(peakList)):
         for k in range(K):
             index = i * K + k
@@ -293,20 +301,20 @@ def processLiveAudio(liveBuffer=None, peakList=None, Wpre=None, quant_factor=0.0
                 H0 = superflux(A=Wpre.T[:, index, :].sum(), B=H[index])
             else:
                 H0 = H0 + superflux(A=Wpre.T[:, index, :].sum(), B=H[index])
-        if i==0:
-
-            onsets=H0
-        else:
-            onsets=np.add(onsets,H0)
+        # if i == 0:
+        #
+        #     onsets = H0
+        # else:
+        #     onsets = np.add(onsets, H0)
 
         peaks = pick_onsets(H0, delta=DELTA)
-
+        onsets[peaks] = 1
         # quant_factor > 0:
         #    TEMPO = DEFAULT_TEMPO
         #   qPeaks = timequantize(peaks, avgTempo, TEMPO)
-            # qPeaks = quantize(peaks, tempomask, strength=quant_factor, tempo=TEMPO, conform=False)
-            # qPeaks=qPeaks*changeFactor
-        #else:
+        # qPeaks = quantize(peaks, tempomask, strength=quant_factor, tempo=TEMPO, conform=False)
+        # qPeaks=qPeaks*changeFactor
+        # else:
         qPeaks = peaks
 
         # if k==0:
@@ -319,10 +327,10 @@ def processLiveAudio(liveBuffer=None, peakList=None, Wpre=None, quant_factor=0.0
     #    precHits = frame_to_time(i.get_hits())
     #    i.set_hits(time_to_frame(cleanDoubleStrokes(precHits, resolution=duplicateResolution)))
     if quant_factor > 0:
-        #avgTempo = getTempomap(onsets)
-        avgTempo=extract_tempo(onsets)
+        # avgTempo = getTempomap(onsets)
+        avgTempo = extract_tempo(onsets)
         for i in peakList:
-            i.set_hits(timequantize(i.get_hits(), avgTempo))
+            i.set_hits(conform_time(i.get_hits(), avgTempo, quantize=True))
     return peakList
 
 
@@ -527,7 +535,7 @@ def time_to_frame(times, sr=SAMPLE_RATE, hop_length=HOP_SIZE, hops_per_frame=1):
     :return: Numpy array of frame numbers
     """
     samples = (np.asanyarray(times) * float(sr))
-    return (np.asanyarray(samples) / (hop_length / hops_per_frame)).astype(int)
+    return np.rint(np.asanyarray(samples) / (hop_length / hops_per_frame))
 
 
 def f_score(hits, hitNMiss, actual):
@@ -567,6 +575,7 @@ def k_in_n(k, n, window=1):
             if (j + window > i):
                 break
     return float(hits)
+
 
 def extract_tempo(onsets=None, window_size_in_s=8):
     # #return
@@ -671,9 +680,10 @@ def extract_tempo(onsets=None, window_size_in_s=8):
         cumsum = np.cumsum(np.insert(x, 0, 0))
         return (cumsum[N:] - cumsum[:-N]) / float(N)
 
-    #onsets=onsets[:-99]-running_mean(onsets,100)
-    #onsets = np.array([0 if i < 0 else i for i in onsets])
-    #onsets=onsets/onsets.max()
+    # onsets=onsets[:-99]-running_mean(onsets,100)
+    # onsets = np.array([0 if i < 0 else i for i in onsets])
+    # onsets=onsets/onsets.max()
+
     def F(novelty_curve, win, noverlap, omega, sr):
         """
 
@@ -687,90 +697,99 @@ def extract_tempo(onsets=None, window_size_in_s=8):
 
         win_len = len(win)
         hopsize = win_len - noverlap
-        T = (np.arange(0,(win_len),1)/ sr).T
+        T = (np.arange(0, (win_len), 1) / sr).T
 
         win_num = int((novelty_curve.size - noverlap) / (win_len - noverlap))
-        #print(novelty_curve.shape,T.shape,win_num, len(omega))
+        # print(novelty_curve.shape,T.shape,win_num, len(omega))
         x = np.zeros((win_num, len(omega)))
-        t = np.arange(int(win_len / 2), int(novelty_curve.size - win_len / 2),hopsize)/sr
+        t = np.arange(int(win_len / 2), int(novelty_curve.size - win_len / 2), hopsize) / sr
 
-        tpiT= 2 * np.pi * T
+        tpiT = 2 * np.pi * T
 
-        #for each frequency given in f
+        # for each frequency given in f
         for i in range(omega.size):
-            tpift = omega[i]*tpiT
+            tpift = omega[i] * tpiT
             cosine = np.cos(tpift)
             sine = np.sin(tpift)
 
             for w in range(win_num):
                 start = (w) * hopsize
                 stop = start + win_len
-                sig = novelty_curve[start:stop]*win
-                co = sum(sig* cosine)
-                si = sum(sig* sine)
+                sig = novelty_curve[start:stop] * win
+                co = sum(sig * cosine)
+                si = sum(sig * sine)
                 x[w, i] = (co + 1j * si)
 
         return t, x.T
-    win_len_s=window_size_in_s
-    N=int(SAMPLE_RATE/HOP_SIZE*win_len_s)
-    W = scipy.hanning(N)
-    tempo_div = int(DEFAULT_TEMPO / 2)
-    min_bpm=int(tempo_div/2)
-    max_bpm=int(tempo_div*3)
-    tic=time.clock()
+
+    win_len_s = window_size_in_s
+    N = int(SAMPLE_RATE / HOP_SIZE * win_len_s)
+    min_bpm = int(DEFAULT_TEMPO / 4)#30
+    max_bpm = int(DEFAULT_TEMPO* 2)#240
+    bpm_slice = max_bpm - min_bpm
+    tic = time.clock()
+
     def squeeze(sff, tempo_target):
-        sff2=np.zeros((sff.shape))
+        sff2 = np.zeros((sff.shape))
         for i in range(sff.shape[1]):
-            j=max_bpm-min_bpm-1
-            while j>tempo_target*2:
-                sff2[int(j/2),i]+=sff[j,i]
-                j-=1
+            j = max_bpm - min_bpm - 1
+            while j > tempo_target * 2:
+                sff2[int(j / 2), i] += sff[j, i]
+                j -= 1
             j = 0
-            while j < tempo_target/2:
-                sff2[int(j *2), i] += sff[j, i]
+            while j < tempo_target / 2:
+                sff2[int(j * 2), i] += sff[j, i]
                 j += 1
         return sff2
-    #Pad onsets and perform librosa Autocorrelation tempogram
-    onsets = np.pad(onsets, int(N//2)+1,
-                            mode='mean')
-    fonsets=librosa.util.frame(onsets,
-                           frame_length=N,
-                           hop_length=int(1))[min_bpm:max_bpm,:]
-    powspec = np.abs(fft.fft(fonsets, n=2 * fonsets.shape[0] + 1, axis=0)) ** 2
-    autocorr = fft.ifft(powspec, axis=0, overwrite_x=True)[:int(powspec.shape[0]/2)]
-    sff=autocorr.real
-    sff_mean=np.mean(sff, axis=1, keepdims=True)
-    #perform librosa tempo extraction with two iterations
+
+    n_original = onsets.shape[0]
+    n_power_of_2 = 2 ** int(np.ceil(np.log2(n_original)))
+    n_pad = n_power_of_2 - n_original
+    # Pad onsets and perform librosa Autocorrelation tempogram
+    onsets = np.pad(onsets, int(bpm_slice // 2) + 1,
+                    mode='mean')
+    n_frames = 1 + int((len(onsets) - bpm_slice))
+    fonsets = np.lib.stride_tricks.as_strided(onsets, shape=(bpm_slice, n_frames),
+                                              strides=(onsets.itemsize, onsets.itemsize))
+
+    powerspec = np.abs(fft.fft(fonsets, axis=0)) ** 2
+
+    autocorr = fft.ifft(powerspec, axis=0, overwrite_x=True)  # [:int(powerspec.shape[0] / 2)]
+    sff = (autocorr.real / autocorr.real.max())[0:bpm_slice,:]
+
+    #mean calcs.
+    sff_mean = np.mean(sff, axis=1, keepdims=True)
+    # perform librosa tempo extraction with two iterations
     bpms = librosa.core.tempo_frequencies(sff.shape[0], hop_length=HOP_SIZE, sr=SAMPLE_RATE)
-    prior = np.exp(-0.5 * ((np.log2(bpms) - np.log2(DEFAULT_TEMPO))/1.) ** 2)
-    best_period = np.argmax(sff_mean * prior[:, np.newaxis], axis=0)
-    #first find the most common tempo of the take
-    tempi = bpms[best_period]
-    print(tempi)
-    #then force the tempi to that area
-    prior = np.exp(-0.5 * ((np.log2(bpms) - np.log2(tempi)) / 0.5) ** 2)
+    prior_mean = np.exp(-0.5 * ((np.log2(bpms) - np.log2(DEFAULT_TEMPO)) / 1.) ** 2)
+    best_period_mean = np.argmax(sff_mean * prior_mean[:, np.newaxis], axis=0)
+    # first find the most common tempo of the take
+    tempi_mean = bpms[best_period_mean]
+
+    # then force the tempi to that area
+    prior = np.exp(-0.5 * ((np.log2(bpms) - np.log2(tempi_mean)) / 0.5) ** 2)
     best_period = np.argmax(sff * prior[:, np.newaxis], axis=0)
     tempi = bpms[best_period]
 
     # Wherever the best tempo is index 0, return start_bpm
     tempi[best_period == 0] = min_bpm
 
-    #Smooth the results so we dont get erratic tempoi changes in fills etc.
-    tempi=movingAverage(tempi,N)
-    #comment out for Without smoothing
-    showEnvelope(tempi)
+    # Smooth the results so we dont get erratic tempo changes in fills etc.
+    tempi_smooth = movingAverage(tempi, N)
+    # comment out for Without smoothing
+    #showEnvelope(tempi_smooth)
+    # Tempo and it's manifolds
+    d=DEFAULT_TEMPO
+    targets = [d/4,d/2,d,d*2,d*4]
 
-
-    #Tempo and it's derivatives
-    tempos = np.arange(tempo_div, int(tempo_div*3), tempo_div)
-
-    #Change tempi to tempo quantization multipliers
+    # Change tempi to tempo quantization multipliers
     for i in range(tempi.size):
-        tempo = min(tempos, key=lambda x: abs(x - tempi[i]))
-        tempi[i] = tempi[i] / tempo
+        tempo = min(targets, key=lambda x: abs(x - tempi_smooth[i]))
+        tempi_smooth[i] = tempi_smooth[i] / tempo
 
-    #print('\ntempomap time:{}'.format(time.clock()-tic))
-    return (tempi)
+    print('\ntempomap time:{}'.format(time.clock() - tic))
+    return (tempi_smooth)
+
 
 def tempoMask(tempos):
     """
@@ -786,7 +805,7 @@ def tempoMask(tempos):
     # define the length of a sixteenthnote in ms in relation to tempo at time t
     sixtLength = MS_IN_MIN / tempos / SXTH_DIV
     # define the length of a frame in ms
-    frameLength = 1000 * HOP_SIZE / SAMPLE_RATE
+    frameLength = SAMPLE_RATE / HOP_SIZE
     # extract indices in X that correspond to a 16th note in tempo at time t
     # by calculating modulo and taking the inverse boolean array mod(a,b)==0 ==True
     indices = np.array([int((s % (sixtLength[s] / frameLength))) for s in range(0, tempos.shape[0])])
@@ -794,24 +813,38 @@ def tempoMask(tempos):
     return invertedIndices
 
 
-def timequantize(X, tempomap):
+def conform_time(X, tempomap, quantize=False):
     """
-    Quantizes the hits X according to a tempomap
+    Conforms the hits X according to a tempomap
     :param X: numpy array, The onsets to quantize
     :param tempomap: numpy array, the tempo modifiers for each frame
+    :param quantize: boolean, quantize the conformed X to grid of 16th notes at 4 times the default bpm
     :return: numpy array, quantized onsets
 
     Notes:
     """
-    retX=np.zeros((X.size))
-    newgap = sum(tempomap[:X[0]])
-    retX[0]=newgap
-    for i in range(1,X.size):
-            #Calculate the gap between two consecutive hits
-            newgap=sum(tempomap[X[i-1]:X[i]])
-            #move the hit to last hit+newgap
-            retX[i] =retX[i-1]+newgap
-    return retX
+    # Shortest allowed note in seconds 16th note at 480bpm
+    shortest_note = DEFAULT_TEMPO / 60 / SXTH_DIV / 8
+    # return value space
+    retX = np.zeros((X.size))
+    # gap of beginning to the first hit as time value
+    newgap = frame_to_time(sum(tempomap[:X[0]]))
+    # store first hit
+    retX[0] = newgap
+    # iterate over all hits
+    for i in range(1, X.size):
+        # Calculate the gap between two consecutive hits
+        newgap = frame_to_time(sum(tempomap[X[i - 1]:X[i]]))
+        # move the hit to last hit+newgap
+        retX[i] = retX[i - 1] + newgap
+    # if hits are to be quantized
+    if quantize:
+        # iterate over hits
+        for i in range(retX.size):
+            # Move return value to closest note measure by truncating the float decimal
+            retX[i] = np.int(retX[i] / shortest_note) * shortest_note
+    # return frame values of conformed X
+    return time_to_frame(retX)
 
 
 def quantize(X, mask, strength=1, tempo=DEFAULT_TEMPO, conform=False):
@@ -849,6 +882,7 @@ def quantize(X, mask, strength=1, tempo=DEFAULT_TEMPO, conform=False):
     retX = np.zeros_like(X)
     n = 0
     for i in X:
+        i = int(i)
         k = 0
         notfound = True
 
@@ -988,7 +1022,7 @@ def HFC_filter(X=[], A=None, B=None):
 import sys
 
 
-def NMFD(X, iters=50, Wpre=[]):
+def NMFD(X, iters=500, Wpre=[]):
     """
     :param :
        - X : The spectrogram
@@ -1009,23 +1043,24 @@ def NMFD(X, iters=50, Wpre=[]):
     M, R, T = W.shape
 
     # Initial H, non negative, non zero. any non zero value works
-    H = np.full((R, N),.5)
+    H = np.full((R, N), .5)
 
-
-    #Make sure the input is normalized
+    # Make sure the input is normalized
     W = W / W.max()
     X = X / X.max()
+
+    # 1matrix
     repMat = np.ones((M, N))
-    Lambda = np.zeros((M, N))
 
+    # Spaceholder for errors
     err = np.zeros(iters)
-
+    kerr = np.zeros(iters)
     # KLDivergence for cost calculation
     def KLDiv(x, y, LambHat):
         return (x * np.log(LambHat) - x + y).sum()
 
     def ISDiv(x):
-        return (x-np.log(x)-1).sum()
+        return (x - np.log(x) - 1).sum()
 
     def computeConv(A, B):
         ABC = np.zeros((B.shape[0], A.shape[1]))
@@ -1034,32 +1069,34 @@ def NMFD(X, iters=50, Wpre=[]):
                 ABC[m, :] += np.convolve(B[m, r, :], A[r, :])[0:ABC.shape[1]]
         return ABC
 
-    Runner = 1
-    mu = 0.275 #sparsity
-    beta=1
+
+    Runner = 0
+    mu = 0.38 # sparsity constraint
     for i in range(iters):
         if REQUEST_RESULT:
             return H
         print('\rNMFD iter: %d' % (i + 1), end="", flush=True)
 
         if i == 0:
-            Lambda = eps+computeConv(H, W)
-            LambHat = X / (Lambda+eps)
+            Lambda = eps + computeConv(H, W)
+            LambHat = X / (Lambda + eps)
 
         if Runner == 0:
             shifter = np.zeros((M, N + T))
-            #shifter[:, :-T] = LambHat
-            shifter[:, :-T] = X*Lambda**(beta-2)
-            Hhat = np.zeros((R, N))
+            shifter[:, :-T] = LambHat
+            # shifter[:, :-T] = X * Lambda ** (beta - 2)
+            Hhatu = np.zeros((R, N))
+            Hhatd = np.zeros((R, N))
             for t in range(T):
                 Wt = W[:, :, t].T
-                Hhat += Wt @ ((shifter[:, t: t + N])) / (Wt @ (Lambda**(beta-1))+eps)
-            H = H * Hhat
+                Hhatu += Wt @ shifter[:, t: t + N]
+                Hhatd += Wt @ repMat + eps
+            H = H * Hhatu / (Hhatd + mu)
 
         if Runner == 1:
             # From https://github.com/romi1502/NMF-matlab
             # Copyright (C) 2015 Romain Hennequin
-            # Seems to improve results a little! But is a little slower
+            # is a little slower
             # This seems to be due to the fact that each frequency sub band is convoluted separately,
             # not matrix multiplied as a whole 1d vs 2d convolution.
             Hu = np.zeros((R, N))
@@ -1068,45 +1105,62 @@ def NMFD(X, iters=50, Wpre=[]):
                 for m in range(M):
                     Hu[r, :] += np.convolve(LambHat[m, :], np.flipud(W[m, r, :]))[T - 1:]
                     Hd[r, :] += np.convolve(repMat[m, :], np.flipud(W[m, r, :]))[T - 1:]
-            H = H * Hu / (Hd+mu)
+            H = H * Hu / (Hd + mu)
 
         # precompute for error and next round
         Lambda = computeConv(H, W)
-        LambHat = X /  (Lambda+eps)
+        LambHat = X / (Lambda + eps)
 
         # 2*eps to ensure the eps don't cancel out each other in the division.
-        err[i] = KLDiv(X + eps, Lambda + 2 * (eps), LambHat+eps)
-        #err[i] = ISDiv(LambHat)
+        #kerr[i] = KLDiv(X + eps, Lambda + 2 * (eps), LambHat + eps)
+        err[i] = ISDiv(LambHat + eps)
 
         if (i >= 1):
-            errDiff = (abs(err[i] - err[i - 1]) / (err[1] - err[i]+eps))
-            #print(errDiff)
-            if errDiff < 0.0005 or err[i] > err[i - 1] :
-                break
-    return H
-import matplotlib.pyplot as plt
+            errDiff = (abs(err[i] - err[i - 1]) / (err[1] - err[i] + eps))
 
-def showEnvelope(env):
+            if errDiff < 0.0000005 or err[i] > err[i - 1]:
+                pass
+                #break
+    return H, err/err.max()
+
+import matplotlib.pyplot as plt
+import matplotlib.cm as cmaps
+
+
+def showEnvelope(env, legend=None, labels=None):
     """
     Plots an envelope
     i.e. an onset envelope or some other 2d data
     :param env: the data to plot
     :return: None
     """
-    plt.figure()
+    f=plt.figure(figsize=(10, 6))
+    ax=plt.subplot(111)
     plt.plot(env)
+    if legend!=None:
+        box = ax.get_position()
+        ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+        plt.gca().legend(legend,loc='center left', bbox_to_anchor=(1, 0.5))
+    if labels!=None:
+        #my_xticks=[str(x)[:4] for x in np.linspace(0.2,0.4,int(env.shape[0]/2))]
+        my_xticks=np.arange(1,20,1)
+        plt.xticks(np.arange(0,env.shape[0],1),my_xticks)
+        plt.xlabel(labels[0], fontsize=12)
+        plt.ylabel(labels[1], fontsize=12)
+    plt.savefig("NMFD_K1.png")
+    #plt.tight_layout()
 
 
 def showFFT(env):
-
     """
     Plots a spectrogram
 
     :param env: the data to plot
     :return: None
     """
-    plt.figure()
-    plt.imshow(env, aspect='auto', origin='lower')
+    plt.figure(figsize=(10, 2))
+    plt.imshow(env, aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
+    plt.tight_layout()
 
 
 def acceptHit(value, hits):
@@ -1120,15 +1174,16 @@ def acceptHit(value, hits):
     # Pitää vielä testata
 
     sum = 0
-    for i in range(nrOfDrums):
+    for i in range(value):
         if np.bitwise_and(i, hits):
             sum += 1
         if sum > 3:
             return False
     ##Voiko tän jättää pois??
+    ##Ainakin tekee kökköä kamaa, mielummin ilman
     offendingHits = np.array([
-        value == 2 and np.bitwise_and(3, hits),
-        value == 2 and np.bitwise_and(8, hits),
+        # value == 2 and np.bitwise_and(3, hits),
+        value == 3 and np.bitwise_and(8, hits),
         value == 3 and np.bitwise_and(2, hits),
         value == 3 and np.bitwise_and(7, hits),
         value == 6 and np.bitwise_and(7, hits),
@@ -1139,7 +1194,8 @@ def acceptHit(value, hits):
         value == 8 and np.bitwise_and(3, hits)
     ])
     if offendingHits.any():
-        return False
+        pass
+        # return False
     return True
 
 
@@ -1186,14 +1242,14 @@ def mergerowsandencode(a):
 
         """
     # Sixteenth notes length in this sample rate and frame size
-    sixtDivider = SAMPLE_RATE / FRAME_SIZE / SXTH_DIV
+    sixtDivider = SAMPLE_RATE / HOP_SIZE / SXTH_DIV
     if QUANTIZE:
         for i in range(len(a)):
             # Move frames to nearest sixteenth note
             a[i] = (np.rint(a[i][0] / sixtDivider),) + a[i][1:]
     # Define max frames from the first detected hit to end
     maxFrame = int(a[-1][0] - a[0][0] + 1)
-    #print(maxFrame)
+    # print(maxFrame)
     # spaceholder for return array
     frames = np.zeros(maxFrame, dtype=int)
     for i in range(len(a)):
@@ -1231,7 +1287,7 @@ def splitrowsanddecode(a):
 
     frameMul = 1
     if QUANTIZE:
-        frameMul = SAMPLE_RATE / FRAME_SIZE / SXTH_DIV
+        frameMul = SAMPLE_RATE / HOP_SIZE / SXTH_DIV
     i = 0
     pause = 0
     while i in range(len(a)):
@@ -1261,3 +1317,33 @@ def dec_to_binary(f):
 
             """
     return format(f, "0{}b".format(nrOfDrums))
+
+
+def semi_adaptive_NMFB(X, Wpre, iters=100):
+    epsilon = 10 ** -18
+    X = X + epsilon
+    W = Wpre[:,:,0]
+    # Initial H, non negative, non zero. any non zero value works
+    H = np.full((W.shape[1], X.shape[1]), .5)
+    #normalize input
+    W = W / W.max()
+    X = X / X.max()
+    #error space
+    err = np.zeros(iters)
+    Wt = W.T
+    def ISDiv(x, y):
+        return ((x / y+epsilon) - np.log(x / y+epsilon) - 1).sum()
+    WH = epsilon + np.dot(W, H)
+    mu=0.38
+    for i in range(iters):
+        Hu =(Wt @ (X * WH ** (- 2)))
+        Hd=(epsilon + (Wt @ WH ** (- 1)))
+        H=H*Hu/(Hd+mu)
+        WH = epsilon + np.dot(W, H)
+        err[i] = ISDiv(X+epsilon, WH+epsilon)# + (sparsity * normH)
+        if (i >= 1):
+            errDiff = (abs(err[i] - err[i - 1]) / (err[1] - err[i] + epsilon))
+            if errDiff < 0.000005 or err[i] > err[i - 1]:
+                pass
+                #break
+    return H, err/err.max()

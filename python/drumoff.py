@@ -39,16 +39,18 @@ def soundcheckDrum(drumkit_path, drumId):
     #     madmom.io.audio.write_wave_file(buffer, '{}/drum{}.wav'.format(drumkit_path, drumId), sample_rate=SAMPLE_RATE)
 
 
-def initKit(drumkit_path, nrOfDrums):
+def initKit(drumkit_path, nrOfDrums, k=0):
+    K=k
+    k=10
     global drums, fpr
     #print(nrOfDrums)
-    fpr = np.zeros((proc.shape[1], nrOfDrums * 2 * K, ConvFrames))
+    fpr = np.zeros((proc.shape[1], nrOfDrums * 2 * K, k))
     drums = []
     for i in range(nrOfDrums):
 
         buffer = madmom.audio.Signal("{}/drum{}.wav".format(drumkit_path, i), frame_size=FRAME_SIZE,
                                      hop_size=HOP_SIZE)
-        CC1, freqtemps, threshold = getPeaksFromBuffer(buffer, 1, nrOfPeaks)
+        CC1, freqtemps, threshold = getPeaksFromBuffer(buffer, 1, nrOfPeaks, k, K)
         for j in range(K):
             ind = i * K
             fpr[:, ind + j, :] = freqtemps[0][:, :, j]
@@ -200,41 +202,47 @@ def play(filePath):
         print(e)
         print('jotain meni vikaan!')
     t0=time()
-    plst = processLiveAudio(liveBuffer=buffer, peakList=drums, Wpre=fpr, quant_factor=1.0)
-    print('\nNMFDtime:%0.2f' % (time() - t0))
-    annotated = False
-    if (annotated):
-        # print f-score:
-        print('\n\n')
-        hits = pd.read_csv("{}midiBeatAnnod.csv".format(filePath), sep="\t", header=None)
-        precision, recall, fscore, true_tot = 0, 0, 0, 0
-        for i in plst:
-            predHits = frame_to_time(i.get_hits())
+    fs=np.zeros((7,9))
+    for n in range(1,7):
+        initKit('../trainSamplet/', 9, k=n)
+        plst = processLiveAudio(liveBuffer=buffer, peakList=drums, Wpre=fpr, quant_factor=0.0, iters=86, method='NMFD', K=n)
+        print('\nNMFDtime:%0.2f' % (time() - t0))
+        annotated = True
+        if (annotated):
+            # print f-score:
+            print('\n\n')
+            hits = pd.read_csv("{}midiBeatAnnod.csv".format(filePath), sep="\t", header=None)
+            precision, recall, fscore, true_tot = 0, 0, 0, 0
+            for i in plst:
+                predHits = frame_to_time(i.get_hits())
 
-            # print(predHits, predHits.shape[0] )
-            actHits = hits[hits[1] == i.get_name()[0]]
-            actHits = actHits.iloc[:, 0]
-            # print(actHits.values, actHits.shape[0])
-            trueHits = k_in_n(actHits.values, predHits, window=0.02)
-            # print(trueHits)
+                # print(predHits, predHits.shape[0] )
+                actHits = hits[hits[1] == i.get_name()[0]]
+                actHits = actHits.iloc[:, 0]
+                # print(actHits.values, actHits.shape[0])
+                trueHits = k_in_n(actHits.values, predHits, window=0.02)
+                # print(trueHits)2
+                prec, rec, f_drum = f_score(trueHits, predHits.shape[0], actHits.shape[0])
+                print(prec)
+                print(rec)
+                print(f_drum)
+                fs[n,i.get_name()]=f_drum
+                print(trueHits)
+                print('\n')
+                # Multiply by n. of hits to get real f-score in the end.
+                precision += prec * actHits.shape[0]
+                recall += rec * actHits.shape[0]
+                fscore += (f_drum * actHits.shape[0])
+                true_tot += actHits.shape[0]
+                # add_to_samples_and_dictionary(i.drum, buffer, i.get_hits())
+            print('Precision: {}'.format(precision / true_tot))
+            #fs[n,0]=(precision / true_tot)
+            print('Recall: {}'.format(recall / true_tot))
+            #fs[n,1] = (recall / true_tot)
+            print('F-score: {}'.format(fscore / true_tot))
+            #fs[n,2]=(fscore / true_tot)
 
-            prec, rec, f_drum = f_score(trueHits, predHits.shape[0], actHits.shape[0])
-            print(prec)
-            print(rec)
-            print(f_drum)
-            print(trueHits)
-            print('\n')
-            # Multiply by n. of hits to get real f-score in the end.
-            precision += prec * actHits.shape[0]
-            recall += rec * actHits.shape[0]
-            fscore += (f_drum * actHits.shape[0])
-            true_tot += actHits.shape[0]
-            # add_to_samples_and_dictionary(i.drum, buffer, i.get_hits())
-        print('Precision: {}'.format(precision / true_tot))
-        print('Recall: {}'.format(recall / true_tot))
-        print('F-score: {}'.format(fscore / true_tot))
-
-
+    showEnvelope(fs[1:n], ('Kick','Snare','HH Closed','HH Open','Rack Tom', 'Floor Tom', 'Ride', 'Crash', 'HH Pedal'), ('templates/drum','score'))
     '''
     todo: Normalize freq -bands locally to adjust to signal level changing during performance
         frame by frame or something else, a window of fixeld length maybe?
@@ -246,9 +254,7 @@ def play(filePath):
     for i in plst:
         hits = i.get_hits()
         binhits = i.get_hits()
-
         hits = frame_to_time(hits)
-        ##VASTA QUANTIZE?????
         labels = np.full(len(hits), i.get_midinote(), np.int64)
         binlabels = np.full(len(binhits), i.get_name(), np.int64)
         inst = zip(hits, labels)
@@ -259,7 +265,7 @@ def play(filePath):
     bintimes.sort()
     bintimes = mergerowsandencode(bintimes)
     df = pd.DataFrame(times, columns=['time', 'inst'])
-    df['duration'] = pd.Series(np.full((len(times)), 1, np.int64))
+    df['duration'] = pd.Series(np.full((len(times)), 0, np.int64))
     df['vel'] = pd.Series(np.full((len(times)), 127, np.int64))
     bindf = pd.DataFrame(bintimes, columns=['inst'])
     bindf.to_csv('testbeat0.csv', index=True, header=False, sep="\t")
@@ -274,12 +280,13 @@ def play(filePath):
     # change to time and midinotes
     gen['time'] = frame_to_time(gen['time'])
     gen['inst'] = to_midinote(gen['inst'])
-    gen['duration'] = pd.Series(np.full((len(generated)), 1, np.int64))
+    gen['duration'] = pd.Series(np.full((len(generated)), 0, np.int64))
     gen['vel'] = pd.Series(np.full((len(generated)), 127, np.int64))
     madmom.io.midi.write_midi(gen.values, 'midi_testit_enc_dec0.mid')
 
     print('Processing time:%0.2f' % (time() - t0))
     return True
+#debug
 #initKit('../trainSamplet/',9)
-#loadKit('../oikeetsamplet/')
-#play('../oikeetsamplet/')
+loadKit('../trainSamplet/')
+play('../trainSamplet/')
