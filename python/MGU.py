@@ -1,6 +1,7 @@
 import keras.backend as K
-from keras import  activations,regularizers,initializers,constraints
-from keras.layers import GRU,GRUCell
+from keras import activations, regularizers, initializers, constraints
+from keras.layers import GRU, GRUCell
+
 
 def _generate_dropout_mask(ones, rate, training=None, count=1):
     def dropped_inputs():
@@ -36,7 +37,7 @@ class MGUCell(GRUCell):
                  implementation=1,
                  reset_after=False,
                  **kwargs):
-        super(MGUCell, self).__init__(units,**kwargs)
+        super(MGUCell, self).__init__(units, **kwargs)
         self.units = units
         self.activation = activations.get(activation)
         self.recurrent_activation = activations.get(recurrent_activation)
@@ -61,7 +62,6 @@ class MGUCell(GRUCell):
         self.state_size = self.units
         self._dropout_mask = None
         self._recurrent_dropout_mask = None
-
 
     def build(self, input_shape):
         input_dim = input_shape[-1]
@@ -100,36 +100,46 @@ class MGUCell(GRUCell):
         else:
             self.bias = None
 
-        # update gate
-        self.kernel_z = self.kernel[:, :self.units]
-        self.recurrent_kernel_z = self.recurrent_kernel[:, :self.units]
+        # update gate, for mgu: forget gate
+        self.kernel_f = self.kernel[:, :self.units]
+        self.recurrent_kernel_f = self.recurrent_kernel[:, :self.units]
         # reset gate
-        #self.kernel_r = self.kernel[:, self.units: self.units * 2]
-        #self.recurrent_kernel_r = self.recurrent_kernel[:,
+        # self.kernel_r = self.kernel[:, self.units: self.units * 2]
+        # self.recurrent_kernel_r = self.recurrent_kernel[:,
         #                          self.units:
         #                          self.units * 2]
         # new gate
         self.kernel_h = self.kernel[:, self.units: self.units * 2]
-        self.recurrent_kernel_h = self.recurrent_kernel[:,self.units:self.units * 2]
-
-        if self.use_bias:
-            # bias for inputs
-            self.input_bias_z = self.input_bias[:self.units]
-            #self.input_bias_r = self.input_bias[self.units: self.units * 2]
-            self.input_bias_h = self.input_bias[self.units: self.units * 2]
-            # bias for hidden state - just for compatibility with CuDNN
-            if self.reset_after:
-                self.recurrent_bias_z = self.recurrent_bias[:self.units]
-                #self.recurrent_bias_r = self.recurrent_bias[self.units: self.units * 2]
-                self.recurrent_bias_h = self.recurrent_bias[self.units: self.units * 2]
-        else:
-            self.input_bias_z = None
-            #self.input_bias_r = None
-            self.input_bias_h = None
-            if self.reset_after:
-                self.recurrent_bias_z = None
-                #self.recurrent_bias_r = None
-                self.recurrent_bias_h = None
+        self.recurrent_kernel_h = self.recurrent_kernel[:, self.units:self.units * 2]
+        if self.implementation==1:
+            if self.use_bias:
+                # bias for inputs
+                self.input_bias_f = self.input_bias[:self.units]
+                # self.input_bias_r = self.input_bias[self.units: self.units * 2]
+                self.input_bias_h = self.input_bias[self.units: self.units * 2]
+                # bias for hidden state - just for compatibility with CuDNN
+                if self.reset_after:
+                    self.recurrent_bias_f = self.recurrent_bias[:self.units]
+                    # self.recurrent_bias_r = self.recurrent_bias[self.units: self.units * 2]
+                    self.recurrent_bias_h = self.recurrent_bias[self.units: self.units * 2]
+            else:
+                self.input_bias_f = None
+                # self.input_bias_r = None
+                self.input_bias_h = None
+                if self.reset_after:
+                    self.recurrent_bias_f = None
+                    # self.recurrent_bias_r = None
+                    self.recurrent_bias_h = None
+        elif self.implementation==2:
+            if self.use_bias:
+                self.input_bias_h = self.input_bias[self.units: self.units * 2]
+                # bias for hidden state - just for compatibility with CuDNN
+                if self.reset_after:
+                    self.recurrent_bias_h = self.recurrent_bias[self.units: self.units * 2]
+            else:
+                self.input_bias_h = None
+                if self.reset_after:
+                    self.recurrent_bias_h = None
         self.built = True
 
     def call(self, inputs, states, training=None):
@@ -156,96 +166,74 @@ class MGUCell(GRUCell):
 
         if self.implementation == 1:
             if 0. < self.dropout < 1.:
-                inputs_z = inputs * dp_mask[0]
-                #inputs_r = inputs * dp_mask[1]
+                inputs_f = inputs * dp_mask[0]
                 inputs_h = inputs * dp_mask[1]
             else:
-                inputs_z = inputs
-                #inputs_r = inputs
+                inputs_f = inputs
                 inputs_h = inputs
 
-            x_z = K.dot(inputs_z, self.kernel_z)
-            #x_r = K.dot(inputs_r, self.kernel_r)
+            x_f = K.dot(inputs_f, self.kernel_f)
             x_h = K.dot(inputs_h, self.kernel_h)
             if self.use_bias:
-                x_z = K.bias_add(x_z, self.input_bias_z)
-                #x_r = K.bias_add(x_r, self.input_bias_r)
+                x_f = K.bias_add(x_f, self.input_bias_f)
                 x_h = K.bias_add(x_h, self.input_bias_h)
 
             if 0. < self.recurrent_dropout < 1.:
-                h_tm1_z = h_tm1 * rec_dp_mask[0]
-                #h_tm1_r = h_tm1 * rec_dp_mask[1]
+                h_tm1_f = h_tm1 * rec_dp_mask[0]
                 h_tm1_h = h_tm1 * rec_dp_mask[1]
             else:
-                h_tm1_z = h_tm1
-                #h_tm1_r = h_tm1
+                h_tm1_f = h_tm1
                 h_tm1_h = h_tm1
 
-            recurrent_z = K.dot(h_tm1_z, self.recurrent_kernel_z)
-            #recurrent_r = K.dot(h_tm1_r, self.recurrent_kernel_r)
+            recurrent_f = K.dot(h_tm1_f, self.recurrent_kernel_f)
             if self.reset_after and self.use_bias:
-                recurrent_z = K.bias_add(recurrent_z, self.recurrent_bias_z)
-                #recurrent_r = K.bias_add(recurrent_r, self.recurrent_bias_r)
+                recurrent_f = K.bias_add(recurrent_f, self.recurrent_bias_f)
 
-            z = self.recurrent_activation(x_z + recurrent_z)
-            #r = self.recurrent_activation(x_r + recurrent_r)
+            f = self.recurrent_activation(x_f + recurrent_f)
 
             # reset gate applied after/before matrix multiplication
             if self.reset_after:
                 recurrent_h = K.dot(h_tm1_h, self.recurrent_kernel_h)
                 if self.use_bias:
                     recurrent_h = K.bias_add(recurrent_h, self.recurrent_bias_h)
-                #recurrent_h = r * recurrent_h
-                recurrent_h = recurrent_h
-            else:
-                #recurrent_h = K.dot(r * h_tm1_h, self.recurrent_kernel_h)
-                recurrent_h = K.dot( h_tm1_h, self.recurrent_kernel_h)
-            hh = self.activation(x_h + recurrent_h)
-        else:
-            if 0. < self.dropout < 1.:
-                inputs *= dp_mask[0]
 
-            # inputs projected by all gate matrices at once
-            matrix_x = K.dot(inputs, self.kernel)
+            else:
+                recurrent_h = K.dot(h_tm1_h, self.recurrent_kernel_h)
+            hh = self.activation(x_h + recurrent_h)
+
+        # MGU2 with reduced forget gate
+        elif self.implementation == 2:
+            if 0. < self.dropout < 1.:
+                inputs_h = inputs * dp_mask[1]
+            else:
+                inputs_h = inputs
+
+            x_h = K.dot(inputs_h, self.kernel_h)
             if self.use_bias:
-                # biases: bias_z_i, bias_r_i, bias_h_i
-                matrix_x = K.bias_add(matrix_x, self.input_bias)
-            x_z = matrix_x[:, :self.units]
-            #x_r = matrix_x[:, self.units: 2 * self.units]
-            x_h = matrix_x[:, 2 * self.units:]
+                x_h = K.bias_add(x_h, self.input_bias_h)
 
             if 0. < self.recurrent_dropout < 1.:
-                h_tm1 *= rec_dp_mask[0]
+                h_tm1_f = h_tm1 * rec_dp_mask[0]
+                h_tm1_h = h_tm1 * rec_dp_mask[1]
+            else:
+                h_tm1_f = h_tm1
+                h_tm1_h = h_tm1
 
+            recurrent_f = K.dot(h_tm1_f, self.recurrent_kernel_f)
+
+            f = self.recurrent_activation(recurrent_f)
+
+            # forget gate applied after/before matrix multiplication
             if self.reset_after:
-                # hidden state projected by all gate matrices at once
-                matrix_inner = K.dot(h_tm1, self.recurrent_kernel)
+                recurrent_h = K.dot(h_tm1_h, self.recurrent_kernel_h)
                 if self.use_bias:
-                    matrix_inner = K.bias_add(matrix_inner, self.recurrent_bias)
+                    recurrent_h = K.bias_add(recurrent_h, self.recurrent_bias_h)
             else:
-                # hidden state projected separately for update/reset and new
-                matrix_inner = K.dot(h_tm1,
-                                     self.recurrent_kernel[:, :2 * self.units])
-
-            recurrent_z = matrix_inner[:, :self.units]
-            #recurrent_r = matrix_inner[:, self.units: 2 * self.units]
-
-            z = self.recurrent_activation(x_z + recurrent_z)
-            #r = self.recurrent_activation(x_r + recurrent_r)
-
-            if self.reset_after:
-                #recurrent_h = r * matrix_inner[:, 2 * self.units:]
-                recurrent_h = matrix_inner[:, 2 * self.units:]
-            else:
-                #recurrent_h = K.dot(r * h_tm1,
-                #                    self.recurrent_kernel[:, 2 * self.units:])
-                recurrent_h = K.dot(h_tm1,
-                                    self.recurrent_kernel[:, 2 * self.units:])
-
+                recurrent_h = K.dot(h_tm1_h, self.recurrent_kernel_h)
             hh = self.activation(x_h + recurrent_h)
 
         # previous and candidate state mixed by update gate
-        h = z * h_tm1 + (1 - z) * hh
+        h = f * h_tm1 + (1 - f) * hh
 
         if 0 < self.dropout + self.recurrent_dropout:
             if training is None:
@@ -274,6 +262,7 @@ class MGUCell(GRUCell):
         base_config = super(GRUCell, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
+
 class MGU(GRU):
     def __init__(self, units,
                  activation='tanh',
@@ -300,46 +289,46 @@ class MGU(GRU):
                  reset_after=False,
                  **kwargs):
         super(MGU, self).__init__(units,
-                 activation=activation,
-                 recurrent_activation=recurrent_activation,
-                 use_bias=use_bias,
-                 kernel_initializer=kernel_initializer,
-                 recurrent_initializer=recurrent_initializer,
-                 bias_initializer=bias_initializer,
-                 kernel_regularizer=kernel_regularizer,
-                 recurrent_regularizer=recurrent_regularizer,
-                 bias_regularizer=bias_regularizer,
-                 activity_regularizer=activity_regularizer,
-                 kernel_constraint=kernel_constraint,
-                 recurrent_constraint=recurrent_constraint,
-                 bias_constraint=bias_constraint,
-                 dropout=dropout,
-                 recurrent_dropout=recurrent_dropout,
-                 implementation=implementation,
-                 return_sequences=return_sequences,
-                 return_state=return_state,
-                 go_backwards=go_backwards,
-                 stateful=stateful,
-                 unroll=unroll,
-                 reset_after=reset_after,
-                 **kwargs)
+                                  activation=activation,
+                                  recurrent_activation=recurrent_activation,
+                                  use_bias=use_bias,
+                                  kernel_initializer=kernel_initializer,
+                                  recurrent_initializer=recurrent_initializer,
+                                  bias_initializer=bias_initializer,
+                                  kernel_regularizer=kernel_regularizer,
+                                  recurrent_regularizer=recurrent_regularizer,
+                                  bias_regularizer=bias_regularizer,
+                                  activity_regularizer=activity_regularizer,
+                                  kernel_constraint=kernel_constraint,
+                                  recurrent_constraint=recurrent_constraint,
+                                  bias_constraint=bias_constraint,
+                                  dropout=dropout,
+                                  recurrent_dropout=recurrent_dropout,
+                                  implementation=implementation,
+                                  return_sequences=return_sequences,
+                                  return_state=return_state,
+                                  go_backwards=go_backwards,
+                                  stateful=stateful,
+                                  unroll=unroll,
+                                  reset_after=reset_after,
+                                  **kwargs)
         self.cell = MGUCell(units,
-                       activation=activation,
-                       recurrent_activation=recurrent_activation,
-                       use_bias=use_bias,
-                       kernel_initializer=kernel_initializer,
-                       recurrent_initializer=recurrent_initializer,
-                       bias_initializer=bias_initializer,
-                       kernel_regularizer=kernel_regularizer,
-                       recurrent_regularizer=recurrent_regularizer,
-                       bias_regularizer=bias_regularizer,
-                       kernel_constraint=kernel_constraint,
-                       recurrent_constraint=recurrent_constraint,
-                       bias_constraint=bias_constraint,
-                       dropout=dropout,
-                       recurrent_dropout=recurrent_dropout,
-                       implementation=implementation,
-                       reset_after=reset_after)
+                            activation=activation,
+                            recurrent_activation=recurrent_activation,
+                            use_bias=use_bias,
+                            kernel_initializer=kernel_initializer,
+                            recurrent_initializer=recurrent_initializer,
+                            bias_initializer=bias_initializer,
+                            kernel_regularizer=kernel_regularizer,
+                            recurrent_regularizer=recurrent_regularizer,
+                            bias_regularizer=bias_regularizer,
+                            kernel_constraint=kernel_constraint,
+                            recurrent_constraint=recurrent_constraint,
+                            bias_constraint=bias_constraint,
+                            dropout=dropout,
+                            recurrent_dropout=recurrent_dropout,
+                            implementation=implementation,
+                            reset_after=reset_after)
 
 
 """

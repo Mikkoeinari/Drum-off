@@ -135,9 +135,9 @@ class SoundCheckPerformScreen(Screen):
 
         def callback():
             try:
-                drumoff.soundcheckDrum(fullPath, self.getDrumNro())
+                drumoff.soundcheckDrum(fullPath, self.getDrumNro()-1)
             except Exception as e:
-                print(e)
+                print('sounckech ui:',e)
 
         t = threading.Thread(target=callback)
         t.start()
@@ -152,11 +152,11 @@ class SoundCheckPerformScreen(Screen):
         app = App.get_running_app()
         fullPath = './Kits/{}'.format(app.KitName)
         try:
-            drumoff.initKit(fullPath, sum(app.NrOfDrums))
+            drumoff.initKitBG(fullPath, sum(app.NrOfDrums))
             app.KitInit = 'Initialized'
             app.root.current = 'MainMenu'
         except Exception as e:
-            print(e)
+            print('finish soundcheck: ',e)
 
     def First_Thread(self, nr):
         self.setMsg('soundcheck drum nr. {}'.format('0'))
@@ -198,7 +198,7 @@ class PlayScreen(Screen):
                 self.playBackMessage = 'Stop Playback'
                 drumsynth.playFile(fullPath)
             except Exception as e:
-                print(e)
+                print('playback ui: ',e)
         t = threading.Thread(target=callback)
         t.start()
 
@@ -208,11 +208,11 @@ class PlayScreen(Screen):
         fullPath = self.lastMessage
         def callback():
             try:##INIT MODEL!!
-                self.lastGenPart = mgu.generatePart(mgu.train(fullPath))
+                self.lastGenPart = mgu.generatePart(mgu.train(fullPath, sampleMul=1.33, forceGen=False))
                 self.playBackMessage = 'Play Back Computer Performance'
                 self.turnMessage=('computer')
             except Exception as e:
-                print(e)
+                print('virhe! computer turn: ',e)
         t = threading.Thread(target=callback)
         t.start()
         print ('c.puter')
@@ -237,12 +237,17 @@ class PlayScreen(Screen):
         time.sleep(1)
         def callback():
             try:
-                self.lastMessage=drumoff.playLive(fullPath)
+                filename=drumoff.playLive(fullPath)
+                if filename==False:
+                    self.turnMessage = ('player')
+                    self.pBtnMessage = 'Play'
+                    return
+                self.lastMessage=filename
                 self.playBackMessage = 'Play Back Last Performance'
                 self.turnMessage=('player')
                 self.pBtnMessage = 'Play'
             except Exception as e:
-                print(e)
+                print('player playback ui: ',e)
         t = threading.Thread(target=callback)
         t.start()
 
@@ -270,7 +275,7 @@ class LoadScreen(Screen):
                 app.NrOfDrums[drum] += 1
             app.root.current = 'MainMenu'
         except Exception as e:
-            print(e)
+            print('load kit ui: ',e)
 
 
 class DrumOffApp(App):
