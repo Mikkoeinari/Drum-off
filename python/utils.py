@@ -1148,10 +1148,13 @@ def mergerowsandencode(a):
         # define true index by substracting the leading empty frames
         index = int(a[i][0] - a[0][0])
         # The actual hit information
-        value = a[i][1]
+        value = int(a[i][1])
         # Encode the hit into a charachter array, place 1 on the index of the drum #
         if acceptHit(value, frames[index]):
-            frames[index] = np.bitwise_or(frames[index], 2 ** value)
+            try:
+                frames[index] = np.bitwise_or(frames[index], 2 ** value)
+            except:
+                print (frames[index],value)
 
     # return array of merged hits starting from the first occurring hit event
     if ENCODE_PAUSE:

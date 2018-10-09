@@ -1,5 +1,6 @@
 from utils import *
 from time import time
+from random import randint
 import pickle
 t0 = time()
 # import os
@@ -66,15 +67,20 @@ BigY=[]
 #     BigY = pickle.load(open("./bigy.big", 'rb'))
 # except:
 #     print('bigs not found')
-def vectorizeCSV(filename, seqLen=32, sampleMul=2, forceGen=False, bigFile=None):
+def vectorizeCSV(filename, seqLen=32, sampleMul=1., forceGen=False, bigFile=None):
     global numDiffHits, charI, Ichar, partLength
     if filename is not None:
         data = []
         d = pd.read_csv(filename, header=None, sep="\t").values
-        data.extend(list(d[:, 1]))
+        if bigFile is 'extreme':
+            target =randint(0, d[-1,0]-200)
+            data.extend(list(d[target:target + 200, 1]))
+        else:
+            data.extend(list(d[:, 1]))
+
     elif bigFile is not None:
         data=bigFile
-
+    data = data[:128]
     # print('corpus length:', len(data))
     partLength = 360#max([len(data),720])
     if forceGen:
@@ -122,8 +128,9 @@ def vectorizeCSV(filename, seqLen=32, sampleMul=2, forceGen=False, bigFile=None)
     y[0]=y0
     return X, y, numDiffHits
 
+
 # Just the hits: Not working
-def vectorize(filename, seqLen=32, sampleMul=2, forceGen=False):
+def vectorize(filename, seqLen=32, sampleMul=1., forceGen=False):
     data = []
     d = pd.read_csv(filename, header=None, sep="\t").values
     data.extend(list(d[:, 1]))
@@ -151,7 +158,7 @@ def vectorize(filename, seqLen=32, sampleMul=2, forceGen=False):
     X, y = resample(np.array(X), np.array(y), n_samples=len(words), replace=True)
     return X, y, numDiffHits
 
-def label_encode(filename, seqLen=32, sampleMul=2, forceGen=False):
+def label_encode(filename, seqLen=32, sampleMul=1., forceGen=False):
     'Returns a DataFrame with encoded columns'
     data = []
     d = pd.read_csv(filename, header=None, sep="\t").values
@@ -172,7 +179,7 @@ def label_encode(filename, seqLen=32, sampleMul=2, forceGen=False):
     y = np.array(outchar)
     X, y = resample(np.array(X), np.array(y), n_samples=len(words)*sampleMul, replace=True)
     return X, y, numDiffHits
-def freq_encode(filename, seqLen=32, sampleMul=2, forceGen=False):
+def freq_encode(filename, seqLen=32, sampleMul=1., forceGen=False):
     '''Returns a DataFrame with encoded columns'''
     data = []
     d = pd.read_csv(filename, header=None, sep="\t").values
@@ -194,7 +201,7 @@ def freq_encode(filename, seqLen=32, sampleMul=2, forceGen=False):
     X, y = resample(np.array(X), np.array(y), n_samples=len(words) * sampleMul, replace=True)
     return X, y, numDiffHits
 
-def keras_encode(filename, seqLen=32, sampleMul=2, forceGen=False):
+def keras_encode(filename, seqLen=32, sampleMul=1., forceGen=False):
     'Returns a DataFrame with encoded columns'
     data = []
     d = pd.read_csv(filename, header=None, sep="\t").values
@@ -251,11 +258,11 @@ def initModel(seqLen=32, destroy_old=False):
 # print("learning...")
 # rerun = True
 # if rerun == True or not os.path.isfile('weights_testivedot2.hdf5'):
-def train(filename=None, seqLen=seqLen, sampleMul=2, forceGen=False, bigFile=None, updateModel=False):
+def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=None, updateModel=False):
     global lastLoss
     class drumSeq(Sequence):
 
-        def __init__(self, X_train, y_train, batch_size=200, shuffle=True):
+        def __init__(self,filename, batch_size=200, shuffle=True):
             'Initialization'
             self.batch_size = batch_size
             self.y = y_train
@@ -266,6 +273,7 @@ def train(filename=None, seqLen=seqLen, sampleMul=2, forceGen=False, bigFile=Non
             return int(np.floor(len(self.X) / self.batch_size))
 
         def __getitem__(self, idx):
+
             return resample(np.array(self.X), np.array(self.y), n_samples=self.batch_size, replace=self.shuffle)
 
     def klik(epoch):
@@ -282,27 +290,36 @@ def train(filename=None, seqLen=seqLen, sampleMul=2, forceGen=False, bigFile=Non
 
     modelsaver = ModelCheckpoint(filepath="./Kits/weights_testivedot2.hdf5", verbose=1, save_best_only=True)
     temporarysaver = ModelCheckpoint(filepath="./Kits/temp.hdf5", verbose=0, save_best_only=True)
+    genMdelSaver=ModelCheckpoint(filepath="./Kits/weights_testivedot_ext.hdf5", verbose=1, save_best_only=True)
     earlystopper = EarlyStopping(monitor="val_loss", min_delta=0.0, patience=2, mode='auto')
     history = LossHistory()
 
 
     learninratescheduler=LearningRateScheduler(klik, verbose=1)
-    if filename is not None:
+    if filename is not None and updateModel is not 'extreme':
         #X_train, y_train, numDiffHits=freq_encode(filename, seqLen, sampleMul, forceGen=forceGen)
         #X_train = X_train.reshape(X_train.shape[0], X_train.shape[1], 1)
         X_train, y_train, numDiffHits = vectorizeCSV(filename, seqLen, sampleMul, forceGen=forceGen)
         if X_train is None:
             return None
         #X_train, y_train, numDiffHits = keras_encode(filename, seqLen, sampleMul, forceGen=forceGen)
-    elif bigFile is not None:
+    elif bigFile is not None and updateModel is not 'extreme':
         #X_train, y_train, numDiffHits = vectorizeCSV(filename, seqLen, sampleMul, forceGen=forceGen, bigFile=bigFile)
         X_train,y_train=bigFile
         if X_train is None:
             return None
-    else:
+    elif updateModel is not 'extreme':
         #print(len(BigX))
         X_train, y_train=resample(np.array(BigX), np.array(BigY), n_samples=len(BigX), replace=True)
-    tr_gen = drumSeq(X_train, y_train, batch_size=200, shuffle=True)
+    if updateModel is 'extreme':
+        def myGenerator():
+            while True:
+                x, y,_ = vectorizeCSV(filename, seqLen, sampleMul, forceGen=forceGen, bigFile='extreme')
+                yield (x, y)
+
+        X_test, y_test,_ = vectorizeCSV(filename, seqLen, sampleMul, forceGen=forceGen, bigFile='extreme')
+        X_train=X_test
+        tr_gen = myGenerator()
     if forceGen:
         pass
         return X_train[0]
@@ -311,18 +328,21 @@ def train(filename=None, seqLen=seqLen, sampleMul=2, forceGen=False, bigFile=Non
     #                    workers=8, use_multiprocessing=True, verbose=1)
     with graph.as_default():
         #model=getModel()
-        #model.fit_generator(generator=tr_gen, steps_per_epoch=20, max_queue_size=10,callbacks=[modelsaver, earlystopper],
-        #                   workers=8, use_multiprocessing=True, verbose=1)
-        #model.load_weights("./Kits/weights_testivedot2.hdf5")
+        if updateModel=='extreme':
+            model.save_weights("./Kits/weights_testivedot_ext.hdf5")
+            model.fit_generator(generator=tr_gen,epochs=20, steps_per_epoch=20, max_queue_size=10,callbacks=[genMdelSaver, earlystopper],
+                              workers=8, use_multiprocessing=False, verbose=1, validation_data=(X_test, y_test))
+            model.load_weights("./Kits/weights_testivedot_ext.hdf5")
+            model.save('./Kits/model_ext.hdf5')
         #print(X_train.shape)
-        if updateModel:
+        if updateModel==True:
             model.fit(X_train, y_train, batch_size=500, epochs=20,
                   callbacks=[modelsaver, earlystopper, history],# learninratescheduler],
                   validation_split=0.33,
                   verbose=2)
             model.load_weights("./Kits/weights_testivedot2.hdf5")
             model.save('./Kits/model.hdf5')
-        else:
+        elif updateModel==False:
             model.load_weights("./Kits/weights_testivedot2.hdf5")
             model.fit(X_train, y_train, batch_size=50, epochs=20,
                       callbacks=[temporarysaver,history],  # learninratescheduler],
@@ -372,8 +392,11 @@ def generatePart(data):
     def sample(a, temperature=1.0):
         # helper function to sample an index from a probability array
         a = np.asarray(a).astype('float64')
-        a = np.log(a) / temperature
-        a = np.exp(a) / np.sum(np.exp(a))
+        a=a ** (1 / temperature)
+        a_sum=a.sum()
+        a=a/a_sum
+        #a = np.log(a) / temperature
+        #a = np.exp(a) / np.sum(np.exp(a))
         # choices = range(len(a))
         # return np.random.choice(choices, p=a)
         return np.argmax(np.random.multinomial(1, a, 1))
@@ -431,9 +454,9 @@ def generatePart(data):
 #Testing from here on end
 #make midi from source file
 if False:
-    generated=pd.read_csv('./Kits/mcd2/takes/testbeat1538068499.062592.csv', header=None, sep="\t", usecols=[1])
+    generated=pd.read_csv('dataklimp0b.csv', header=None, sep="\t", usecols=[1])
     print(generated.head())
-    generated = splitrowsanddecode(generated[1])
+    generated = splitrowsanddecode(generated[1][:5000])
     gen = pd.DataFrame(generated, columns=['time', 'inst'])
 
     gen['time'] = frame_to_time(gen['time'], hop_length=Q_HOP)
@@ -496,7 +519,9 @@ if new:
         train(filename=None,seqLen=seqLen,sampleMul=1, bigFile=[Xs,ys], updateModel=True)
     print('training a model from scratch:%0.2f' % (time() - t0))
 #t0=time()
-#generatePart(train('./Kits/sänky/takes/testbeat1538816722.32474.csv', seqLen, sampleMul=1.5, forceGen=False))
+#print('going big')
+#generatePart(train('dataklimp0b.csv', seqLen, sampleMul=1.5, forceGen=False, updateModel='extreme'))
+generatePart(train('./Kits/mcd2/takes/testbeat1538990686.408342.csv', seqLen, sampleMul=1.5, forceGen=False))
 #print('gen:%0.2f' % (time() - t0))
     #bigdata=pd.DataFrame(BigX, columns=['inst'])
     #bigdata.to_csv('./big.csv', index=True, header=None, sep='\t')
