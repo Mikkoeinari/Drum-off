@@ -436,7 +436,7 @@ def generatePart(data):
     filename = 'generated{}.csv'.format(time())
     gen.to_csv(filename, index=True, header=None, sep='\t')
     print('valmis')
-    #return filename
+    return filename
     # change to time and midinotes
     generated = splitrowsanddecode(generated)
     gen = pd.DataFrame(generated, columns=['time', 'inst'])
@@ -521,7 +521,7 @@ if new:
 #t0=time()
 #print('going big')
 #generatePart(train('dataklimp0b.csv', seqLen, sampleMul=1.5, forceGen=False, updateModel='extreme'))
-generatePart(train('./Kits/mcd2/takes/testbeat1538990686.408342.csv', seqLen, sampleMul=1.5, forceGen=False))
+#generatePart(train('./Kits/mcd2/takes/testbeat1538990686.408342.csv', seqLen, sampleMul=1.5, forceGen=False))
 #print('gen:%0.2f' % (time() - t0))
     #bigdata=pd.DataFrame(BigX, columns=['inst'])
     #bigdata.to_csv('./big.csv', index=True, header=None, sep='\t')
