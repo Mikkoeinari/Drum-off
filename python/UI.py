@@ -130,6 +130,7 @@ class SoundCheckPerformScreen(Screen):
         except Exception as e:
             pass
         utils._ImRunning = False
+        #Should we have a count in?
         time.sleep(1)
         self.performMessage = 'Start Playing!'
 

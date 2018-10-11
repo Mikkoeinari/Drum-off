@@ -128,99 +128,6 @@ def vectorizeCSV(filename, seqLen=32, sampleMul=1., forceGen=False, bigFile=None
     y[0]=y0
     return X, y, numDiffHits
 
-
-# Just the hits: Not working
-def vectorize(filename, seqLen=32, sampleMul=1., forceGen=False):
-    data = []
-    d = pd.read_csv(filename, header=None, sep="\t").values
-    data.extend(list(d[:, 1]))
-
-    def binarize(a):
-        if a < 0:
-            return map(int, ['1', '0'] + list(format(a, "0{}b".format(nrOfDrums)))[1:])
-        else:
-            return map(int, list(format(a, "0{}b".format(nrOfDrums + 1))))
-
-    def binarize2(a):
-        return [x for x in bin(a)[2:]]
-
-    data = [list(binarize(i)) for i in data]
-    #print(data)
-    words = []
-    outchar = []
-    #print('corpus length:', len(data))
-    for i in range(0, len(data) - seqLen, 1):
-        words.append(data[i: i + seqLen])
-        outchar.append(data[i + seqLen])
-    #print('nb sequences:', len(words))
-    X = np.array(words)
-    y = np.array(outchar)
-    X, y = resample(np.array(X), np.array(y), n_samples=len(words), replace=True)
-    return X, y, numDiffHits
-
-def label_encode(filename, seqLen=32, sampleMul=1., forceGen=False):
-    'Returns a DataFrame with encoded columns'
-    data = []
-    d = pd.read_csv(filename, header=None, sep="\t").values
-    data.extend(list(d[:, 1]))
-    data=pd.Series(data)
-    factorised = pd.factorize(d[:, 1])[1]
-    labels = pd.Series(range(len(factorised)), index=factorised)
-    encoded_col = data.map(labels)
-    encoded_col[encoded_col.isnull()] = -1
-    words = []
-    outchar = []
-    #print('corpus length:', len(encoded_col))
-    for i in range(0, len(encoded_col) - seqLen, 1):
-        words.append(encoded_col[i: i + seqLen])
-        outchar.append(encoded_col[i + seqLen])
-    #print('nb sequences:', len(words))
-    X = np.array(words)
-    y = np.array(outchar)
-    X, y = resample(np.array(X), np.array(y), n_samples=len(words)*sampleMul, replace=True)
-    return X, y, numDiffHits
-def freq_encode(filename, seqLen=32, sampleMul=1., forceGen=False):
-    '''Returns a DataFrame with encoded columns'''
-    data = []
-    d = pd.read_csv(filename, header=None, sep="\t").values
-    data.extend(list(d[:, 1]))
-    data=pd.Series(data)
-    freqs_cat = data.value_counts(normalize=False, sort=True, ascending=False, bins=None, dropna=True)
-    #freqs_cat = data.count()/data.shape[0]
-    encoded_col = data.map(freqs_cat)
-    encoded_col[encoded_col.isnull()] = 0
-    words = []
-    outchar = []
-    #print('corpus length:', len(encoded_col))
-    for i in range(0, len(encoded_col) - seqLen, 1):
-        words.append(encoded_col[i: i + seqLen])
-        outchar.append(encoded_col[i + seqLen])
-    #print('nb sequences:', len(words))
-    X = np.array(words)
-    y = np.array(outchar)
-    X, y = resample(np.array(X), np.array(y), n_samples=len(words) * sampleMul, replace=True)
-    return X, y, numDiffHits
-
-def keras_encode(filename, seqLen=32, sampleMul=1., forceGen=False):
-    'Returns a DataFrame with encoded columns'
-    data = []
-    d = pd.read_csv(filename, header=None, sep="\t").values
-    data.extend(list(d[:, 1]))
-    #data=pd.Series(data)
-    encoded_col = to_categorical(data,numDiffHits*2)
-    #encoded_col[encoded_col.isnull()] = -1
-    words = []
-    outchar = []
-    #print('corpus length:', len(encoded_col))
-    for i in range(0, len(encoded_col) - seqLen, 1):
-        words.append(encoded_col[i: i + seqLen])
-        outchar.append(encoded_col[i + seqLen])
-    #print('nb sequences:', len(words))
-    X = np.array(words)
-    y = np.array(outchar)
-    X, y = resample(np.array(X), np.array(y), n_samples=len(words)*sampleMul, replace=True)
-    return X, y, numDiffHits
-
 def initModel(seqLen=32, destroy_old=False):
     global model
     layerSize = 128
@@ -520,7 +427,7 @@ if new:
     print('training a model from scratch:%0.2f' % (time() - t0))
 #t0=time()
 #print('going big')
-#generatePart(train('dataklimp0b.csv', seqLen, sampleMul=1.5, forceGen=False, updateModel='extreme'))
+#train('dataklimp0b.csv', seqLen, sampleMul=1.5, forceGen=False, updateModel='extreme')
 #generatePart(train('./Kits/mcd2/takes/testbeat1538990686.408342.csv', seqLen, sampleMul=1.5, forceGen=False))
 #print('gen:%0.2f' % (time() - t0))
     #bigdata=pd.DataFrame(BigX, columns=['inst'])
@@ -596,3 +503,96 @@ Non-trainable params: 0
  - 3s - loss: 1.2746 - acc: 0.5843 - val_loss: 1.3662 - val_acc: 0.6015
 training a model from scratch:349.96
 """
+
+#
+# # Just the hits: Not working
+# def vectorize(filename, seqLen=32, sampleMul=1., forceGen=False):
+#     data = []
+#     d = pd.read_csv(filename, header=None, sep="\t").values
+#     data.extend(list(d[:, 1]))
+#
+#     def binarize(a):
+#         if a < 0:
+#             return map(int, ['1', '0'] + list(format(a, "0{}b".format(nrOfDrums)))[1:])
+#         else:
+#             return map(int, list(format(a, "0{}b".format(nrOfDrums + 1))))
+#
+#     def binarize2(a):
+#         return [x for x in bin(a)[2:]]
+#
+#     data = [list(binarize(i)) for i in data]
+#     #print(data)
+#     words = []
+#     outchar = []
+#     #print('corpus length:', len(data))
+#     for i in range(0, len(data) - seqLen, 1):
+#         words.append(data[i: i + seqLen])
+#         outchar.append(data[i + seqLen])
+#     #print('nb sequences:', len(words))
+#     X = np.array(words)
+#     y = np.array(outchar)
+#     X, y = resample(np.array(X), np.array(y), n_samples=len(words), replace=True)
+#     return X, y, numDiffHits
+#
+# def label_encode(filename, seqLen=32, sampleMul=1., forceGen=False):
+#     'Returns a DataFrame with encoded columns'
+#     data = []
+#     d = pd.read_csv(filename, header=None, sep="\t").values
+#     data.extend(list(d[:, 1]))
+#     data=pd.Series(data)
+#     factorised = pd.factorize(d[:, 1])[1]
+#     labels = pd.Series(range(len(factorised)), index=factorised)
+#     encoded_col = data.map(labels)
+#     encoded_col[encoded_col.isnull()] = -1
+#     words = []
+#     outchar = []
+#     #print('corpus length:', len(encoded_col))
+#     for i in range(0, len(encoded_col) - seqLen, 1):
+#         words.append(encoded_col[i: i + seqLen])
+#         outchar.append(encoded_col[i + seqLen])
+#     #print('nb sequences:', len(words))
+#     X = np.array(words)
+#     y = np.array(outchar)
+#     X, y = resample(np.array(X), np.array(y), n_samples=len(words)*sampleMul, replace=True)
+#     return X, y, numDiffHits
+# def freq_encode(filename, seqLen=32, sampleMul=1., forceGen=False):
+#     '''Returns a DataFrame with encoded columns'''
+#     data = []
+#     d = pd.read_csv(filename, header=None, sep="\t").values
+#     data.extend(list(d[:, 1]))
+#     data=pd.Series(data)
+#     freqs_cat = data.value_counts(normalize=False, sort=True, ascending=False, bins=None, dropna=True)
+#     #freqs_cat = data.count()/data.shape[0]
+#     encoded_col = data.map(freqs_cat)
+#     encoded_col[encoded_col.isnull()] = 0
+#     words = []
+#     outchar = []
+#     #print('corpus length:', len(encoded_col))
+#     for i in range(0, len(encoded_col) - seqLen, 1):
+#         words.append(encoded_col[i: i + seqLen])
+#         outchar.append(encoded_col[i + seqLen])
+#     #print('nb sequences:', len(words))
+#     X = np.array(words)
+#     y = np.array(outchar)
+#     X, y = resample(np.array(X), np.array(y), n_samples=len(words) * sampleMul, replace=True)
+#     return X, y, numDiffHits
+#
+# def keras_encode(filename, seqLen=32, sampleMul=1., forceGen=False):
+#     'Returns a DataFrame with encoded columns'
+#     data = []
+#     d = pd.read_csv(filename, header=None, sep="\t").values
+#     data.extend(list(d[:, 1]))
+#     #data=pd.Series(data)
+#     encoded_col = to_categorical(data,numDiffHits*2)
+#     #encoded_col[encoded_col.isnull()] = -1
+#     words = []
+#     outchar = []
+#     #print('corpus length:', len(encoded_col))
+#     for i in range(0, len(encoded_col) - seqLen, 1):
+#         words.append(encoded_col[i: i + seqLen])
+#         outchar.append(encoded_col[i + seqLen])
+#     #print('nb sequences:', len(words))
+#     X = np.array(words)
+#     y = np.array(outchar)
+#     X, y = resample(np.array(X), np.array(y), n_samples=len(words)*sampleMul, replace=True)
+#     return X, y, numDiffHits

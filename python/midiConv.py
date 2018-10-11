@@ -110,8 +110,8 @@ import pathlib
 #         masterfile=extend_midi(masterfile,quadBar(pattern))
 #     else:
 #         masterfile=quadBar(pattern)
-for i in range(1):
-    data=pd.read_csv('dataklimp{}.csv'.format(i), index_col=0,names=['time','pitch', 'vel'],header=None, sep='\t')
+for i in range(87,161):
+    data=pd.read_csv('midi_data_set/dataklimp{}.csv'.format(i), index_col=0,names=['time','pitch', 'vel'],header=None, sep='\t')
     data['time']=time_to_frame(data['time']*.005,sr=44100, hop_length=353).astype(int)
     bd = [35, 36]
     mask = data.pitch.isin(bd)
@@ -145,6 +145,6 @@ for i in range(1):
     data=data[data['pitch']<=9]
     data_hits=mergerowsandencode(data[['time','pitch']].as_matrix())
     data=pd.DataFrame(data_hits)
-    data.to_csv('dataklimp{}b.csv'.format(i), index=True, header=None, sep='\t')
+    data.to_csv('midi_data_set/dataklimp{}b.csv'.format(i), index=True, header=None, sep='\t')
     print(data.head())
 

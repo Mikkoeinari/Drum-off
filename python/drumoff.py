@@ -121,7 +121,7 @@ def playLive(drumkit_path):
         print('liveplay:',e)
 
     t0 = time()
-    plst = processLiveAudio(liveBuffer=buffer, drums=drums, quant_factor=1.0, iters=87, method='NMFD')
+    plst = processLiveAudio(liveBuffer=buffer, drums=drums, quant_factor=0.0, iters=87, method='NMFD')
     print('NMFDtime:%0.2f' % (time() - t0))
     times = []
     bintimes = []
@@ -236,7 +236,7 @@ def play(filePath, K):
     for n in [1]:
         #print(2**n)
 
-        initKitBG(filePath, 9, K=K)#, rm_win=n, bs_len=350)
+        #initKitBG(filePath, 9, K=K)#, rm_win=n, bs_len=350)
         t0 = time()
         plst = processLiveAudio(liveBuffer=buffer, drums=drums, quant_factor=0.0, iters=128, method='NMFD', rm_win=n)
         print('\nNMFDtime:%0.2f' % (time() - t0))
@@ -374,10 +374,10 @@ def testOnsDet(filePath, alg=0):
     # fs[n,2]=(fscore / true_tot)
 #debug
 #initKitBG('Kits/mcd2/',8,K)
-K=1
+#K=1
 #initKitBG('../trainSamplet/',9,K=K,rm_win=6)
-#loadKit('../trainSamplet/')
-#play('../trainSamplet/', K=K)
+loadKit('../trainSamplet/')
+play('../trainSamplet/', K=K)
 #initKitBG('../DXSamplet/',9,K=K,rm_win=6)
 #loadKit('../trainSamplet/')
 #testOnsDet('../trainSamplet/', alg=0)

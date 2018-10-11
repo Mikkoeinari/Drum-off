@@ -15,7 +15,7 @@ from sklearn.utils import resample
 FRAME_SIZE = 2 ** 11
 HOP_SIZE = 2 ** 9
 # After quantization to 120bpm we use hop size 353 the resolution of 16th note at 120bpm
-Q_HOP = 353  # 2**9#
+Q_HOP =  2**9#353
 SAMPLE_RATE = 44100
 FREQUENCY_PRE = np.ones((24))  # [0,16384]#0-2^14
 MIDINOTE = 36  # kickdrum in most systems
@@ -27,7 +27,7 @@ REQUEST_RESULT = False
 DELTA = 0.15
 midinotes = [36, 38, 42, 46, 50, 43, 51, 49, 44]  # BD, SN, CHH, OHH, TT, FT, RD, CR, SHH, Here we need generality
 nrOfDrums = 24  # Maximum kit size
-nrOfPeaks = 8
+nrOfPeaks = 32  #IF CHANGED ALL PREVIOUS SOUNDCHECKS INVALIDATE!!!
 max_n_frames = 10
 total_priors = 0
 MS_IN_MIN = 60000
@@ -39,8 +39,6 @@ _ImRunning = False
 proc = madmom.audio.filters.BarkFilterbank(
     madmom.audio.stft.fft_frequencies(num_fft_bins=int(FRAME_SIZE / 2), sample_rate=SAMPLE_RATE),
     num_bands='double', fmin=20.0, fmax=15500.0, norm_filters=True, unique_filters=True)
-
-
 # Best result-longest processing time
 # proc =madmom.audio.filters.MelFilterbank(
 #    madmom.audio.stft.fft_frequencies(num_fft_bins=int(FRAME_SIZE / 2), sample_rate=SAMPLE_RATE),
@@ -325,7 +323,7 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
             Wpre[:, ind + j, :] = tails[:, :, j]
             total_tails += 1
 
-    H, err1 = NMFD(filt_spec.T, iters=128, Wpre=Wpre, include_priors=False)
+    H,Wpre, err1 = NMFD(filt_spec.T, iters=128, Wpre=Wpre, include_priors=False)
     total_heads = 0
     Hs = []
     for i in range(len(drums)):
@@ -416,9 +414,9 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
         print('delta:', threshold, f_zero)
         for i in range(len(drums)):
             drums[i].set_threshold(threshold)
-            #drums[i].set_threshold(0.17)
+            #drums[i].set_threshold(0.18)
             # Try loosening plate drum thresholds: NOT FINAL!!!
-            if i in [2, 3, 6, 7]:
+            if i in [2, 3, 6,7,8]:
                 pass
                 #drums[i].set_threshold(threshold)
 
@@ -476,7 +474,7 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=0.0, iters=0, met
     for i in range(int(stacks)):
 
         if method == 'NMFD' or method == 'ALL':
-            H, err1 = NMFD(filt_spec.T, iters=iters, Wpre=Wpre, include_priors=True)
+            H,Wpre, err1 = NMFD(filt_spec.T, iters=iters, Wpre=Wpre, include_priors=True)
         if method == 'NMF' or method == 'ALL':
             H, err2 = semi_adaptive_NMFB(filt_spec.T, Wpre=Wpre, iters=iters)
         if method == 'ALL':
@@ -591,6 +589,7 @@ def get_preprocessed_spectrogram(buffer=None,A=None,B=None, sm_win=4, test=False
         buffer = madmom.audio.FramedSignal(buffer, sample_rate=SAMPLE_RATE, frame_size=FRAME_SIZE, hop_size=HOP_SIZE)
         spec = madmom.audio.spectrogram.FilteredSpectrogram(buffer, filterbank=proc, sample_rate=SAMPLE_RATE,
                                                             frame_size=FRAME_SIZE, hop_size=HOP_SIZE,fmin=20, fmax=17000)
+
     if A != None:
         spec = np.outer(A, B).T
     #kernel=np.kaiser(6,5)
@@ -605,13 +604,13 @@ def get_preprocessed_spectrogram(buffer=None,A=None,B=None, sm_win=4, test=False
         spec[:, i] = np.convolve(spec[:, i],kernel,'same')
 
     if test:
-
         spec=np.gradient(spec, axis=0)
         spec= np.clip(spec, 0, None, out=spec)
         for i in range(spec.shape[0]):
             spec[i,:]=np.mean(spec[i,:])
 
     return spec
+
 
 
 # superlux from madmom (Boeck et al)
@@ -949,16 +948,17 @@ def NMFD(X, iters=500, Wpre=[], include_priors=False):
         if (False):
             What1 = np.zeros((M,R, T))
             What2 = np.zeros((M,R, T))
-            shifter = np.zeros((N+T, R))
-            shifter[:-T, :] = H.T
+            shifter = np.zeros((N+T, 9))
+            shifter[:-T, :] = H.T[:,9:]
             for t in range(T):
-                W[:, :, t] = W[:, :, t] * (LambHat@shifter[t:-(T-t), :] / (repMat@shifter[t:-(T-t),:] + eps+(mu/T)))
+                W[:, 9:, t] = W[:, 9:, t] * (LambHat@shifter[t:-(T-t), :] / (repMat@shifter[t:-(T-t),:] + eps+(mu/T)))
             #dittmar &al. alpha
             #alpha=(i/iters)**4
             #fix Wpre: alpha=1, adapt freely: alpha=0
-            #alpha=0
-            #W=Wpre*alpha+(1-alpha)*W
-    return H, err / err.max()
+            alpha=0.00025
+            W=Wpre*alpha+(1-alpha)*W
+            W = W / W.max()
+    return H,W, err / err.max()
 
 
 # import matplotlib.pyplot as plt
@@ -1147,6 +1147,8 @@ def mergerowsandencode(a):
     for i in range(len(a)):
         # define true index by substracting the leading empty frames
         index = int(a[i][0] - a[0][0])
+        if index>=frames.shape[0]:
+            break
         # The actual hit information
         value = int(a[i][1])
         # Encode the hit into a charachter array, place 1 on the index of the drum #
