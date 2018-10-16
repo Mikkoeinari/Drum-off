@@ -21,16 +21,12 @@ from keras.utils import Sequence,to_categorical
 from keras import regularizers
 from keras.optimizers import nadam,RMSprop
 from collections import Counter
-import ISRLU
+#import ISRLU
 from numpy.random import seed
 seed(1)
 from tensorflow import set_random_seed
 set_random_seed(2)
 
-
-
-
-# Thresholdit checkissä.
 seqLen =64
 numDiffHits = 128
 partLength = 0
@@ -80,11 +76,11 @@ def vectorizeCSV(filename, seqLen=32, sampleMul=1., forceGen=False, bigFile=None
 
     elif bigFile is not None:
         data=bigFile
-    data = data[:128]
+    #data = data[:128]
     # print('corpus length:', len(data))
     partLength = 360#max([len(data),720])
     if forceGen:
-        data=data[:180]
+        data=data[-180:]
         #return
     words = []
     outchar = []
@@ -122,7 +118,7 @@ def vectorizeCSV(filename, seqLen=32, sampleMul=1., forceGen=False, bigFile=None
 
     #BX,BY=resample(np.array(X), np.array(y), n_samples=len(words), replace=False)
     samples=np.max([int(len(words)*sampleMul),333])
-
+    partLength = min([len(data),333])
     X, y = resample(np.array(X), np.array(y), n_samples=samples, replace=True, random_state=2)
     X[0]=X0
     y[0]=y0
@@ -137,7 +133,7 @@ def initModel(seqLen=32, destroy_old=False):
         else:
             model = load_model('./Kits/model.hdf5', custom_objects={'MGU': MGU})
     except Exception as e:
-        print('new model!',e)
+        print('Making new model')
         model = Sequential()
         # print (numDiffHits )
         model.add(MGU(layerSize, activation='elu',  # kernel_initializer='lecun_normal',
@@ -161,12 +157,9 @@ def initModel(seqLen=32, destroy_old=False):
     graph = tf.get_default_graph()
     return model
 
-
-# print("learning...")
-# rerun = True
-# if rerun == True or not os.path.isfile('weights_testivedot2.hdf5'):
 def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=None, updateModel=False):
     global lastLoss
+
     class drumSeq(Sequence):
 
         def __init__(self,filename, batch_size=200, shuffle=True):
@@ -200,16 +193,11 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
     genMdelSaver=ModelCheckpoint(filepath="./Kits/weights_testivedot_ext.hdf5", verbose=1, save_best_only=True)
     earlystopper = EarlyStopping(monitor="val_loss", min_delta=0.0, patience=2, mode='auto')
     history = LossHistory()
-
-
     learninratescheduler=LearningRateScheduler(klik, verbose=1)
     if filename is not None and updateModel is not 'extreme':
-        #X_train, y_train, numDiffHits=freq_encode(filename, seqLen, sampleMul, forceGen=forceGen)
-        #X_train = X_train.reshape(X_train.shape[0], X_train.shape[1], 1)
         X_train, y_train, numDiffHits = vectorizeCSV(filename, seqLen, sampleMul, forceGen=forceGen)
         if X_train is None:
             return None
-        #X_train, y_train, numDiffHits = keras_encode(filename, seqLen, sampleMul, forceGen=forceGen)
     elif bigFile is not None and updateModel is not 'extreme':
         #X_train, y_train, numDiffHits = vectorizeCSV(filename, seqLen, sampleMul, forceGen=forceGen, bigFile=bigFile)
         X_train,y_train=bigFile
@@ -243,16 +231,17 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
             model.save('./Kits/model_ext.hdf5')
         #print(X_train.shape)
         if updateModel==True:
-            model.fit(X_train, y_train, batch_size=500, epochs=20,
+            model.fit(X_train, y_train, batch_size=50, epochs=20,
                   callbacks=[modelsaver, earlystopper, history],# learninratescheduler],
                   validation_split=0.33,
                   verbose=2)
+            lastLoss = np.mean(history.losses[-10:])
             model.load_weights("./Kits/weights_testivedot2.hdf5")
             model.save('./Kits/model.hdf5')
         elif updateModel==False:
             model.load_weights("./Kits/weights_testivedot2.hdf5")
             model.fit(X_train, y_train, batch_size=50, epochs=20,
-                      callbacks=[temporarysaver,history],  # learninratescheduler],
+                      callbacks=[temporarysaver,earlystopper,history],  # learninratescheduler],
                       validation_split=(1/3.),
                       verbose=2)
             #take mean of recent iteration losses for fuzz scaler
@@ -262,30 +251,16 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
         #model.save_weights("./Kits/weights_testivedot2.hdf5")
     return X_train[0]
 
+def generatePart(data, temp=None):
 
-#
-# def getModel(model=None):
-#     try:
-#         model.load_weights("./Kits/weights_testivedot2.hdf5")
-#     except Exception as e:
-#         print(e)
-#         model = initModel()
-#         return model
-#     return model
-
-
-# seed_index = random.randint(0, len(data) - seqLen - 1)
-def generatePart(data):
-    # model=getModel()
     print(data.shape)
     seed = data
     data = seed
 
-    # print('Model learning time:%0.2f' % (time() - t0))
-    # t0 = time()
     print('generating new sequence.')
 
     generated=[]
+
     #save seed
     for i in data:
         try:
@@ -294,7 +269,6 @@ def generatePart(data):
         except Exception as e:
             print('gen-init: ', e)
             pass
-        #print([[np.where(value==True)[0]] for value in i])
 
     def sample(a, temperature=1.0):
         # helper function to sample an index from a probability array
@@ -302,45 +276,43 @@ def generatePart(data):
         a=a ** (1 / temperature)
         a_sum=a.sum()
         a=a/a_sum
+        return np.argmax(np.random.multinomial(1, a, 1))
+
+        #same from keras examples:
         #a = np.log(a) / temperature
         #a = np.exp(a) / np.sum(np.exp(a))
         # choices = range(len(a))
         # return np.random.choice(choices, p=a)
-        return np.argmax(np.random.multinomial(1, a, 1))
 
+
+    if temp is -1:
+        fuzz = np.max([1.0 - lastLoss, 0.1])
+    else:
+        fuzz = temp
+    print('fuzz factor:',fuzz)
     for i in range(partLength):
-        # x = np.zeros((1, seqLen, numDiffHits,1))
-        # x = np.zeros((1, seqLen, numDiffHits))
-        # for t, k in enumerate(seed):
-        #    x[0, t, charI[k]] = 1
-        # print('here')
+
         data = data.reshape(1, seqLen, numDiffHits)
 
-        # print(data.shape)
+
         with graph.as_default():
             pred = model.predict(data, verbose=0)
-        # print (np.argmax(pred[0]))
-        fuzz=np.max([1.0-lastLoss,0.1])
+
+
         next_index = sample(pred[0],fuzz)
-        # next_index=np.argmax(pred[0])
 
         next_char = Ichar.get(next_index,0)
         generated.append(next_char)
 
-        # print(data.shape)
         next = np.zeros((numDiffHits,), dtype=bool)
         next[next_index] = True
         next = next.reshape(1, 1, next.shape[0])
         data = np.concatenate((data[:, 1:, :], next), axis=1)
 
-        # print(data.shape)
-        # seed = seed[1:]
-        # seed.append(next_char)
-        # print(seed)
 
-    # generated = splitrowsanddecode(generated)
     gen = pd.DataFrame(generated, columns=['inst'])
-    filename = 'generated{}.csv'.format(time())
+    #filename = 'generated{}.csv'.format(time())
+    filename='generated.csv'
     gen.to_csv(filename, index=True, header=None, sep='\t')
     print('valmis')
     return filename
@@ -357,13 +329,15 @@ def generatePart(data):
 
     madmom.io.midi.write_midi(gen.values, 'midi_testit_gen.mid')
 
+
+
 #####################################
 #Testing from here on end
 #make midi from source file
 if False:
-    generated=pd.read_csv('dataklimp0b.csv', header=None, sep="\t", usecols=[1])
+    generated=pd.read_csv('./midi_data_set/mididata9.csv', header=None, sep="\t", usecols=[1])
     print(generated.head())
-    generated = splitrowsanddecode(generated[1][:5000])
+    generated = splitrowsanddecode(generated[1])
     gen = pd.DataFrame(generated, columns=['time', 'inst'])
 
     gen['time'] = frame_to_time(gen['time'], hop_length=Q_HOP)
@@ -428,7 +402,7 @@ if new:
 #t0=time()
 #print('going big')
 #train('dataklimp0b.csv', seqLen, sampleMul=1.5, forceGen=False, updateModel='extreme')
-#generatePart(train('./Kits/mcd2/takes/testbeat1538990686.408342.csv', seqLen, sampleMul=1.5, forceGen=False))
+#generatePart(train('./Kits/mcd2/takes/testbeat1537979079.645227.csv', seqLen, sampleMul=1.5, forceGen=False))
 #print('gen:%0.2f' % (time() - t0))
     #bigdata=pd.DataFrame(BigX, columns=['inst'])
     #bigdata.to_csv('./big.csv', index=True, header=None, sep='\t')
@@ -442,67 +416,6 @@ if new:
 
 #generatePart(train('./big.csv',seqLen,sampleMul=4, forceGen=True))
 #generatePart(train('./Kits/mcd2/takes/testbeat1537979079.645227.csv', seqLen, sampleMul=4,forceGen=True))
-#print('train & gen:%0.2f' % (time() - t0))
-
-
-
-
-"""
-
-_________________________________________________________________
-Layer (type)                 Output Shape              Param #
-=================================================================
-mgu_1 (MGU)                  (None, 32, 128)           65792
-_________________________________________________________________
-mgu_2 (MGU)                  (None, 128)               65792
-_________________________________________________________________
-dense_1 (Dense)              (None, 128)               16512
-=================================================================
-Total params: 148,096
-Trainable params: 148,096
-Non-trainable params: 0
-#- 1s - loss: 1.4464 - acc: 0.5304 - val_loss: 1.4337 - val_acc: 0.5514
-#training a model from scratch: 202.95tanh mgu implementation 1
-#- 2s - loss: 1.1917 - acc: 0.6077 - val_loss: 1.1101 - val_acc: 0.6555
-#training a model from scratch:216.93 elu mgu implementation 1
-
-#- 1s - loss: 1.5954 - acc: 0.4930 - val_loss: 1.5124 - val_acc: 0.5476
-#training a model from scratch:182.24 tanh mgu implementation 2
-#- 1s - loss: 1.5348 - acc: 0.5051 - val_loss: 1.3849 - val_acc: 0.5656
-#training a model from scratch:191.90 elu mgu implementation 2
-
-_________________________________________________________________
-Layer (type)                 Output Shape              Param #
-=================================================================
-gru_1 (GRU)                  (None, 32, 128)           98688
-_________________________________________________________________
-gru_2 (GRU)                  (None, 128)               98688
-_________________________________________________________________
-dense_1 (Dense)              (None, 128)               16512
-=================================================================
-Total params: 213,888
-Trainable params: 213,888
-Non-trainable params: 0
-
-#- 2s - loss: 1.1512 - acc: 0.6242 - val_loss: 1.0700 - val_acc: 0.7031
-#training a model from scratch:292.84 elu GRU imp1
-
-_________________________________________________________________
-Layer (type)                 Output Shape              Param #   
-=================================================================
-lstm_1 (LSTM)                (None, 32, 128)           131584    
-_________________________________________________________________
-lstm_2 (LSTM)                (None, 128)               131584    
-_________________________________________________________________
-dense_1 (Dense)              (None, 128)               16512     
-=================================================================
-Total params: 279,680
-Trainable params: 279,680
-Non-trainable params: 0
-
- - 3s - loss: 1.2746 - acc: 0.5843 - val_loss: 1.3662 - val_acc: 0.6015
-training a model from scratch:349.96
-"""
 
 #
 # # Just the hits: Not working

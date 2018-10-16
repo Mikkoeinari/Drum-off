@@ -24,23 +24,23 @@ def soundcheckDrum(drumkit_path, drumId):
 
 def initKitBG(drumkit_path, nrOfDrums, K=1, rm_win=4, bs_len=32):
     K=K
-    L=10
+    #L=10
     global drums, fpr
     #print(nrOfDrums)
     drums = []
-    drs = [2, 4, 6, 3, 2, 2, 5, 1, 8]
+    #drs = [2, 4, 6, 3, 2, 2, 5, 1, 8]
     #n_frames = [12, 9, 11, 17, 15, 13, 10, 11, 15]
     n_frames=np.full(9,10)
     filt_spec_all = 0
     shifts = []
     for i in range(nrOfDrums):
         L=n_frames[i]
-
         buffer = madmom.audio.Signal("{}/drum{}.wav".format(drumkit_path, i), frame_size=FRAME_SIZE,
                                      hop_size=HOP_SIZE)
         filt_spec = get_preprocessed_spectrogram(buffer, sm_win=4)
         peaks= getPeaksFromBuffer(filt_spec, 10, nrOfPeaks, L, K)
         freqtemps=findDefBinsBG(peaks, filt_spec, L, K, bs_len=bs_len)
+
         if i==0:
             filt_spec_all=filt_spec
             shifts=[0]
@@ -53,11 +53,7 @@ def initKitBG(drumkit_path, nrOfDrums, K=1, rm_win=4, bs_len=32):
                 Drum(name=[i], highEmph=highEmph[i], peaks=peaks, heads=freqtemps[0], tails=freqtemps[1],
                      threshold=0,
                      midinote=midinotes[i], probability_threshold=1))
-    #prior picture
-    # showFFT([drums[0].get_heads()[:,:,0],drums[1].get_heads()[:,:,0],drums[2].get_heads()[:,:,0],
-    #         drums[3].get_heads()[:, :, 0], drums[4].get_heads()[:, :, 0], drums[5].get_heads()[:, :, 0],
-    #         drums[6].get_heads()[:, :, 0], drums[7].get_heads()[:, :, 0], drums[8].get_heads()[:, :, 0]],)
-    #showFFT([drums[0].get_heads()[:, :, 0], drums[1].get_heads()[:, :, 0], drums[2].get_heads()[:, :, 0]])
+
     recalculate_thresholds(filt_spec_all, shifts, drums, drumwise=False, rm_win=rm_win)
     # Pickle the important data
     pickle.dump(drums, open("{}/pickledDrumkit.drm".format(drumkit_path), 'wb'))
@@ -113,7 +109,7 @@ def loadKit(drumkit_path):
     #fpr = pickle.load(open("{}/pickledFpr.drm".format(drumkit_path), 'rb'))
 
 
-def playLive(drumkit_path):
+def playLive(drumkit_path, thresholdAdj=0.0, saveAll=False):
     ###T live input
     try:
         buffer = liveTake()
@@ -121,7 +117,7 @@ def playLive(drumkit_path):
         print('liveplay:',e)
 
     t0 = time()
-    plst = processLiveAudio(liveBuffer=buffer, drums=drums, quant_factor=0.0, iters=87, method='NMFD')
+    plst, deltaTempo = processLiveAudio(liveBuffer=buffer, drums=drums, quant_factor=1.0, iters=87, method='NMFD', thresholdAdj=thresholdAdj)
     print('NMFDtime:%0.2f' % (time() - t0))
     times = []
     bintimes = []
@@ -148,7 +144,10 @@ def playLive(drumkit_path):
     df['duration'] = pd.Series(np.full((len(times)), 0, np.int64))
     df['vel'] = pd.Series(np.full((len(times)), 127, np.int64))
     bindf = pd.DataFrame(bintimes, columns=['inst'])
-    fileName='{}/takes/testbeat{}.csv'.format(drumkit_path, time())
+    if saveAll:
+        fileName='{}/takes/testbeat{}.csv'.format(drumkit_path, time())
+    else:
+        fileName='{}/takes/lastTake.csv'.format(drumkit_path)
     bindf.to_csv(fileName, index=True, header=False, sep="\t")
     df = df[df.time != 0]
     print('done!')
@@ -165,7 +164,7 @@ def playLive(drumkit_path):
         gen['duration'] = pd.Series(np.full((len(generated)), 0, np.int64))
         gen['vel'] = pd.Series(np.full((len(generated)), 127, np.int64))
         madmom.io.midi.write_midi(gen.values, 'midi_testit_enc_dec0.mid')
-    return fileName
+    return fileName, float(deltaTempo)
     print('Processing time:%0.2f' % (time() - t0))
 
 
@@ -216,10 +215,6 @@ def soundCheck(drumkit_path, nrOfDrums, drumkit_drums):
     yield 'done'
 
 
-# drums = []
-# for i in drums[:nrOfDrums]:
-#     for k in range(K):
-#         drums.append(detector(i, hitlist=None))
 def play(filePath, K):
     try:
 
@@ -231,14 +226,14 @@ def play(filePath, K):
         print(e)
         print('jotain meni vikaan!')
 
-    fs=np.zeros((17,3))
+    fs=np.zeros((16,3))
 
-    for n in [1]:
+    for n in range(1,fs.shape[0]):
         #print(2**n)
 
-        #initKitBG(filePath, 9, K=K)#, rm_win=n, bs_len=350)
+        initKitBG(filePath, 9, K=n)#, rm_win=n, bs_len=350)
         t0 = time()
-        plst = processLiveAudio(liveBuffer=buffer, drums=drums, quant_factor=0.0, iters=128, method='NMFD', rm_win=n)
+        plst = processLiveAudio(liveBuffer=buffer, drums=drums, quant_factor=1.0, iters=256, method='NMFD')
         print('\nNMFDtime:%0.2f' % (time() - t0))
         #Print scores if annotated
         annotated = True
@@ -269,12 +264,12 @@ def play(filePath, K):
                 true_tot += actHits.shape[0]
                 # add_to_samples_and_dictionary(i.drum, buffer, i.get_hits())
             print('Precision: {}'.format(precision / true_tot))
-            #fs[n,0]=(precision / true_tot)
+            fs[n,0]=(precision / true_tot)
             print('Recall: {}'.format(recall / true_tot))
-            #fs[n,1] = (recall / true_tot)
+            fs[n,1] = (recall / true_tot)
             print('F-score: {}'.format(fscore / true_tot))
-            #fs[n,2]=(fscore / true_tot)
-    #showEnvelope(fs, ('Precision', 'Recall', 'f-score'), ('Max K','score'))
+            fs[n,2]=(fscore / true_tot)
+    showEnvelope(fs, ('Precision', 'Recall', 'f-score'), ('Max K','score'))
 
     #showEnvelope(fs[:n], ('Kick','Snare','HH Closed','HH Open','Rack Tom', 'Floor Tom', 'Ride', 'Crash', 'HH Pedal'), ('templates/drum','score'))
     '''
@@ -376,8 +371,8 @@ def testOnsDet(filePath, alg=0):
 #initKitBG('Kits/mcd2/',8,K)
 #K=1
 #initKitBG('../trainSamplet/',9,K=K,rm_win=6)
-loadKit('../trainSamplet/')
-play('../trainSamplet/', K=K)
+#loadKit('../DXSamplet/')
+#play('../DXSamplet/', K=K)
 #initKitBG('../DXSamplet/',9,K=K,rm_win=6)
 #loadKit('../trainSamplet/')
 #testOnsDet('../trainSamplet/', alg=0)

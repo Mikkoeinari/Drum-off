@@ -12,10 +12,13 @@ from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.filechooser import FileChooser
 from kivy.uix.screenmanager import ScreenManager, Screen
+from kivy.uix.slider import Slider
 from kivy.lang import Builder
 from kivy.factory import Factory
-from kivy.properties import StringProperty
+from kivy.properties import StringProperty, NumericProperty, BooleanProperty
 from kivy.clock import Clock, mainthread
+from kivy.config import Config
+Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
 import drumoff
 import utils
 from os import mkdir, listdir
@@ -46,8 +49,9 @@ drumNames = {'kick': 0,  # only one allowed
              'crash cymbal': 13,  # leave space for more
              'misc': 20
              }
-
-
+countInPath='./countIn.csv'
+countInWavPath='click.wav'
+countInLength=2
 class StartScreen(Screen):
     def getStatus(self):
         app = App.get_running_app()
@@ -64,7 +68,10 @@ class StartScreen(Screen):
         string = 'Current Kit:{} (kit size:{} drums)\n'.format(app.KitName, nr) + 'Kit Ready:{}\n'.format(
             app.KitInit) + 'Model ready:{}'.format(app.Model)
         self.ids.status.text = string
-
+    def quit(self):
+        drumsynth._ImRunning=False
+        utils._ImRunning=False
+        App.get_running_app().stop()
     pass
 
 
@@ -171,91 +178,199 @@ class PlayScreen(Screen):
     turnMessage = StringProperty()
     lastMessage = StringProperty()
     lastGenPart = StringProperty()
+    lastPlayerPart = StringProperty()
     playBackMessage = StringProperty()
+    trSize=NumericProperty()
+    temperature = NumericProperty()
+    threshold = NumericProperty()
+    deltaTempo = NumericProperty()
+    modify = BooleanProperty()
+    step = BooleanProperty()
+    halt = BooleanProperty()
     def __init__(self, **kwargs):
         super(PlayScreen, self).__init__(**kwargs)
         self.performMessage = 'Press play to start'
         self.pBtnMessage = 'Play'
         self.turnMessage = 'Player'
         self.lastMessage = ''
+        self.lastPlayerPart = ''
         self.lastGenPart = ''
         self.playBackMessage = ''
+        self.trSize=1.33
+        self.temperature=0.8
+        self.threshold = 0.0
+        self.deltaTempo=1.0
+        self.modify=True
+        self.step = True
+        self.halt=True
+        
+    def setTrSize(self, *args):
+        self.trSize=args[1]
 
-    def playBackLast(self):
+    def setTemp(self, *args):
+        self.temperature = args[1]
+
+    def setThresh(self, *args):
+        self.threshold = args[1]
+
+    def setModify(self, *args):
+        self.modify = args[0]
+
+    def toggleStep(self):
+        """
+        Step playing mode toggler
+        :return: None
+        """
+        if self.ids.playBackBtn.disabled:
+            self.ids.playBackBtn.disabled = False
+            self.step=True
+        else:
+            self.ids.playBackBtn.disabled = True
+            self.step=False
+
+    def toggleSlider(self):
+        """
+        Slider disabling toggler, (should generalize to disable any slider)
+        :return: None
+        """
+        if self.ids.trs.disabled:
+            self.ids.trs.disabled = False
+        else:
+            self.ids.trs.disabled = True
+
+    def createLast(self, fileName,outFile=None, addCountInAndCountOut=True):
+        """
+        Calls a wav file to be created to the disk
+        :param fileName: Srting, filename of the notation file
+        :param outFile: String=None, filename of the resulting wav
+        :param addCountInAndCountOut=True: Boolean, if True adds a count in at both ens of result
+        :return: None
+        """
+        fullPath = fileName
+        def callback():
+            try:
+                self.lastMessage=drumsynth.createWav(fullPath,outFile, addCountInAndCountOut=addCountInAndCountOut, deltaTempo=self.deltaTempo)
+            except Exception as e:
+                print('createWav ui: ', e)
+                self.halt = True
+                self.pBtnMessage = 'Play'
+        t = threading.Thread(target=callback)
+        t.start()
+
+    def playBackLast(self, cue=False):
+        """
+        Plays back a performance
+        :param cue: Boolean, if True then player turn follows playback
+        :return: None
+        """
         if(self.lastMessage==''):
             return None
         fullPath = self.lastMessage
-        if self.playBackMessage=='Play Back Computer Performance':
-            fullPath=self.lastGenPart
+
         if self.playBackMessage=='Stop Playback':
-            drumsynth._imRunning=False
-            if self.turnMessage=='computer':
-                self.playBackMessage = 'Play Back Computer Performance'
-            else:
-                self.playBackMessage = 'Play Back Player Performance'
+            drumsynth._ImRunning=False
+            self.playBackMessage = 'Play Back Last Performance'
             return None
         def callback():
             try:
                 self.playBackMessage = 'Stop Playback'
-                drumsynth.playFile(fullPath)
+                drumsynth.playWav(fullPath)
+                if (self.lastMessage == ''):
+                    self.playBackMessage = ''
+                else:
+                    self.playBackMessage = 'Play Back Last Performance'
+                if self.step==False or cue==True:
+                    self.doPlayerTurn()
             except Exception as e:
                 print('playback ui: ',e)
+                self.halt = True
+                self.pBtnMessage = 'Play'
         t = threading.Thread(target=callback)
         t.start()
 
     def doComputerTurn(self):
-        if (self.lastMessage == ''):
+        """
+        Handles computer turn
+        :return: None
+        """
+        if (self.lastMessage == '')or self.halt==True:
             return None
-        fullPath = self.lastMessage
+        fullPath = self.lastPlayerPart
+        print(fullPath)
         def callback():
             try:##INIT MODEL!!
-                self.lastGenPart = mgu.generatePart(mgu.train(fullPath, sampleMul=1.33, forceGen=False))
-                self.playBackMessage = 'Play Back Computer Performance'
-                self.turnMessage=('computer')
+                self.lastGenPart = mgu.generatePart(
+                        mgu.train(fullPath, sampleMul=self.trSize,
+                                  forceGen=False, updateModel=self.modify), temp=self.temperature)
+                self.createLast(self.lastGenPart,addCountInAndCountOut=(not self.step))
+                print(self.step)
+                if self.step:
+                    self.playBackMessage == 'Play Back Computer Performance'
+                    return
+                else:
+                    self.playBackLast()
             except Exception as e:
                 print('virhe! computer turn: ',e)
+                self.halt = True
+                self.pBtnMessage = 'Play'
         t = threading.Thread(target=callback)
         t.start()
-        print ('c.puter')
+
+    def playButton(self):
+        """
+        Play button toggler
+        :return: None
+        """
+        if self.pBtnMessage == 'Stop':
+            self.halt = True
+            utils._ImRunning = False
+            self.pBtnMessage = 'Play'
+            return None
+        else:
+            self.pBtnMessage = 'Stop'
+            self.lastMessage=countInWavPath
+            self.playBackLast(cue=True)
+            return None
 
     def doPlayerTurn(self):
+        """
+        Handles player turn thread
+        :return: None
+        """
+        self.halt=False
         app = App.get_running_app()
-        print(app.KitName, sum(app.NrOfDrums))
         fullPath = './Kits/{}'.format(app.KitName)
         utils._ImRunning = False
         try:
             mkdir('{}/takes/'.format(fullPath))
         except Exception as e:
+            print('mkdir:',e)
             pass
-
-        if self.pBtnMessage == 'Stop':
-            self.btnMessage = 'Play'
-            return
-        else:
-            self.pBtnMessage = 'Stop'
-            self.turnMessage='Computer'
         self.performMessage = 'Start Playing!'
-        time.sleep(1)
         def callback():
             try:
-                filename=drumoff.playLive(fullPath)
-                if filename==False:
-                    self.turnMessage = ('player')
-                    self.pBtnMessage = 'Play'
+                print('recording turn')
+                self.lastPlayerPart, self.deltaTempo=drumoff.playLive(fullPath, self.threshold, saveAll=False)
+                if self.lastPlayerPart==False:
                     return
-                self.lastMessage=filename
-                self.playBackMessage = 'Play Back Last Performance'
-                self.turnMessage=('player')
-                self.pBtnMessage = 'Play'
+                self.createLast(self.lastPlayerPart,addCountInAndCountOut=(not self.step) )
+                print(self.step)
+                if self.step:
+                    self.playBackMessage = 'Play Back Last Performance'
+                    self.pBtnMessage='Play'
+                else:
+                    self.doComputerTurn()
             except Exception as e:
                 print('player playback ui: ',e)
+                self.halt = True
+                self.pBtnMessage = 'Play'
         t = threading.Thread(target=callback)
         t.start()
 
-
-
 class LoadScreen(Screen):
-
+    """
+    Load Screen
+    """
     def is_dir(self, directory, filename):
         return isdir(join(directory, filename))
 
@@ -264,7 +379,6 @@ class LoadScreen(Screen):
 
     def loadKit(self, filename):
         try:
-
             drumoff.loadKit(filename[0])
             app = App.get_running_app()
             app.KitName = (filename[0].split('/')[-1])
@@ -272,32 +386,38 @@ class LoadScreen(Screen):
             app.NrOfDrums = [0] * len(drumoff.drums)
             for i in drumoff.drums:
                 drum = i.get_name()[0]
-                # make hihats one drum
+                # make hihats one drum?? nope
                 app.NrOfDrums[drum] += 1
             app.root.current = 'MainMenu'
         except Exception as e:
             print('load kit ui: ',e)
 
+class MyScreenManager(ScreenManager):
+    pass
+
+root_widget =Builder.load_file("UI.kv")
 
 class DrumOffApp(App):
-    Builder.load_file("UI.kv")
+
     NrOfDrums = []
     KitName = 'none'
     Model = 'model not loaded'
     KitInit = 'Kit not initialized'
 
     def build(self):
+        return root_widget
         sm = ScreenManager()
-        # All ui views
-        sm.add_widget(StartScreen(name='MainMenu'))
-        sm.add_widget(SoundCheckScreen(name='SoundCheck'))
-        sm.add_widget(SoundCheckPerformScreen(name='SoundCheckPerform'))
-        sm.add_widget(PlayScreen(name='PlayScreen'))
-        sm.add_widget(LoadScreen(name='LoadKit'))
-        ###LOAD MODEL HERE???###
         return sm
+        # All ui views
+        #sm.add_widget(StartScreen(name='MainMenu'))
+        #sm.add_widget(SoundCheckScreen(name='SoundCheck'))
+        #sm.add_widget(SoundCheckPerformScreen(name='SoundCheckPerform'))
+        #sm.add_widget(PlayScreen(name='PlayScreen'))
+        #sm.add_widget(LoadScreen(name='LoadKit'))
+        ###LOAD MODEL HERE???###
+
 
 
 if __name__ == "__main__":
-    Builder.load_file("UI.kv")
+
     DrumOffApp().run()

@@ -14,8 +14,8 @@ from sklearn.utils import resample
 
 FRAME_SIZE = 2 ** 11
 HOP_SIZE = 2 ** 9
-# After quantization to 120bpm we use hop size 353 the resolution of 16th note at 120bpm
-Q_HOP =  2**9#353
+# After quantization to 120bpm we use hop size 353 ~ the resolution of 32th note at 120bpm
+Q_HOP =  353
 SAMPLE_RATE = 44100
 FREQUENCY_PRE = np.ones((24))  # [0,16384]#0-2^14
 MIDINOTE = 36  # kickdrum in most systems
@@ -27,7 +27,7 @@ REQUEST_RESULT = False
 DELTA = 0.15
 midinotes = [36, 38, 42, 46, 50, 43, 51, 49, 44]  # BD, SN, CHH, OHH, TT, FT, RD, CR, SHH, Here we need generality
 nrOfDrums = 24  # Maximum kit size
-nrOfPeaks = 32  #IF CHANGED ALL PREVIOUS SOUNDCHECKS INVALIDATE!!!
+nrOfPeaks = 16  #IF CHANGED ALL PREVIOUS SOUNDCHECKS INVALIDATE!!!
 max_n_frames = 10
 total_priors = 0
 MS_IN_MIN = 60000
@@ -188,6 +188,7 @@ def findDefBinsBG(frames, filteredSpec, ConvFrames, K, bs_len=32):
         mean_precision_prior=.8,  # covariance_prior=np.eye(proc.shape[1]*ConvFrames),
         init_params="random", max_iter=100, random_state=2).fit(a2)
     K1 = np.unique(bgMeans.predict(a2))
+    #print(K1)
     heads = np.zeros((proc.shape[1], max_n_frames, K1.shape[0]))
     # heads = np.zeros((proc.shape[1], ConvFrames, K1.shape[0]))
     for i in range(K1.shape[0]):
@@ -218,41 +219,66 @@ def findDefBinsBG(frames, filteredSpec, ConvFrames, K, bs_len=32):
         # tails[:, :, i] = np.reshape(bgMeans.means_[K2[i],:], (proc.shape[1], ConvFrames), order='F')
     total_priors += K1.shape[0] + K2.shape[0]
     return (heads, tails, K1, K2)
-
-
-def findDefBins(frames, filteredSpec, ConvFrames, K):
-    """
-    Calculate the prior vectors for W to use in NMF
-    :param frames: Numpy array of hit locations (frame numbers)
-    :param filteredSpec: Spectrogram, the spectrogram where the vectors are extracted from
-    :return: tuple of Numpy arrays, prior vectors Wpre,heads for actual hits and tails for decay part of the sound
-     """
-    global total_priors
-    gaps = np.zeros((frames.shape[0], ConvFrames))
-    for i in range(frames.shape[0]):
-        for j in range(gaps.shape[1]):
-            gaps[i, j] = frames[i] + j
-
-    a = np.reshape(filteredSpec[gaps.astype(int)], (nrOfPeaks, -1))
-    kmeans = KMeans(n_clusters=K).fit(a)
-
-    heads = np.zeros((proc.shape[1], ConvFrames, K))
-    for i in range(K):
-        heads[:, :, i] = np.reshape(kmeans.cluster_centers_[i], (proc.shape[1], ConvFrames), order='F')
-
-    tailgaps = np.zeros((frames.shape[0], ConvFrames))
-    for i in range(frames.shape[0]):
-        for j in range(gaps.shape[1]):
-            tailgaps[i, j] = frames[i] + j + ConvFrames
-
-    a = np.reshape(filteredSpec[tailgaps.astype(int)], (nrOfPeaks, -1))
-    kmeans = KMeans(n_clusters=K).fit(a)
-
-    tails = np.zeros((proc.shape[1], ConvFrames, K))
-    for i in range(K):
-        tails[:, :, i] = np.reshape(kmeans.cluster_centers_[i], (proc.shape[1], ConvFrames), order='F')
-    total_priors=nrOfDrums*2
-    return (heads, tails, 0, 0)
+# from itertools import combinations
+# def em_mdl(templates):
+#     score=0
+#     temp_temps=[]
+#     #iterate
+#     def ISDiv(x,y):
+#         return (y/x - np.log(y/x) - 1).sum()
+#     def join_nearest(clusters):
+#         n=clusters.shape[0]
+#         indexs=combinations(range(clusters.shape[0]),2)
+#         divergences=np.zeros(indexs.shape[0])
+#         for i in range(indexs.shape[0]):
+#             divergences[i]=ISDiv(clusters[indexs[i][0]], clusters[indexs[i][1]])
+#
+#     for i in range(templates.shape[0]):
+#         #calculate and store mdl for i
+#         current_score=mdl(current)
+#         if current_score<=score:
+#             score=current_score
+#             temp_temps=current
+#         #join two nearest clusters
+#         current=join_nearest(current)
+#
+#
+# def findDefBins(frames, filteredSpec, ConvFrames, K):
+#     """
+#     Calculate the prior vectors for W to use in NMF
+#     :param frames: Numpy array of hit locations (frame numbers)
+#     :param filteredSpec: Spectrogram, the spectrogram where the vectors are extracted from
+#     :return: tuple of Numpy arrays, prior vectors Wpre,heads for actual hits and tails for decay part of the sound
+#      """
+#     global total_priors
+#     gaps = np.zeros((frames.shape[0], ConvFrames))
+#     for i in range(frames.shape[0]):
+#         for j in range(gaps.shape[1]):
+#             gaps[i, j] = frames[i] + j
+#
+#     a = np.reshape(filteredSpec[gaps.astype(int)], (nrOfPeaks, -1))
+#     kmeans = KMeans(n_clusters=K).fit(a)
+#
+#     heads = np.zeros((proc.shape[1], ConvFrames, K))
+#     for i in range(K):
+#         heads[:, :, i] = np.reshape(kmeans.cluster_centers_[i], (proc.shape[1], ConvFrames), order='F')
+#     heads = em_mdl(heads)
+#     tailgaps = np.zeros((frames.shape[0], ConvFrames))
+#     for i in range(frames.shape[0]):
+#         for j in range(gaps.shape[1]):
+#             tailgaps[i, j] = frames[i] + j + ConvFrames
+#
+#     a = np.reshape(filteredSpec[tailgaps.astype(int)], (nrOfPeaks, -1))
+#     kmeans = KMeans(n_clusters=K).fit(a)
+#
+#     tails = np.zeros((proc.shape[1], ConvFrames, K))
+#     for i in range(K):
+#         tails[:, :, i] = np.reshape(kmeans.cluster_centers_[i], (proc.shape[1], ConvFrames), order='F')
+#
+#     tails=em_mdl(tails)
+#     total_priors = heads.shape[0]+tails.shape[0]
+#
+#     return (heads, tails, 0, 0)
 
 
 def getStompTemplate(numHits=2, convFrames=10):
@@ -334,7 +360,7 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
             for k in range(K1):
                 index = ind + k
                 HN = superflux(A=Wpre.T[:, index, :].sum(), B=H[index], win_size=8)
-                # HN = HN / HN.max()
+                #HN = HN / HN.max()
                 if k == 0:
                     H0 = HN
                 else:
@@ -370,19 +396,24 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
 
         besthits = []
         if drumwise:
-            deltas = np.linspace(0, 1, 100)
+            deltas = np.linspace(0.15, 1, 10)
             f_zero = 0
             threshold = 0
             for d in deltas:
-                peaks = pick_onsets(H0, delta=d)
+                if i<len(shifts)-1:
+                    peaks = pick_onsets(H0[shifts[i]:shifts[i+1]], delta=d)
+                    #showEnvelope(H0[shifts[i]:shifts[i+1]])
+                else:
+                    peaks = pick_onsets(H0[shifts[i]:], delta=d)
+                #print(peaks.shape[0])
+
                 drums[i].set_hits(peaks[np.where(peaks < filt_spec.shape[0] - 1)])
                 predHits = drums[i].get_hits()
-
-                actHits = drums[i].get_peaks() + shifts[i] - 1
+                actHits = drums[i].get_peaks()
                 trueHits = k_in_n(actHits, predHits, window=1)
                 prec, rec, f_drum = f_score(trueHits, predHits.shape[0], actHits.shape[0])
+                #print(d,f_drum)
                 if f_drum > f_zero:
-                    besthits = predHits
                     f_zero = f_drum
                     threshold = d
             print('delta:', threshold, f_zero)
@@ -414,7 +445,8 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
         print('delta:', threshold, f_zero)
         for i in range(len(drums)):
             drums[i].set_threshold(threshold)
-            #drums[i].set_threshold(0.18)
+            #fix delta
+            #drums[i].set_threshold(0.16)
             # Try loosening plate drum thresholds: NOT FINAL!!!
             if i in [2, 3, 6,7,8]:
                 pass
@@ -429,7 +461,7 @@ def liveTake():
     global _ImRunning
     _ImRunning = True
     stompResolution = 1
-    buffer = np.zeros(shape=(1323008))  # max take length (30s.)
+    buffer = np.zeros(shape=(44100*10+18000))  # max take length (30s.)
 
     j = 0
     time.sleep(0.1)
@@ -437,14 +469,14 @@ def liveTake():
     for i in strm:
         buffer[j:j + HOP_SIZE] = i[:HOP_SIZE]
         j += HOP_SIZE
-        if j >= 1311744 or (not _ImRunning):
+        if j >=buffer.shape[0]-18000 or (not _ImRunning):
             buffer[j:j + 6000] = np.zeros(6000)
             strm.close()
             #Should this yield instead of returning? To record as long as the drummer wants...
             return buffer[:j + 6000]
 
 
-def processLiveAudio(liveBuffer=None, drums=None, quant_factor=0.0, iters=0, method='NMFD', rm_win=3):
+def processLiveAudio(liveBuffer=None, drums=None, quant_factor=0.0, iters=0, method='NMFD',thresholdAdj=0.0):
     onset_alg = 0
     filt_spec = get_preprocessed_spectrogram(liveBuffer, sm_win=4)
     stacks = 1.
@@ -462,6 +494,7 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=0.0, iters=0, met
             Wpre[:, ind + j, :] = heads[:, :, j]
             total_heads += 1
     total_tails = 0
+
     for i in range(len(drums)):
         tails = drums[i].get_tails()
         K2 = tails.shape[2]
@@ -470,9 +503,8 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=0.0, iters=0, met
             Wpre[:, ind + j, :] = tails[:, :, j]
             total_tails += 1
     # Wpre = Wpre[:, :total_heads + total_tails, :]
-
+    #PSA(filt_spec[:1500], Wpre[:,:9,0])
     for i in range(int(stacks)):
-
         if method == 'NMFD' or method == 'ALL':
             H,Wpre, err1 = NMFD(filt_spec.T, iters=iters, Wpre=Wpre, include_priors=True)
         if method == 'NMF' or method == 'ALL':
@@ -481,7 +513,7 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=0.0, iters=0, met
             errors = np.zeros((err1.size, 2))
             errors[:, 0] = err1
             errors[:, 1] = err2
-            showEnvelope(errors, ('NMFD Error', 'NMF Error'), ('iterations', 'error'))
+            #showEnvelope(errors, ('NMFD Error', 'NMF Error'), ('iterations', 'error'))
         if i == 0:
             WTot, HTot = Wpre, H
         else:
@@ -496,6 +528,8 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=0.0, iters=0, met
     picContent=[]
     allPeaks=[]
     for i in range(len(drums)):
+        #if i<=9:
+        #    showEnvelope(H[i][:1500])
         heads = drums[i].get_heads()
         K1 = heads.shape[2]
         ind = total_heads
@@ -503,7 +537,7 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=0.0, iters=0, met
             for k in range(K1):
                 index = ind + k
                 HN = superflux(A=Wpre.T[:, index, :].sum(), B=H[index],win_size=8)
-                # HN = HN / HN.max()
+                #HN = HN / HN.max()
                 if k == 0:
                     H0 = HN
                 else:
@@ -540,7 +574,7 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=0.0, iters=0, met
         #H0=H0/H0.max()
 
         #showEnvelope(H0)
-        peaks = pick_onsets(H0, delta=drums[i].get_threshold())
+        peaks = pick_onsets(H0, delta=drums[i].get_threshold()+thresholdAdj)
         if i in [0,1,2]:
             picContent.append([H0[:], pick_onsets(H0[:], delta=drums[i].get_threshold())])
             kernel = np.hanning(8)
@@ -572,16 +606,22 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=0.0, iters=0, met
     # for i in drums:
     #   precHits = frame_to_time(i.get_hits())
     #   i.set_hits(time_to_frame(cleanDoubleStrokes(precHits, resolution=duplicateResolution)))
+
     if quant_factor > 0:
         onsets = onsets / onsets.max()
-        deltaTempo = extract_tempo(onsets, constant_tempo=False)
+        deltaTempo = extract_tempo(onsets, constant_tempo=True)
         for i in drums:
             hits = i.get_hits()
             if len(hits) is None:
                 i.set_hits([])
             else:
                 i.set_hits(conform_time(i.get_hits(), deltaTempo, quantize=True))
-    return drums
+        print(np.mean(deltaTempo))
+        return drums, np.mean(deltaTempo)
+    else:
+        return drums, 1.0
+
+
 
 
 def get_preprocessed_spectrogram(buffer=None,A=None,B=None, sm_win=4, test=False):
@@ -752,13 +792,16 @@ def extract_tempo(onsets=None, window_size_in_s=8, constant_tempo=True):
 
     # Wherever the best tempo is index 0, return start_bpm
     tempi[best_period == 0] = min_bpm
-
+    #showEnvelope(tempi)
     #Get constant tempo estimate
     if constant_tempo:
         tempi[:]=tempi_mean
-    kernel=np.hanning(int(N/2))
-    tempi_smooth=np.convolve(tempi/kernel.sum(),kernel, 'same')
-
+        tempi_smooth=tempi
+    else:
+        kernel=np.hanning(int(N/1.5))
+        tempi_pad=np.array(list(tempi[:200])+list(tempi)+list(tempi[-200:]))
+        tempi_smooth=np.convolve(tempi_pad/kernel.sum(),kernel, 'same')[200:-200]
+        #showEnvelope(tempi_smooth)
     # Tempo and it's manifolds
     d = DEFAULT_TEMPO
     targets = [d / 4, d / 2, d, d * 2, d * 4]
@@ -878,13 +921,18 @@ def NMFD(X, iters=500, Wpre=[], include_priors=False):
         for i in range(Wpre.shape[1]):
             pass
             X = np.hstack((X, .5*Wpre[:, i, :]))
+
+    #add noise priors, do not use, minimal improvement with serious speed drop.
+    #W_z=np.random.rand(Wpre.shape[0],Wpre.shape[1], Wpre.shape[2])
+    #Wpre=np.concatenate((Wpre, W_z), axis=1)
+
     # data size
     M, N = X.shape
     W = Wpre
     M, R, T = W.shape
 
     # Initial H, non negative, non zero. any non zero value works
-    H = np.full((R, N), .5)
+    H = np.full((R, N), .15)
 
     # Make sure the input is normalized
     W = W / W.max()
@@ -911,7 +959,7 @@ def NMFD(X, iters=500, Wpre=[], include_priors=False):
             Lambda += W[:, :, t] @ shifter[:, T - t: -(t + 1)]
         return Lambda
 
-    mu = .38  # sparsity constraint
+    mu = 0.38  # sparsity constraint
     for i in range(iters):
         if REQUEST_RESULT:
             return H
@@ -945,22 +993,24 @@ def NMFD(X, iters=500, Wpre=[], include_priors=False):
             if errDiff < 0.0003:# or err[i] > err[i - 1]:
                 break
 
+        #Adaptive W - no considerable improvement
         if (False):
             What1 = np.zeros((M,R, T))
             What2 = np.zeros((M,R, T))
-            shifter = np.zeros((N+T, 9))
-            shifter[:-T, :] = H.T[:,9:]
+            shifter = np.zeros((N+T, R))
+            shifter[:-T, :] = H.T[:,:]
             for t in range(T):
-                W[:, 9:, t] = W[:, 9:, t] * (LambHat@shifter[t:-(T-t), :] / (repMat@shifter[t:-(T-t),:] + eps+(mu/T)))
+                W[:, :, t] = W[:, :, t] * (LambHat@shifter[t:-(T-t), :] / (repMat@shifter[t:-(T-t),:] + eps+(mu/T)))
             #dittmar &al. alpha
             #alpha=(i/iters)**4
             #fix Wpre: alpha=1, adapt freely: alpha=0
-            alpha=0.00025
+            alpha=0.1
             W=Wpre*alpha+(1-alpha)*W
             W = W / W.max()
     return H,W, err / err.max()
 
-
+#
+#
 # import matplotlib.pyplot as plt
 # import matplotlib.cm as cmaps
 #
@@ -988,9 +1038,11 @@ def NMFD(X, iters=500, Wpre=[], include_priors=False):
 #         plt.savefig("Onset_env_peaks_alg1.png")
 #         plt.tight_layout()
 #     else:
-#         f = plt.figure(figsize=(10, 4))
-#         ax = plt.subplot(111)
+#         plt.figure(figsize=(10, 2))
 #         plt.plot(env)
+#         plt.xlim(xmin=1)
+#         plt.show()
+#         #ax = plt.subplot(111)
 #         if legend != None:
 #             box = ax.get_position()
 #             ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
@@ -998,13 +1050,15 @@ def NMFD(X, iters=500, Wpre=[], include_priors=False):
 #             # plt.gca().legend(legend, loc='right')
 #         if labels != None:
 #             # my_xticks=[str(x)[:4] for x in np.linspace(0.2,0.4,int(env.shape[0]/2))]
-#             # my_xticks = np.arange(0, 0.1, .01)
-#             # plt.xticks(np.arange(0, env.shape[0], 1), my_xticks)
+#             #my_xticks = np.arange(0, env.shape[0], .01)
+#             #plt.xticks(np.arange(1, env.shape[0], 1), range(1,20))
+#
 #             plt.xlabel(labels[0], fontsize=12)
 #             plt.ylabel(labels[1], fontsize=12)
-#         plt.savefig("nadam_lr.png")
-#         plt.tight_layout()
 #
+#         #plt.savefig("nadam_lr.png")
+#         #plt.tight_layout()
+
 #
 # def showFFT(env, ticks=None):
 #     """
@@ -1138,6 +1192,7 @@ def mergerowsandencode(a):
             # Move frames to nearest sixteenth note
             a[i] = (np.rint(a[i][0] / sixtDivider),) + a[i][1:]
     # Define max frames from the first detected hit to end
+    print(len(a[-1]))
     if (len(a) == 0):
         return []
     maxFrame = int(a[-1][0] - a[0][0] + 1)
@@ -1161,10 +1216,11 @@ def mergerowsandencode(a):
     # return array of merged hits starting from the first occurring hit event
     if ENCODE_PAUSE:
         frames = truncZeros(frames)
+    print(len(frames))
     return frames
 
 
-def splitrowsanddecode(a):
+def splitrowsanddecode(a, deltaTempo=1.0):
     """
         Split hits occuring at the same frame to separate lines containing one row per hit.
         i.e. A kick drum hit  and a closed hihat hit at
@@ -1181,9 +1237,9 @@ def splitrowsanddecode(a):
         """
     decodedFrames = []
     # multiplier to make tempo the global tempo after generation.
-
-    frameMul = 1
-    if QUANTIZE:
+    print(deltaTempo)
+    frameMul = 1/deltaTempo
+    if False:
         frameMul = SAMPLE_RATE / Q_HOP / SXTH_DIV
     i = 0
     pause = 0
@@ -1198,7 +1254,7 @@ def splitrowsanddecode(a):
         for j, k in enumerate(dec_to_binary(a[i])):
             if int(k) == 1:
                 # store framenumber(index) and drum name to list, (nrOfDrums-1) to flip drums to right places,
-                decodedFrames.append([(i + pause) * frameMul, abs(j - (nrOfDrums - 1))])
+                decodedFrames.append([int((i + pause) * frameMul), abs(j - (nrOfDrums - 1))])
         i += 1
     # return the split hits
     return decodedFrames
@@ -1720,3 +1776,50 @@ def get_cmask(tempo, tempomask):
 # #Tdyn=((T1**p+T2**p)/2.)**(1./p)
 # #Create a boolean array of indices where local maxima is above Tdyn
 # onsets=np.array(localMaxima>=T1[localMaximaInd[0]])
+from sklearn.decomposition import FastICA
+
+def PSA(X,fpr):
+    eps = 10 ** -18
+    X=X.T
+    #fpr = fpr[:, :, 0]
+    print (fpr.shape)
+    fpr=fpr/fpr.max()
+    fpp=np.linalg.pinv(fpr)
+    print(fpp.shape)
+    tHat = (fpp@X).T
+    #for i in range(9):
+    #    showEnvelope(tHat.T[i])
+    print(tHat.shape)
+    ica = FastICA(n_components=9)
+    t = (ica.fit_transform(tHat))
+    print(t.shape)
+    tp=np.linalg.pinv(t)
+    f=X@tp.T
+    print(f.shape)
+    f=f/f.max()
+    def KLDiv(x, y):
+        return (x * (np.log(y/x+eps) - x + y)).sum()
+    def ISDiv(x,y):
+        return (y/x - np.log(y/x) - 1).sum()
+    retf=np.zeros_like(f)
+    print(fpr.shape, f.shape)
+    for i in range(f.shape[1]):
+        x=fpr.T
+        y=f.T
+
+        y=abs(y)
+        mini=ISDiv(x[i], y[0])
+        #print(x[i], y[0])
+        index=0
+        for j in range(y.shape[0]-1):
+            if mini>=ISDiv(x[i], y[j]):
+                mini=ISDiv(x[i], y[j])
+                index=j
+        print (index, mini)
+        retf.T[i]=y[index]
+    tTilde = (np.linalg.pinv(f) @ X).T
+    tTilde = np.clip(np.abs(tTilde.T), 0, None)
+    showEnvelope(tTilde.T)
+    for i in range(9):
+        showEnvelope(tTilde[i]/tTilde[i].max())
+    return t, f

@@ -53,66 +53,36 @@ from midi import read_midifile
 from midi.events import *
 import os
 import pathlib
-# midis = []#[f for f in os.listdir('../midis/') if not f.startswith('.')]
-# for path, subdirs, files in os.walk('../midis'):
-#     for name in files:
-#         file=str(pathlib.PurePath(path, name))
-#         midis.append(file)
-#
-#
-# def quadBar(pattern):
-#     """
-#     makes one bar of pattern four bars
-#     :param pattern: list pattern to multiply
-#     :return: np.array four bars of pattern
-#     """
-#     newpat=np.zeros_like((pattern*4))
-#     pattern=np.array(pattern)
-#     maxTick=pattern[-1][0]
-#     for i in range(4):
-#         for j in range(pattern.shape[0]):
-#             newpat[j+(i*pattern.shape[0])]=[pattern[j][0]+maxTick*i,pattern[j][1],pattern[j][2]]
-#     return newpat.tolist()
-# def extend_midi(old, new):
-#     maxtime=old[-1][0]
-#     for i in range(len(new)):
-#         new[i][0]=new[i][0]+maxtime
-#     return old+new
-# masterfile=[]
-# filenro=0
-# for file in midis:
-#     print(len(masterfile))
-#     if len(masterfile) > 1000000:
-#         masterfile=np.array(masterfile)
-#         data=pd.DataFrame(masterfile,columns=['time', 'pitch', 'velocity'])
-#         data.to_csv('dataklimp{}.csv'.format(filenro), index=True, header=None, sep='\t')
-#         filenro+=1
-#         masterfile=[]
-#     if not file.lower().endswith('.mid'):
-#         print(pathlib.Path(file).suffix)
-#         continue
-#     try:
-#         midi =read_midifile(file)
-#     except Exception as e:
-#         print(file, 'tuotti virheen', e)
-#     midi.make_ticks_abs()
-#     tracks = [track for track in midi]
-#     eventCount = 0
-#     pattern=[]
-#     for track in tracks:
-#         for event_number, event in enumerate(track, eventCount):
-#             if isinstance(event, NoteOnEvent):
-#                 if event.get_velocity()>0:
-#                     pattern.append([event.tick,event.get_pitch(),event.get_velocity()])
-#             if isinstance(event, EndOfTrackEvent):
-#                 pattern.append([event.tick,None, None])
-#     if len(masterfile)>0:
-#         masterfile=extend_midi(masterfile,quadBar(pattern))
-#     else:
-#         masterfile=quadBar(pattern)
-for i in range(87,161):
-    data=pd.read_csv('midi_data_set/dataklimp{}.csv'.format(i), index_col=0,names=['time','pitch', 'vel'],header=None, sep='\t')
-    data['time']=time_to_frame(data['time']*.005,sr=44100, hop_length=353).astype(int)
+midis = []#[f for f in os.listdir('../midis/') if not f.startswith('.')]
+for path, subdirs, files in os.walk('../midis'):
+    for name in files:
+        file=str(pathlib.PurePath(path, name))
+        midis.append(file)
+
+
+def quadBar(pattern):
+    """
+    makes one bar of pattern four bars
+    :param pattern: list pattern to multiply
+    :return: np.array four bars of pattern
+    """
+    newpat=np.zeros_like((pattern*4))
+    pattern=np.array(pattern)
+    maxTick=pattern[-1][0]
+    for i in range(4):
+        for j in range(pattern.shape[0]):
+            newpat[j+(i*pattern.shape[0])]=[pattern[j][0]+maxTick*i+1,pattern[j][1],pattern[j][2]]
+    return newpat.tolist()
+
+def extend_midi(old, new):
+    maxtime=old[-1][0]
+    for i in range(len(new)):
+        new[i][0]=new[i][0]+maxtime
+    return old+new
+def format_data(data):
+    #data = data[data['time'] <= 10000000]
+
+    data['time']=time_to_frame((data['time']).astype(float)*.0052,sr=44100, hop_length=2**9).astype(int)
     bd = [35, 36]
     mask = data.pitch.isin(bd)
     data.loc[mask, 'pitch'] = 0
@@ -145,6 +115,52 @@ for i in range(87,161):
     data=data[data['pitch']<=9]
     data_hits=mergerowsandencode(data[['time','pitch']].as_matrix())
     data=pd.DataFrame(data_hits)
-    data.to_csv('midi_data_set/dataklimp{}b.csv'.format(i), index=True, header=None, sep='\t')
-    print(data.head())
+    return data
+    #data.to_csv('midi_data_set/dataklimp{}b.csv'.format(i), index=True, header=None, sep='\t')
+    #print(data.head())
+
+masterfile=[]
+filenro=0
+lap=10000
+for file in midis:
+    if len(masterfile)>lap:
+        lap+=10000
+        print(len(masterfile))
+    if len(masterfile) > 100000:
+        masterfile=np.array(masterfile)
+        data=pd.DataFrame(masterfile,columns=['time', 'pitch', 'velocity'])
+
+        data=format_data(data)
+        print(data.head())
+        data.to_csv('midi_data_set/mididata{}.csv'.format(filenro), index=True, header=None, sep='\t')
+        #data.to_csv('dataklimp{}.csv'.format(filenro), index=True, header=None, sep='\t')
+        filenro+=1
+        lap=10000
+        masterfile=[]
+        #break
+    if not file.lower().endswith('.mid'):
+        print(pathlib.Path(file).suffix)
+        continue
+    try:
+        midi =read_midifile(file)
+    except Exception as e:
+        print(file, 'tuotti virheen', e)
+    midi.make_ticks_abs()
+    tracks = [track for track in midi]
+    eventCount = 0
+    pattern=[]
+    for track in tracks:
+        for event_number, event in enumerate(track, eventCount):
+            if isinstance(event, NoteOnEvent):
+                if event.get_velocity()>0:
+                    pattern.append([event.tick,event.get_pitch(),event.get_velocity()])
+            if isinstance(event, EndOfTrackEvent):
+                pattern.append([event.tick,None, None])
+    if len(masterfile)>0:
+        masterfile=extend_midi(masterfile,quadBar(pattern))
+    else:
+        masterfile=quadBar(pattern)
+#for i in range(0,1):
+ #   data=pd.read_csv('dataklimp{}.csv'.format(i), index_col=0,names=['time','pitch', 'vel'],header=None, sep='\t')
+
 
