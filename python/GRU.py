@@ -78,7 +78,7 @@ def vectorizeCSV(filename, seqLen=32, sampleMul=1., forceGen=False, bigFile=None
         data=bigFile
     #data = data[:128]
     # print('corpus length:', len(data))
-    partLength = 360#max([len(data),720])
+    partLength = 666#max([len(data),720])
     if forceGen:
         data=data[-180:]
         #return
@@ -118,7 +118,7 @@ def vectorizeCSV(filename, seqLen=32, sampleMul=1., forceGen=False, bigFile=None
 
     #BX,BY=resample(np.array(X), np.array(y), n_samples=len(words), replace=False)
     samples=np.max([int(len(words)*sampleMul),333])
-    partLength = min([len(data),333])
+    #partLength = min([len(data),333])
     X, y = resample(np.array(X), np.array(y), n_samples=samples, replace=True, random_state=2)
     X[0]=X0
     y[0]=y0
@@ -265,7 +265,7 @@ def generatePart(data, temp=None):
     for i in data:
         try:
             pass
-            #generated.append(Ichar.get(np.where(i==True)[0][0],0))
+            generated.append(Ichar.get(np.where(i==True)[0][0],0))
         except Exception as e:
             print('gen-init: ', e)
             pass

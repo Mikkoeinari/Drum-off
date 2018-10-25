@@ -10,10 +10,10 @@ import pickle
 
 # fpr = np.zeros((proc.shape[1], nrOfDrums * 2 * K, ConvFrames))
 # drums = []
-list_X = []
-list_y = []
-msg = ''
-highEmph = [0, 0, 1, 1, 0, 0, 1, 1, 0]
+#list_X = []
+#list_y = []
+#msg = ''
+#highEmph = [0, 0, 1, 1, 0, 0, 1, 1, 0]
 K=1
 
 ###
@@ -50,52 +50,14 @@ def initKitBG(drumkit_path, nrOfDrums, K=1, rm_win=4, bs_len=32):
             shifts.append(shift)
 
         drums.append(
-                Drum(name=[i], highEmph=highEmph[i], peaks=peaks, heads=freqtemps[0], tails=freqtemps[1],
+                Drum(name=[i], highEmph=0, peaks=peaks, heads=freqtemps[0], tails=freqtemps[1],
                      threshold=0,
                      midinote=midinotes[i], probability_threshold=1))
 
-    recalculate_thresholds(filt_spec_all, shifts, drums, drumwise=False, rm_win=rm_win)
+    recalculate_thresholds(filt_spec_all, shifts, drums, drumwise=True, rm_win=rm_win)
     # Pickle the important data
     pickle.dump(drums, open("{}/pickledDrumkit.drm".format(drumkit_path), 'wb'))
     #pickle.dump(fpr, open("{}/pickledFpr.drm".format(drumkit_path), 'wb'))
-
-def initKit(drumkit_path, nrOfDrums, K=1, bs_len=32):
-    K=K
-    L=10
-    global drums, fpr
-    #print(nrOfDrums)
-    fpr = np.zeros((proc.shape[1], nrOfDrums * 2 * K, L))
-    drums = []
-    filt_spec_all = 0
-    shifts = []
-    for i in range(nrOfDrums):
-
-        buffer = madmom.audio.Signal("{}/drum{}.wav".format(drumkit_path, i), frame_size=FRAME_SIZE,
-                                     hop_size=HOP_SIZE)
-        #CC1, freqtemps, threshold = getPeaksFromBuffer(buffer, 1, nrOfPeaks, k, K)
-        filt_spec = get_preprocessed_spectrogram(buffer, sm_win=4)
-        peaks = getPeaksFromBuffer(filt_spec, 10, nrOfPeaks, L, K)
-        freqtemps = findDefBins(peaks, filt_spec, L, K)
-        #for j in range(K):
-        #    ind = i * K
-        #    fpr[:, ind + j, :] = freqtemps[0][:, :, j]
-        #    fpr[:, ind + j + nrOfDrums * K, :] = freqtemps[1][:, :, j]
-        if i==0:
-            filt_spec_all=filt_spec
-            shifts=[0]
-        else:
-            shift=filt_spec_all.shape[0]
-            filt_spec_all=np.vstack((filt_spec_all,filt_spec))
-            shifts.append(shift)
-
-        drums.append(
-            Drum(name=[i], highEmph=highEmph[i], peaks=peaks, heads=freqtemps[0], tails=freqtemps[1],
-                 threshold=.15,
-                 midinote=midinotes[i], probability_threshold=1))
-    recalculate_thresholds(filt_spec_all, shifts, drums, drumwise=False)
-    # Pickle the important data
-    pickle.dump(drums, open("{}/pickledDrumkit.drm".format(drumkit_path), 'wb'))
-    pickle.dump(fpr, open("{}/pickledFpr.drm".format(drumkit_path), 'wb'))
 
 
 def loadKit(drumkit_path):
@@ -104,7 +66,7 @@ def loadKit(drumkit_path):
     :param drumkit_path: path to drumkit
     :return: None
     """
-    global drums, fpr
+    global drums#, fpr
     drums = pickle.load(open("{}/pickledDrumkit.drm".format(drumkit_path), 'rb'))
     #fpr = pickle.load(open("{}/pickledFpr.drm".format(drumkit_path), 'rb'))
 
@@ -117,7 +79,8 @@ def playLive(drumkit_path, thresholdAdj=0.0, saveAll=False):
         print('liveplay:',e)
 
     t0 = time()
-    plst, deltaTempo = processLiveAudio(liveBuffer=buffer, drums=drums, quant_factor=1.0, iters=87, method='NMFD', thresholdAdj=thresholdAdj)
+    plst, deltaTempo = processLiveAudio(liveBuffer=buffer, drums=drums,
+                                        quant_factor=1.0, iters=256, method='NMFD', thresholdAdj=thresholdAdj)
     print('NMFDtime:%0.2f' % (time() - t0))
     times = []
     bintimes = []
@@ -214,6 +177,47 @@ def soundCheck(drumkit_path, nrOfDrums, drumkit_drums):
     print("\nSamples loaded")
     yield 'done'
 
+#
+#
+# Debug code below
+def initKit(drumkit_path, nrOfDrums, K=1, bs_len=32):
+    K=K
+    L=10
+    global drums, fpr
+    #print(nrOfDrums)
+    fpr = np.zeros((proc.shape[1], nrOfDrums * 2 * K, L))
+    drums = []
+    filt_spec_all = 0
+    shifts = []
+    for i in range(nrOfDrums):
+
+        buffer = madmom.audio.Signal("{}/drum{}.wav".format(drumkit_path, i), frame_size=FRAME_SIZE,
+                                     hop_size=HOP_SIZE)
+        #CC1, freqtemps, threshold = getPeaksFromBuffer(buffer, 1, nrOfPeaks, k, K)
+        filt_spec = get_preprocessed_spectrogram(buffer, sm_win=4)
+        peaks = getPeaksFromBuffer(filt_spec, 10, nrOfPeaks, L, K)
+        freqtemps = findDefBins(peaks, filt_spec, L, K)
+        #for j in range(K):
+        #    ind = i * K
+        #    fpr[:, ind + j, :] = freqtemps[0][:, :, j]
+        #    fpr[:, ind + j + nrOfDrums * K, :] = freqtemps[1][:, :, j]
+        if i==0:
+            filt_spec_all=filt_spec
+            shifts=[0]
+        else:
+            shift=filt_spec_all.shape[0]
+            filt_spec_all=np.vstack((filt_spec_all,filt_spec))
+            shifts.append(shift)
+
+        drums.append(
+            Drum(name=[i], highEmph=highEmph[i], peaks=peaks, heads=freqtemps[0], tails=freqtemps[1],
+                 threshold=.15,
+                 midinote=midinotes[i], probability_threshold=1))
+    recalculate_thresholds(filt_spec_all, shifts, drums, drumwise=True)
+    # Pickle the important data
+    pickle.dump(drums, open("{}/pickledDrumkit.drm".format(drumkit_path), 'wb'))
+    pickle.dump(fpr, open("{}/pickledFpr.drm".format(drumkit_path), 'wb'))
+
 
 def play(filePath, K):
     try:
@@ -226,50 +230,54 @@ def play(filePath, K):
         print(e)
         print('jotain meni vikaan!')
 
-    fs=np.zeros((16,3))
-
-    for n in range(1,fs.shape[0]):
+    #fs=np.zeros((16,3))
+    skip_secs=int(44100*0)
+    for n in range(1):
         #print(2**n)
 
-        initKitBG(filePath, 9, K=n)#, rm_win=n, bs_len=350)
+        #initKitBG(filePath, 9, K=n)#, rm_win=n, bs_len=350)
         t0 = time()
-        plst = processLiveAudio(liveBuffer=buffer, drums=drums, quant_factor=1.0, iters=256, method='NMFD')
+        plst,i = processLiveAudio(liveBuffer=buffer[skip_secs:],
+                                  drums=drums, quant_factor=0.0, iters=128, method='NMFD')
         print('\nNMFDtime:%0.2f' % (time() - t0))
         #Print scores if annotated
         annotated = True
-        if (annotated):
-            # print f-score:
-            print('\n\n')
-            hits = pd.read_csv("{}midiBeatAnnod.csv".format(filePath), sep="\t", header=None)
-            precision, recall, fscore, true_tot = 0, 0, 0, 0
-            for i in plst:
-                predHits = frame_to_time(i.get_hits())
-                # print(predHits, predHits.shape[0] )
-                actHits = hits[hits[1] == i.get_name()[0]]
-                actHits = actHits.iloc[:, 0]
-                # print(actHits.values, actHits.shape[0])
-                trueHits = k_in_n(actHits.values, predHits, window=0.02)
-                # print(trueHits)2
-                prec, rec, f_drum = f_score(trueHits, predHits.shape[0], actHits.shape[0])
-                print(prec)
-                print(rec)
-                print(f_drum)
-                #fs[n,i.get_name()]=f_drum
-                print(trueHits)
-                print('\n')
-                # Multiply by n. of hits to get real f-score in the end.
-                precision += prec * actHits.shape[0]
-                recall += rec * actHits.shape[0]
-                fscore += (f_drum * actHits.shape[0])
-                true_tot += actHits.shape[0]
-                # add_to_samples_and_dictionary(i.drum, buffer, i.get_hits())
-            print('Precision: {}'.format(precision / true_tot))
-            fs[n,0]=(precision / true_tot)
-            print('Recall: {}'.format(recall / true_tot))
-            fs[n,1] = (recall / true_tot)
-            print('F-score: {}'.format(fscore / true_tot))
-            fs[n,2]=(fscore / true_tot)
-    showEnvelope(fs, ('Precision', 'Recall', 'f-score'), ('Max K','score'))
+        for k in range(1):
+            if (annotated):
+                # print f-score:
+                print('\n\n')
+                hits = pd.read_csv("{}midiBeatAnnod.csv".format(filePath), sep="\t", header=None)
+                precision, recall, fscore, true_tot = 0, 0, 0, 0
+                for i in plst:
+                    predHits = frame_to_time(i.get_hits())
+                    b=-0.005
+
+                    actHits = hits[hits[1] == i.get_name()[0]]
+                    actHits = actHits.iloc[:, 0]
+
+                    # print(actHits.values, actHits.shape[0])
+                    trueHits = k_in_n(actHits.values, predHits, window=0.02)
+                    # print(trueHits)2
+                    prec, rec, f_drum = f_score(trueHits, predHits.shape[0], actHits.shape[0])
+                    #print(prec)
+                    #print(rec)
+                    print(f_drum)
+                    #fs[n,i.get_name()]=f_drum
+                    #print(trueHits)
+                    print('\n')
+                    # Multiply by n. of hits to get real f-score in the end.
+                    precision += prec * actHits.shape[0]
+                    recall += rec * actHits.shape[0]
+                    fscore += (f_drum * actHits.shape[0])
+                    true_tot += actHits.shape[0]
+                    # add_to_samples_and_dictionary(i.drum, buffer, i.get_hits())
+                print('Precision: {}'.format(precision / true_tot))
+                #fs[n,0]=(precision / true_tot)
+                print('Recall: {}'.format(recall / true_tot))
+                #fs[n,1] = (recall / true_tot)
+                print('F-score: {}'.format(fscore / true_tot))
+                #fs[n,2]=(fscore / true_tot)
+    #showEnvelope(fs, ('Precision', 'Recall', 'f-score'), ('Max K','score'))
 
     #showEnvelope(fs[:n], ('Kick','Snare','HH Closed','HH Open','Rack Tom', 'Floor Tom', 'Ride', 'Crash', 'HH Pedal'), ('templates/drum','score'))
     '''
@@ -316,11 +324,11 @@ def play(filePath, K):
     filu =midi.MIDIFile.from_notes(notes, tempo=DEFAULT_TEMPO)
     filu.save('midi_testit_enc_dec0.mid')
     #madmom.io.midi.write_midi(gen.values, 'midi_testit_enc_dec0.mid')
-    #print('Processing time:%0.2f' % (time() - t0))
+    print('Processing time:%0.2f' % (time() - t0))
     return True
 
 #Test method to check Eric Battenbergs onset detection function.
-def testOnsDet(filePath, alg=0):
+def testOnsDet(filePath, alg=0, ppAlg=0):
     buffer=0
     try:
         buffer = madmom.audio.Signal("{}drumBeatAnnod.wav".format(filePath), frame_size=FRAME_SIZE,
@@ -329,13 +337,44 @@ def testOnsDet(filePath, alg=0):
         print(e)
         print('jotain meni vikaan!')
     if alg == 0:
-        filtspec=get_preprocessed_spectrogram(buffer, sm_win=8, test=True)
+        filtspec=get_preprocessed_spectrogram(buffer, sm_win=4, test=True)
         H0=filtspec[:,0]
+    elif alg==1:
+        filt_spec = get_preprocessed_spectrogram(buffer)
+        onset_alg = 0
+        total_heads = 0
+        Wpre = np.zeros((48, len(drums)*2, 10))
+        for i in range(len(drums)):
+            heads = drums[i].get_heads()
+            K1 = heads.shape[2]
+            ind = total_heads
+            for j in range(K1):
+                Wpre[:, ind + j, :] = heads[:, :, j]
+                total_heads += 1
+        total_tails = 0
+        for i in range(len(drums)):
+            tails = drums[i].get_tails()
+            K2 = tails.shape[2]
+            ind = total_heads + total_tails
+            for j in range(K2):
+                Wpre[:, ind + j, :] = tails[:, :, j]
+                total_tails += 1
+
+        H, Wpre, err1 = NMFD(filt_spec.T, iters=128, Wpre=Wpre, include_priors=False)
+        H0=H[0]
+        for i in H[1:]:
+            H0+=i
+        H0=energyDifference(H0, win_size=16)
     else:
-        H0 = superflux(spec_x=filtspec.T, win_size=4)
+        filtspec = get_preprocessed_spectrogram(buffer)
+
+        H0 = superflux(spec_x=filtspec.T, win_size=16)
     H0 = H0 / H0[3:].max()
-    showEnvelope(H0[3:])
-    peaks=pick_onsets(H0,delta=0.015)
+    #showEnvelope(H0)
+    if ppAlg==0:
+        peaks=pick_onsets(H0,delta=0.02)
+    else:
+        peaks = pick_onsets_dynT(H0, delta=0.02)
 
 
     hits = pd.read_csv("{}midiBeatAnnod.csv".format(filePath), sep="\t", header=None)
@@ -346,7 +385,7 @@ def testOnsDet(filePath, alg=0):
 
     #actHits = actHits.iloc[:, 0]
     # print(actHits.values, actHits.shape[0])
-    trueHits = k_in_n(actHits.values, predHits, window=0.058)
+    trueHits = k_in_n(actHits.values, predHits, window=0.05)
     # print(trueHits)2
     prec, rec, f_drum = f_score(trueHits, predHits.shape[0], actHits.shape[0])
     print(prec)
@@ -367,12 +406,15 @@ def testOnsDet(filePath, alg=0):
     # fs[n,1] = (recall / true_tot)
     print('F-score: {}'.format(fscore / true_tot))
     # fs[n,2]=(fscore / true_tot)
+
 #debug
 #initKitBG('Kits/mcd2/',8,K)
 #K=1
-#initKitBG('../trainSamplet/',9,K=K,rm_win=6)
-#loadKit('../DXSamplet/')
-#play('../DXSamplet/', K=K)
+#file='../DXSamplet/'
+#initKitBG(file,9,K=K)
+#loadKit(file)
+#play(file, K=K)
+#testOnsDet(file, alg=2, ppAlg=1)
 #initKitBG('../DXSamplet/',9,K=K,rm_win=6)
 #loadKit('../trainSamplet/')
 #testOnsDet('../trainSamplet/', alg=0)

@@ -203,7 +203,7 @@ class PlayScreen(Screen):
         self.modify=True
         self.step = True
         self.halt=True
-        
+
     def setTrSize(self, *args):
         self.trSize=args[1]
 
@@ -249,6 +249,12 @@ class PlayScreen(Screen):
         fullPath = fileName
         def callback():
             try:
+                print('createfile')
+                #scale tempos to less abrupt areas to 100-200 bpm
+                if self.deltaTempo<0.83:
+                    self.deltaTempo=self.deltaTempo*2
+                elif self.deltaTempo>1.66:
+                    self.deltaTempo=self.deltaTempo/2
                 self.lastMessage=drumsynth.createWav(fullPath,outFile, addCountInAndCountOut=addCountInAndCountOut, deltaTempo=self.deltaTempo)
             except Exception as e:
                 print('createWav ui: ', e)
@@ -263,12 +269,13 @@ class PlayScreen(Screen):
         :param cue: Boolean, if True then player turn follows playback
         :return: None
         """
+        drumsynth._ImRunning = False
         if(self.lastMessage==''):
             return None
         fullPath = self.lastMessage
 
         if self.playBackMessage=='Stop Playback':
-            drumsynth._ImRunning=False
+            drumsynth._ImRunning = False
             self.playBackMessage = 'Play Back Last Performance'
             return None
         def callback():
@@ -302,8 +309,8 @@ class PlayScreen(Screen):
                 self.lastGenPart = mgu.generatePart(
                         mgu.train(fullPath, sampleMul=self.trSize,
                                   forceGen=False, updateModel=self.modify), temp=self.temperature)
-                self.createLast(self.lastGenPart,addCountInAndCountOut=(not self.step))
-                print(self.step)
+                self.createLast(self.lastGenPart,outFile='./generated.wav',addCountInAndCountOut=(not self.step))
+                #print(self.step)
                 if self.step:
                     self.playBackMessage == 'Play Back Computer Performance'
                     return
@@ -353,8 +360,7 @@ class PlayScreen(Screen):
                 self.lastPlayerPart, self.deltaTempo=drumoff.playLive(fullPath, self.threshold, saveAll=False)
                 if self.lastPlayerPart==False:
                     return
-                self.createLast(self.lastPlayerPart,addCountInAndCountOut=(not self.step) )
-                print(self.step)
+                self.createLast(self.lastPlayerPart,addCountInAndCountOut=(not self.step))
                 if self.step:
                     self.playBackMessage = 'Play Back Last Performance'
                     self.pBtnMessage='Play'
@@ -384,6 +390,7 @@ class LoadScreen(Screen):
             app.KitName = (filename[0].split('/')[-1])
             app.KitInit = 'Initialized'
             app.NrOfDrums = [0] * len(drumoff.drums)
+            drumoff.initKitBG(filename[0],len(drumoff.drums))
             for i in drumoff.drums:
                 drum = i.get_name()[0]
                 # make hihats one drum?? nope

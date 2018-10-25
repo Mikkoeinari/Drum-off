@@ -1,6 +1,7 @@
+#import matplotlib.pyplot as plt
+#import matplotlib.cm as cmaps
+
 import time
-#import sys
-import librosa
 import madmom
 import numpy as np
 import pandas as pd
@@ -27,7 +28,7 @@ REQUEST_RESULT = False
 DELTA = 0.15
 midinotes = [36, 38, 42, 46, 50, 43, 51, 49, 44]  # BD, SN, CHH, OHH, TT, FT, RD, CR, SHH, Here we need generality
 nrOfDrums = 24  # Maximum kit size
-nrOfPeaks = 16  #IF CHANGED ALL PREVIOUS SOUNDCHECKS INVALIDATE!!!
+nrOfPeaks =16  #IF CHANGED ALL PREVIOUS SOUNDCHECKS INVALIDATE!!!
 max_n_frames = 10
 total_priors = 0
 MS_IN_MIN = 60000
@@ -38,11 +39,11 @@ _ImRunning = False
 # Shortest processing time good results
 proc = madmom.audio.filters.BarkFilterbank(
     madmom.audio.stft.fft_frequencies(num_fft_bins=int(FRAME_SIZE / 2), sample_rate=SAMPLE_RATE),
-    num_bands='double', fmin=20.0, fmax=15500.0, norm_filters=True, unique_filters=True)
+    num_bands='double', fmin=20.0, fmax=15500.0, norm_filters=False, unique_filters=True)
 # Best result-longest processing time
-# proc =madmom.audio.filters.MelFilterbank(
-#    madmom.audio.stft.fft_frequencies(num_fft_bins=int(FRAME_SIZE / 2), sample_rate=SAMPLE_RATE),
-# num_bands=128, fmin=20.0, fmax=17000.0, norm_filters=True, unique_filters=True)
+#proc =madmom.audio.filters.MelFilterbank(
+#   madmom.audio.stft.fft_frequencies(num_fft_bins=int(FRAME_SIZE / 2), sample_rate=SAMPLE_RATE),
+# num_bands=128, fmin=20.0, fmax=17000.0, norm_filters=False, unique_filters=True)
 # second best in everything
 # proc =madmom.audio.filters.LogarithmicFilterbank(
 #    madmom.audio.stft.fft_frequencies(num_fft_bins=int(FRAME_SIZE / 2), sample_rate=SAMPLE_RATE),
@@ -309,14 +310,16 @@ def getPeaksFromBuffer(filt_spec, resolution, numHits, convFrames, K):
     threshold = 1
     searchSpeed = .1
     # peaks=cleanDoubleStrokes(madmom.features.onsets.peak_picking(superflux_3,threshold),resolution)
-    H0 = superflux(spec_x=filt_spec.T)
+    H0 = superflux(spec_x=filt_spec.T,win_size=8)
 
-    peaks = cleanDoubleStrokes(pick_onsets(H0 / H0.max(), delta=threshold), resolution)
+    #peaks = cleanDoubleStrokes(pick_onsets(H0 / H0.max(), delta=threshold), resolution)
+    peaks=pick_onsets(H0,delta=threshold)
     changed = False
+    last=0
     while (peaks.shape != (numHits,)):
         # Make sure we don't go over numHits
         # There is a chance of an infinite loop here!!! Make sure that don't happen
-        if (peaks.shape[0] > numHits):
+        if (peaks.shape[0] > numHits) or (peaks.shape[0]<last):
             if changed == False:
                 searchSpeed = searchSpeed / 2
             changed = True
@@ -325,12 +328,14 @@ def getPeaksFromBuffer(filt_spec, resolution, numHits, convFrames, K):
             changed = False
             threshold -= searchSpeed
         # peaks=cleanDoubleStrokes(madmom.features.onsets.peak_picking(superflux_3,threshold),resolution)
-        peaks = cleanDoubleStrokes(pick_onsets(H0, delta=threshold), resolution)
+        #peaks = cleanDoubleStrokes(pick_onsets(H0, delta=threshold), resolution)
+        last=peaks.shape[0]
+        peaks = pick_onsets(H0, delta=threshold)
     return peaks
 
 
 def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
-    onset_alg = 0
+    onset_alg = 2
     total_heads = 0
     Wpre = np.zeros((proc.shape[1], total_priors, max_n_frames))
     for i in range(len(drums)):
@@ -349,7 +354,7 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
             Wpre[:, ind + j, :] = tails[:, :, j]
             total_tails += 1
 
-    H,Wpre, err1 = NMFD(filt_spec.T, iters=128, Wpre=Wpre, include_priors=False)
+    H,Wpre, err1 = NMFD(filt_spec.T, iters=128, Wpre=Wpre, include_priors=True)
     total_heads = 0
     Hs = []
     for i in range(len(drums)):
@@ -359,7 +364,8 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
         if onset_alg == 0:
             for k in range(K1):
                 index = ind + k
-                HN = superflux(A=Wpre.T[:, index, :].sum(), B=H[index], win_size=8)
+                #HN = superflux(A=sum(Wpre.T[:, index, :]), B=H[index], win_size=8)
+                HN=energyDifference(H[index], win_size=6)
                 #HN = HN / HN.max()
                 if k == 0:
                     H0 = HN
@@ -369,7 +375,7 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
         elif onset_alg==1:
             for k in range(K1):
                 index = ind + k
-                HN=get_preprocessed_spectrogram(A=Wpre.T[:, index, :].sum(), B=H[index], test=True)[:,0]
+                HN=get_preprocessed_spectrogram(A=sum(Wpre.T[:, index, :]), B=H[index], test=True)[:,0]
                 if k == 0:
                     H0 = HN
                 else:
@@ -377,11 +383,11 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
                 total_heads += 1
                 H0 = H0 / H0.max()
         else:
-            kernel = np.hanning(8)
+            kernel = np.hanning(6)
             for k in range(K1):
                 index = ind + k
                 HN = H[index]
-                HN = np.convolve(HN, kernel, 'same')
+                #HN = np.convolve(HN, kernel, 'same')
                 HN = HN / HN.max()
                 if k == 0:
                     H0 = HN
@@ -396,9 +402,10 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
 
         besthits = []
         if drumwise:
-            deltas = np.linspace(0.15, 1, 10)
+            deltas = np.linspace(0., 1,100)
             f_zero = 0
             threshold = 0
+            maxd=0
             for d in deltas:
                 if i<len(shifts)-1:
                     peaks = pick_onsets(H0[shifts[i]:shifts[i+1]], delta=d)
@@ -413,15 +420,26 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
                 trueHits = k_in_n(actHits, predHits, window=1)
                 prec, rec, f_drum = f_score(trueHits, predHits.shape[0], actHits.shape[0])
                 #print(d,f_drum)
+                if f_drum == f_zero:
+                    maxd=d
                 if f_drum > f_zero:
                     f_zero = f_drum
                     threshold = d
+            #if optimal threshold range, increase a bit
+            if maxd>0:
+                alpha=0.66
+                beta=1-alpha
+                threshold=(alpha*threshold+beta*maxd)
+
+            #arbitrary minimum threshold check
+            threshold=max((threshold,0.15))
+
             print('delta:', threshold, f_zero)
             drums[i].set_threshold(threshold)
 
     if not drumwise:
         # print(len(Hs))
-        deltas = np.linspace(0, 1, 100)
+        deltas = np.linspace(0, 1, 33)
         f_zero = 0
         threshold = 0
         for d in deltas:
@@ -433,20 +451,23 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
                 # print(predHits)
                 actHits = drums[i].get_peaks() + shifts[i] - 1
                 # print(actHits)
-                trueHits = k_in_n(actHits, predHits, window=1)
+                trueHits = k_in_n(actHits, predHits, window=3)
                 prec, rec, f_drum = f_score(trueHits, predHits.shape[0], actHits.shape[0])
                 precision += prec * actHits.shape[0]
                 recall += rec * actHits.shape[0]
                 fscore += (f_drum * actHits.shape[0])
                 true_tot += actHits.shape[0]
             if (fscore / true_tot) > f_zero:
+                #print(fscore/ true_tot)
                 f_zero = (fscore / true_tot)
                 threshold = d
         print('delta:', threshold, f_zero)
         for i in range(len(drums)):
             drums[i].set_threshold(threshold)
-            #fix delta
+
+            #constant delta
             #drums[i].set_threshold(0.16)
+
             # Try loosening plate drum thresholds: NOT FINAL!!!
             if i in [2, 3, 6,7,8]:
                 pass
@@ -460,8 +481,7 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
 def liveTake():
     global _ImRunning
     _ImRunning = True
-    stompResolution = 1
-    buffer = np.zeros(shape=(44100*10+18000))  # max take length (30s.)
+    buffer = np.zeros(shape=(44100*10+18000))  # max take length, must be user definable
 
     j = 0
     time.sleep(0.1)
@@ -476,8 +496,8 @@ def liveTake():
             return buffer[:j + 6000]
 
 
-def processLiveAudio(liveBuffer=None, drums=None, quant_factor=0.0, iters=0, method='NMFD',thresholdAdj=0.0):
-    onset_alg = 0
+def processLiveAudio(liveBuffer=None, drums=None, quant_factor=1.0, iters=0, method='NMFD',thresholdAdj=0.):
+    onset_alg =2
     filt_spec = get_preprocessed_spectrogram(liveBuffer, sm_win=4)
     stacks = 1.
     total_priors = 0
@@ -527,6 +547,9 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=0.0, iters=0, met
     total_heads = 0
     picContent=[]
     allPeaks=[]
+    #showEnvelope(superflux(A=sum(Wpre.T[:, 2, :]), B=H[2],win_size=2)[:500])
+    #showEnvelope(energyDifference(H[2], win_size=2)[:500])
+    #showEnvelope((H[2]/H[2].max())[:500])
     for i in range(len(drums)):
         #if i<=9:
         #    showEnvelope(H[i][:1500])
@@ -536,7 +559,8 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=0.0, iters=0, met
         if onset_alg == 0:
             for k in range(K1):
                 index = ind + k
-                HN = superflux(A=Wpre.T[:, index, :].sum(), B=H[index],win_size=8)
+                #HN = superflux(A=sum(Wpre.T[:, index, :]), B=H[index],win_size=6)
+                HN = energyDifference(H[index], win_size=6)
                 #HN = HN / HN.max()
                 if k == 0:
                     H0 = HN
@@ -546,7 +570,7 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=0.0, iters=0, met
         elif onset_alg==1:
             for k in range(K1):
                 index = ind + k
-                HN=get_preprocessed_spectrogram(A=Wpre.T[:, index, :].sum(), B=H[index], test=True)[:,0]
+                HN=get_preprocessed_spectrogram(A=sum(Wpre.T[:, index, :]), B=H[index], test=True)[:,0]
                 if k == 0:
                     H0 = HN
                 else:
@@ -554,11 +578,11 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=0.0, iters=0, met
                 total_heads += 1
                 H0 = H0 / H0.max()
         else:
-            kernel = np.hanning(8)
+            kernel = np.hanning(6)
             for k in range(K1):
                 index = ind + k
                 HN = H[index]
-                HN = np.convolve(HN, kernel, 'same')
+                #HN = np.convolve(HN, kernel, 'same')
                 HN = HN / HN.max()
                 if k == 0:
                     H0 = HN
@@ -573,7 +597,7 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=0.0, iters=0, met
         #H0 = np.array([0 if i < 0 else i for i in H0])
         #H0=H0/H0.max()
 
-        #showEnvelope(H0)
+
         peaks = pick_onsets(H0, delta=drums[i].get_threshold()+thresholdAdj)
         if i in [0,1,2]:
             picContent.append([H0[:], pick_onsets(H0[:], delta=drums[i].get_threshold())])
@@ -588,49 +612,60 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=0.0, iters=0, met
         # qPeaks = quantize(peaks, tempomask, strength=quant_factor, tempo=TEMPO, conform=False)
         # qPeaks=qPeaks*changeFactor
         # else:
-        allPeaks.extend(peaks)
+
+
+
     #sanity check
     if False:
-        # detect peaks in the full spectrogram, compare to detection results and inset peak where none is found
+        allPeaks.extend(peaks)
+        # detect peaks in the full spectrogram, compare to detection results for a sanity check
         sanityspec = get_preprocessed_spectrogram(liveBuffer, sm_win=8, test=True)
-        # H0=superflux(spec_x=filtspec.T, win_size=8)
+        H0=superflux(spec_x=filt_spec.T, win_size=8)
         HS = sanityspec[:, 0]
         HS = HS / HS[3:].max()
-        sanitypeaks = pick_onsets(HS, delta=0.035)
+        sanitypeaks = pick_onsets(H0, delta=0.02)
+        print(sanitypeaks.shape, len(allPeaks))
         for i in sanitypeaks:
             if np.argwhere(allPeaks==i) is None:
                 print ('NMFD missed an onset at:', i)
 
-    #showEnvelope(picContent)
-    # duplicateResolution = 0.01
-    # for i in drums:
-    #   precHits = frame_to_time(i.get_hits())
-    #   i.set_hits(time_to_frame(cleanDoubleStrokes(precHits, resolution=duplicateResolution)))
+    #duplicate cleaning
+    if False:
+        duplicateResolution = 0.025
+        for i in drums:
+            precHits = frame_to_time(i.get_hits())
+            i.set_hits(time_to_frame(cleanDoubleStrokes(precHits, resolution=duplicateResolution)))
 
     if quant_factor > 0:
         onsets = onsets / onsets.max()
-        deltaTempo = extract_tempo(onsets, constant_tempo=True)
+        print('ons_len:', onsets.shape[0])
+        deltaTempo = extract_tempo(onsets, constant_tempo=False)
+        print('dt_len:', deltaTempo.shape[0])
         for i in drums:
             hits = i.get_hits()
             if len(hits) is None:
                 i.set_hits([])
             else:
                 i.set_hits(conform_time(i.get_hits(), deltaTempo, quantize=True))
-        print(np.mean(deltaTempo))
+        #print(np.mean(deltaTempo))
         return drums, np.mean(deltaTempo)
     else:
         return drums, 1.0
 
-
-
+def hann_poisson_window(N=8, alpha=0.2):
+    window=np.zeros(N)
+    for n in range(1,N):
+        window[n]=.5*(1-np.cos((2*np.pi*n)/n-1))*np.exp(-alpha*(np.abs(N-1-2*n)/(N-1)))
+    return window
 
 def get_preprocessed_spectrogram(buffer=None,A=None,B=None, sm_win=4, test=False):
     if buffer is not None:
         buffer = madmom.audio.FramedSignal(buffer, sample_rate=SAMPLE_RATE, frame_size=FRAME_SIZE, hop_size=HOP_SIZE)
         spec = madmom.audio.spectrogram.FilteredSpectrogram(buffer, filterbank=proc, sample_rate=SAMPLE_RATE,
-                                                            frame_size=FRAME_SIZE, hop_size=HOP_SIZE,fmin=20, fmax=17000)
-
-    if A != None:
+                                                            frame_size=FRAME_SIZE, hop_size=HOP_SIZE,fmin=20,
+                                                            fmax=17000, window=np.kaiser(FRAME_SIZE, np.pi**2))
+                                                                       # window=hann_poisson_window(FRAME_SIZE,2))
+    if A is not None:
         spec = np.outer(A, B).T
     #kernel=np.kaiser(6,5)
     if test:
@@ -646,10 +681,15 @@ def get_preprocessed_spectrogram(buffer=None,A=None,B=None, sm_win=4, test=False
     if test:
         spec=np.gradient(spec, axis=0)
         spec= np.clip(spec, 0, None, out=spec)
+        #spec = (spec + np.abs(spec)) / 2
         for i in range(spec.shape[0]):
             spec[i,:]=np.mean(spec[i,:])
+        #spec[1:]=spec[1:]-spec[:-1]
+        #spec=(spec+np.abs(spec))/2
+        #spec=spec/spec.max()
 
     return spec
+
 
 
 
@@ -657,29 +697,73 @@ def get_preprocessed_spectrogram(buffer=None,A=None,B=None, sm_win=4, test=False
 def superflux(spec_x=[], A=None, B=None, win_size=8):
     """
     Calculate the superflux envelope according to Boeck et al.
-    :param spec_x: optional, A Spectrogram the superflux envelope is calculated from, X
-    :param A: optional, frequency response of the decomposed spectrogram, W
-    :param B: optional, activations of a decomposed spectrogram, H
-    :return: Superflux envelope of a spectrogram
+    :param spec_x: optional, numpy array, A Spectrogram the superflux envelope is calculated from, X
+    :param A: optional, numpy array, frequency response of the decomposed spectrogram, W
+    :param B: optional, numpy array, activations of a decomposed spectrogram, H
+    :param win_size: int, Hann window size, used to smooth the recomposition of
+    :return: Superflux ODF of a spectrogram
     :notes: Must check inputs so that A and B have to be input together
     """
-    # if A and B are input the spec_x is recalculated
-    if A != None:
+
+    # if A and B, the spec_x is recalculated
+    if A is not None:
+        #window function
         kernel = np.hamming(win_size)
 
+
+        #apply window
         B = np.convolve(B, kernel, 'same')
-        # B = B / max(B)
+
+        #rebuild spectrogram
         spec_x = np.outer(A, B)
 
+    #To log magnitude
+    spec_x=np.log(spec_x*1+1)
+
     diff = np.zeros_like(spec_x.T)
-    size = (2, 1)
-    max_spec = maximum_filter(spec_x.T, size=size)
+
+    #Apply max filter
+    max_spec = maximum_filter(spec_x.T, size=(1,3))
+
+    #Spectral difference
     diff[1:] = (spec_x.T[1:] - max_spec[: -1])
+
+    #Keep only positive difference
     pos_diff = np.maximum(0, diff)
+
+    #Sum bins
     sf = np.sum(pos_diff, axis=1)
+
+    #normalize
     sf = sf / max(sf)
+
+    #return ODF
     return sf
 
+def energyDifference(signal, win_size=8):
+    """
+    Energy difference ODF for time domain signals such as the activations from NMFD
+    :param signal: numpy array, H from NMFD
+    :param win_size: int, size of the smoothing window
+    :return: numpy array, ODF
+    """
+    #window
+    kernel = np.hamming(win_size)
+
+    #apply window
+    signal = np.convolve(signal, kernel, 'same')
+
+    #calculate Energy difference
+    signal[1:]=signal[1:]-signal[:-1]
+
+    #Half wave rectify
+    signal=(signal+np.abs(signal))/2
+
+    # normalize
+    signal = signal / max(signal)
+
+    #return ODF
+    return signal
 
 def frame_to_time(frames, sr=SAMPLE_RATE, hop_length=HOP_SIZE, hops_per_frame=1):
     """
@@ -747,76 +831,89 @@ def k_in_n(k, n, window=1):
     return float(hits)
 
 
-def extract_tempo(onsets=None, window_size_in_s=8, constant_tempo=True):
+def extract_tempo(onsets=None, window_size_in_s=10, constant_tempo=True):
     LH = HOP_SIZE
     win_len_s = window_size_in_s
     N = int(SAMPLE_RATE / LH * win_len_s)
     min_bpm = int(DEFAULT_TEMPO / 4)  # 30
-    max_bpm = int(DEFAULT_TEMPO * 2)  # 240
-    bpm_slice = max_bpm - min_bpm
     tic = time.clock()
-    # N=bpm_slice
 
-    # n_original = onsets.shape[0]
-    # n_power_of_2 = 2 ** int(np.ceil(np.log2(n_original)))
-    # n_pad = n_power_of_2 - n_original
-    # Pad onsets and perform librosa Autocorrelation tempogram
-    onsets = np.pad(onsets, int(N // 2) + 1,
+
+    pad_len=360 #fixed pad length
+    #pad to next power of 2
+    #pad_len=int((2**np.ceil(np.log2(onsets.shape[0]))-onsets.shape[0])/2)
+
+    onsets = np.pad(onsets, pad_len,
                     mode='reflect')
     n_frames = 1 + int((len(onsets) - N))
     fonsets = np.lib.stride_tricks.as_strided(onsets, shape=(N, n_frames),
                                               strides=(onsets.itemsize, onsets.itemsize))
 
-    powerspec = np.abs(fft.fft(fonsets, axis=0)) ** 2
+    powerspec = np.abs(fft.fft(fonsets, n=360, axis=0)) ** 2
 
-    autocorr = fft.ifft(powerspec, axis=0, overwrite_x=True)  # [:int(powerspec.shape[0] / 2)]
-    sff = (autocorr.real / autocorr.real.max())[0:N, :]
+
+    autocorr = fft.ifft(powerspec, axis=0, overwrite_x=True)
+    sff = (autocorr.real / autocorr.real.max())
 
     # mean calcs.
     sff_mean = np.mean(sff, axis=1, keepdims=True)
-    # perform librosa tempo extraction with two iterations
-    bpms = librosa.core.tempo_frequencies(sff.shape[0], hop_length=LH, sr=SAMPLE_RATE)
+    bpms = np.zeros(int(sff.shape[0]), dtype=np.float)
+    bpms[0] = np.inf
+    bpms[1:] = 60.0 * SAMPLE_RATE / (HOP_SIZE * np.arange(1.0,sff.shape[0]))
 
-    # showFFT(sff,bpms)
-    prior_mean = np.exp(-0.5 * ((np.log2(bpms) - np.log2(DEFAULT_TEMPO)) / 1.) ** 2)
+    prior_mean = np.exp(-0.5 * ((np.log2(bpms) - np.log2(DEFAULT_TEMPO)) /1.) ** 2)
     best_period_mean = np.argmax(sff_mean * prior_mean[:, np.newaxis], axis=0)
 
     # first find the most common tempo of the take
     tempi_mean = bpms[best_period_mean]
 
-
     # then force the tempi to that area
     prior = np.exp(-0.5 * ((np.log2(bpms) - np.log2(tempi_mean)) / 0.2) ** 2)
     best_period = np.argmax(sff * prior[:, np.newaxis], axis=0)
     tempi = bpms[best_period]
-
+    print('testi',np.mean(tempi))
+    print(tempi_mean)
     # Wherever the best tempo is index 0, return start_bpm
     tempi[best_period == 0] = min_bpm
     #showEnvelope(tempi)
+    #showFFT(np.abs(autocorr))
     #Get constant tempo estimate
     if constant_tempo:
         tempi[:]=tempi_mean
         tempi_smooth=tempi
     else:
         kernel=np.hanning(int(N/1.5))
-        tempi_pad=np.array(list(tempi[:200])+list(tempi)+list(tempi[-200:]))
-        tempi_smooth=np.convolve(tempi_pad/kernel.sum(),kernel, 'same')[200:-200]
+        tempi_pad=np.pad(tempi, pad_len, mode='reflect')
+        tempi_smooth=np.convolve(tempi_pad/kernel.sum(),kernel, 'same')[pad_len:]
         #showEnvelope(tempi_smooth)
+    #plp(autocorr,bpms)
     # Tempo and it's manifolds
     d = DEFAULT_TEMPO
     targets = [d / 4, d / 2, d, d * 2, d * 4]
+    targets=[d]
     target_tempos=[]
     # Change tempi to tempo quantization multipliers
-    for i in range(tempi.size):
+    for i in range(tempi_smooth.size):
         target_tempos.append(min(targets, key=lambda x: abs(x - tempi_smooth[i])))
-        #This results in bad behaviour when the tempo shifts over mean of two targets DO NOT USE
-        #tempo= min(targets, key=lambda x: abs(x - tempi_smooth[i]))
-        #tempi_smooth[i] = tempi_smooth[i] / tempo
+
     target_median=np.median(target_tempos)
     tempi_smooth[:] = tempi_smooth[:] / target_median
     print('\ntempomap time:{}'.format(time.clock() - tic))
+
     return (tempi_smooth)
 
+def plp(autocorr, bpm):
+    tau=autocorr[60:240]
+    print(np.argmax(autocorr[:,10]))
+    tempi=np.argmax(np.abs(tau),axis=0)
+    #print([tau[tempi[i],i] for i in range(tempi.shape[0])], tau.shape)
+
+    #showFFT(np.abs(autocorr))
+    omega_t=np.angle([tau[tempi[i],i] for i in range(tempi.shape[0])])
+    #Tperiod = parameter.featureRate* 60. / BPM(local_max(frame))
+    #cosine = window * cos((0:1 / Tperiod:len-1 / Tperiod) * 2 * pi + omega_t)
+    print((omega_t[:10]))
+    #showFFT(np.abs(omega_t))
 
 def conform_time(X, tempomap, quantize=False, round=1):
     """
@@ -850,9 +947,9 @@ def conform_time(X, tempomap, quantize=False, round=1):
         # move the hit to last hit+newgap
         retX[i] = retX[i - 1] + newgap
         if False:
-            retX[i] = np.rint(retX[i] / shortest_note) * shortest_note
+            retX[i] =np.rint(retX[i] / shortest_note) * shortest_note
     # if hits are to be quantized
-    if True:
+    if False:
         # iterate over hits
         for i in range(retX.size):
             # Move return value to closest note measure by truncating the float decimal
@@ -884,9 +981,11 @@ def pick_onsets(F, delta=0.):
     localMaxima = F[localMaximaInd[0]]
 
     # Pick local maxima greater than threshold
+
     threshold = delta + np.median(localMaxima)
+
     # threshold=thresh*np.median(localMaxima)+delta
-    onsets = np.array(localMaxima >= threshold)
+    onsets = np.where(localMaxima >= threshold)
     rets = localMaximaInd[0][onsets]
     # remove peak if detFunc has not been under threshold.
     i = 0
@@ -895,6 +994,38 @@ def pick_onsets(F, delta=0.):
             rets = np.delete(rets, i + 1)
         else:
             i += 1
+    # Return onset indices
+    return rets
+
+def pick_onsets_dynT(F, delta=0.):
+    # Indices of local maxima in F
+    localMaximaInd = argrelmax(F, order=1)
+
+    # Values of local maxima in F
+    localMaxima = F[localMaximaInd[0]]
+
+    # Pick local maxima greater than threshold
+    threshold = np.ones((F.shape))
+    N=15
+    for i in range(N, F.shape[0]):
+        threshold[i] = delta + .5 * np.median(F[i - N:i]) + .5 * np.mean(F[i - N:i])
+    #showEnvelope(threshold)
+    #showEnvelope(F)
+    # threshold=thresh*np.median(localMaxima)+delta
+    onsets=[]
+    onsets=localMaxima >= threshold[localMaximaInd[0]]
+
+    rets = localMaximaInd[0][onsets]
+    # remove peak if detFunc has not been under threshold.
+    i = 0
+    while i in range(len(rets) - 1):
+        if F[rets[i]:rets[i + 1]].min() >= np.mean(threshold[localMaximaInd[0][i]:localMaximaInd[0][i+1]]):
+            rets = np.delete(rets, i + 1)
+            pass
+            # = np.delete(threshold, i + 1)
+        else:
+            i += 1
+    print(len(rets))
     # Return onset indices
     return rets
 
@@ -916,9 +1047,10 @@ def NMFD(X, iters=500, Wpre=[], include_priors=False):
     eps = 10 ** -18
 
     originalN = X.shape[1]
+
     # Add samples to the audio to ensure all levels are accounted for
     if include_priors:
-        for i in range(Wpre.shape[1]):
+        for i in range(int(Wpre.shape[1]/2)):
             pass
             X = np.hstack((X, .5*Wpre[:, i, :]))
 
@@ -1011,100 +1143,100 @@ def NMFD(X, iters=500, Wpre=[], include_priors=False):
 
 #
 #
-# import matplotlib.pyplot as plt
-# import matplotlib.cm as cmaps
-#
-#
-# def showEnvelope(env, legend=None, labels=None):
-#     """
-#     Plots an envelope
-#     i.e. an onset envelope or some other 2d data
-#     :param env: the data to plot
-#     :return: None
-#     """
-#     if 0 > 1:
-#
-#         f, axarr = plt.subplots(len(env),1 , sharex=True, sharey=True)
-#         for i in range(len(env)):
-#             axarr[i].plot(env[i][0], label='Onset envelope')
-#             axarr[i].vlines(env[i][1], 0, 1, color='r', alpha=0.9,linestyle='--', label='Onsets')
-#             axarr[i].get_xaxis().set_visible(False)
-#             axarr[i].get_yaxis().set_ticks([])
-#         f.subplots_adjust(hspace=0.1)
-#         axarr[0].set(ylabel='Kick, superflux')
-#         axarr[1].set(ylabel='Kick, activations H')
-#         #axarr[2].set(ylabel='Closed Hi-Hat')
-#         axarr[len(env)-1].get_xaxis().set_visible(True)
-#         plt.savefig("Onset_env_peaks_alg1.png")
-#         plt.tight_layout()
-#     else:
-#         plt.figure(figsize=(10, 2))
-#         plt.plot(env)
-#         plt.xlim(xmin=1)
-#         plt.show()
-#         #ax = plt.subplot(111)
-#         if legend != None:
-#             box = ax.get_position()
-#             ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
-#             plt.gca().legend(legend, loc='center left', bbox_to_anchor=(1, 0.5))
-#             # plt.gca().legend(legend, loc='right')
-#         if labels != None:
-#             # my_xticks=[str(x)[:4] for x in np.linspace(0.2,0.4,int(env.shape[0]/2))]
-#             #my_xticks = np.arange(0, env.shape[0], .01)
-#             #plt.xticks(np.arange(1, env.shape[0], 1), range(1,20))
-#
-#             plt.xlabel(labels[0], fontsize=12)
-#             plt.ylabel(labels[1], fontsize=12)
-#
-#         #plt.savefig("nadam_lr.png")
-#         #plt.tight_layout()
 
-#
-# def showFFT(env, ticks=None):
-#     """
-#     Plots a spectrogram
-#
-#     :param env: the data to plot
-#     :return: None
-#     """
-#     if len(env) > 1:
-#
-#         f, axarr = plt.subplots(1, len(env), sharex=True, sharey=True)
-#
-#         for i in range(len(env)):
-#
-#             axarr[i].imshow(env[i], aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
-#
-#             #axarr[i].get_xaxis().set_visible(False)
-#         # axarr[1].imshow(env[1], aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
-#         # axarr[1].set(xlabel='Snare frames')
-#         # axarr[2].imshow(env[2], aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
-#         # axarr[2].set(xlabel='Closed Hi-Hat frames')
-#         f.subplots_adjust(wspace=0.03)
-#         axarr[0].set(ylabel='STFT bin')
-#         f.text(0.5, 0.02, 'k', ha='center', va='center')
-#
-#         plt.savefig("Templates3.png")
-#
-#     if ticks != None:
-#         top = len(ticks)
-#         plt.imshow(np.flipud(env), aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
-#         my_yticks = ticks
-#         plt.xlabel('frame', fontsize=12)
-#         plt.ylabel('tempo', fontsize=12)
-#         plt.yticks(np.arange(0, top, 10), np.rint(np.fliplr([ticks[0:top:10], ]))[0])
-#     plt.tight_layout()
-#
-#     # plt.figure(figsize=(10, 4))
-#     # plt.xlabel('frame', fontsize=12)
-#     # plt.ylabel('stft bin', fontsize=12)
-#     # # f, axarr = plt.subplots(3, sharex=True, sharey=True)
-#     # plt.subplot(131, sharex=True, sharey=True)
-#     # plt.imshow(env[0], aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
-#     # plt.subplot(132)
-#     # plt.imshow(env[1], aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
-#     # plt.subplot(133)
-#     # plt.imshow(env[2], aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
+
+
+def showEnvelope(env, legend=None, labels=None):
+    """
+    Plots an envelope
+    i.e. an onset envelope or some other 2d data
+    :param env: the data to plot
+    :return: None
+    """
+    if 0 > 1:
+
+        f, axarr = plt.subplots(len(env),1 , sharex=True, sharey=True)
+        for i in range(len(env)):
+            axarr[i].plot(env[i][0], label='Onset envelope')
+            axarr[i].vlines(env[i][1], 0, 1, color='r', alpha=0.9,linestyle='--', label='Onsets')
+            axarr[i].get_xaxis().set_visible(False)
+            axarr[i].get_yaxis().set_ticks([])
+        f.subplots_adjust(hspace=0.1)
+        axarr[0].set(ylabel='Kick, superflux')
+        axarr[1].set(ylabel='Kick, activations H')
+        #axarr[2].set(ylabel='Closed Hi-Hat')
+        axarr[len(env)-1].get_xaxis().set_visible(True)
+        plt.savefig("Onset_env_peaks_alg1.png")
+        plt.tight_layout()
+    else:
+        plt.figure(figsize=(10, 2))
+        plt.plot(env)
+        plt.xlim(xmin=1)
+        plt.show()
+        #ax = plt.subplot(111)
+        if legend != None:
+            box = ax.get_position()
+            ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+            plt.gca().legend(legend, loc='center left', bbox_to_anchor=(1, 0.5))
+            # plt.gca().legend(legend, loc='right')
+        if labels != None:
+            # my_xticks=[str(x)[:4] for x in np.linspace(0.2,0.4,int(env.shape[0]/2))]
+            #my_xticks = np.arange(0, env.shape[0], .01)
+            #plt.xticks(np.arange(1, env.shape[0], 1), range(1,20))
+
+            plt.xlabel(labels[0], fontsize=12)
+            plt.ylabel(labels[1], fontsize=12)
+
+        #plt.savefig("nadam_lr.png")
+        #plt.tight_layout()
+
+
+def showFFT(env, ticks=None):
+    """
+    Plots a spectrogram
+
+    :param env: the data to plot
+    :return: None
+    """
+    if 0 > 1:
+
+        f, axarr = plt.subplots(1, len(env), sharex=True, sharey=True)
+
+        for i in range(len(env)):
+
+            axarr[i].imshow(env[i], aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
+
+            #axarr[i].get_xaxis().set_visible(False)
+        # axarr[1].imshow(env[1], aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
+        # axarr[1].set(xlabel='Snare frames')
+        # axarr[2].imshow(env[2], aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
+        # axarr[2].set(xlabel='Closed Hi-Hat frames')
+        f.subplots_adjust(wspace=0.03)
+        axarr[0].set(ylabel='STFT bin')
+        f.text(0.5, 0.02, 'k', ha='center', va='center')
+
+        plt.savefig("Templates3.png")
+
+    if ticks != None:
+        top = len(ticks)
+        plt.imshow(np.flipud(env), aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
+        my_yticks = ticks
+        plt.xlabel('frame', fontsize=12)
+        plt.ylabel('tempo', fontsize=12)
+        plt.yticks(np.arange(0, top, 10), np.rint(np.fliplr([ticks[0:top:10], ]))[0])
+
+    plt.figure(figsize=(10, 6))
+    plt.imshow(env, aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
+    plt.show()
+    # plt.xlabel('frame', fontsize=12)
+    # plt.ylabel('stft bin', fontsize=12)
+    # # f, axarr = plt.subplots(3, sharex=True, sharey=True)
+    # plt.subplot(131, sharex=True, sharey=True)
+    # plt.imshow(env[0], aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
+    # plt.subplot(132)
+    # plt.imshow(env[1], aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
+    # plt.subplot(133)
+
 
 
 def acceptHit(value, hits):
@@ -1192,7 +1324,7 @@ def mergerowsandencode(a):
             # Move frames to nearest sixteenth note
             a[i] = (np.rint(a[i][0] / sixtDivider),) + a[i][1:]
     # Define max frames from the first detected hit to end
-    print(len(a[-1]))
+    #print(len(a[-1]))
     if (len(a) == 0):
         return []
     maxFrame = int(a[-1][0] - a[0][0] + 1)
@@ -1216,7 +1348,7 @@ def mergerowsandencode(a):
     # return array of merged hits starting from the first occurring hit event
     if ENCODE_PAUSE:
         frames = truncZeros(frames)
-    print(len(frames))
+    #print('frames',len(frames))
     return frames
 
 

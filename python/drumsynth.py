@@ -59,6 +59,7 @@ def createWav(filePath, outName=None, addCountInAndCountOut=True, deltaTempo=1.0
     :param deltaTempo: Float, the original tempo of the notation before quantization to 120BPM
     :return: String, filename of the created Wav file
     """
+    #print(addCountInAndCountOut)
     if outName is None:
         outName='./default.wav'
     d = pd.read_csv(filePath, header=None, sep="\t").values
@@ -98,7 +99,7 @@ def createWav(filePath, outName=None, addCountInAndCountOut=True, deltaTempo=1.0
     wauva = wave.open(outName, 'w')
 
     # pitääkö tsekata sampleja lukiessa???
-    wauva.setparams((bd.getnchannels(), bd.getsampwidth(), bd.getframerate(), 0, 'NONE', 'not compressed'))
+    wauva.setparams((bd.getnchannels(), bd.getsampwidth(), bd.getframerate(),0, 'NONE', 'not compressed'))
     wauva.writeframes(outfile)
     wauva.close()
 
@@ -110,38 +111,49 @@ def playWav(filePath):
     :param filePath: String, the source file
     :return: None
     """
+
     global _ImRunning
     _ImRunning = True
-    wauva = wave.open(filePath, 'rb')
+
+    wf = wave.open(filePath, 'rb')
+    print(wf.getnframes())
     p = pyaudio.PyAudio()
 
     def callback(in_data, frame_count, time_info, status):
-        data = wauva.readframes(frame_count)
+        data = wf.readframes(frame_count)
+
         return (data, pyaudio.paContinue)
 
-    stream = p.open(format=p.get_format_from_width(bd.getsampwidth()),
-                    channels=1,
-                    rate=bd.getframerate(),
-                    output=True,
-                    stream_callback=callback
+    stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
+                    channels=wf.getnchannels(),
+                    rate=wf.getframerate(),
+                    output=True
+                    #stream_callback=callback
                     )
+    data = wf.readframes(1024)
+
+    # play stream (3)
+    while len(data) > 0:
+        stream.write(data)
+        data = wf.readframes(1024)
+    print(wf.tell())
     # start the stream (4)
-    stream.start_stream()
+    #stream.start_stream()
 
     # wait for stream to finish (5)
-    while stream.is_active() and _ImRunning:
-        pass
+    #while stream.is_active() and _ImRunning:
+    #    time.sleep(0.1)
 
     # stop stream (6)
     stream.stop_stream()
 
     stream.close()
 
-    wauva.close()
+    wf.close()
 
     # close PyAudio (7)
     p.terminate()
-    return None
+
 
 def playFile(filePath, *args):
     """
