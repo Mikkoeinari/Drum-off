@@ -18,11 +18,13 @@ K=1
 
 ###
 def soundcheckDrum(drumkit_path, drumId):
-    buffer = getStompTemplate(nrOfPeaks, convFrames=10)
-    #print('jessus')
+    buffer = getStompTemplate()
+    buffer=madmom.audio.signal.rescale(buffer)
+    print(buffer.shape, buffer.min(), buffer.max())
+
     madmom.io.audio.write_wave_file(buffer, '{}/drum{}.wav'.format(drumkit_path, drumId), sample_rate=SAMPLE_RATE)
 
-def initKitBG(drumkit_path, nrOfDrums, K=1, rm_win=4, bs_len=32):
+def initKitBG(drumkit_path, nrOfDrums, K=1, rm_win=4, bs_len=32, drumwise=False):
     K=K
     #L=10
     global drums, fpr
@@ -30,7 +32,7 @@ def initKitBG(drumkit_path, nrOfDrums, K=1, rm_win=4, bs_len=32):
     drums = []
     #drs = [2, 4, 6, 3, 2, 2, 5, 1, 8]
     #n_frames = [12, 9, 11, 17, 15, 13, 10, 11, 15]
-    n_frames=np.full(9,10)
+    n_frames=np.full(nrOfDrums,10)
     filt_spec_all = 0
     shifts = []
     for i in range(nrOfDrums):
@@ -38,7 +40,7 @@ def initKitBG(drumkit_path, nrOfDrums, K=1, rm_win=4, bs_len=32):
         buffer = madmom.audio.Signal("{}/drum{}.wav".format(drumkit_path, i), frame_size=FRAME_SIZE,
                                      hop_size=HOP_SIZE)
         filt_spec = get_preprocessed_spectrogram(buffer, sm_win=4)
-        peaks= getPeaksFromBuffer(filt_spec, 10, nrOfPeaks, L, K)
+        peaks= getPeaksFromBuffer(filt_spec,nrOfPeaks)
         freqtemps=findDefBinsBG(peaks, filt_spec, L, K, bs_len=bs_len)
 
         if i==0:
@@ -54,7 +56,7 @@ def initKitBG(drumkit_path, nrOfDrums, K=1, rm_win=4, bs_len=32):
                      threshold=0,
                      midinote=midinotes[i], probability_threshold=1))
 
-    recalculate_thresholds(filt_spec_all, shifts, drums, drumwise=True, rm_win=rm_win)
+    recalculate_thresholds(filt_spec_all, shifts, drums, drumwise=drumwise, rm_win=rm_win)
     # Pickle the important data
     pickle.dump(drums, open("{}/pickledDrumkit.drm".format(drumkit_path), 'wb'))
     #pickle.dump(fpr, open("{}/pickledFpr.drm".format(drumkit_path), 'wb'))
@@ -139,7 +141,7 @@ def soundCheck(drumkit_path, nrOfDrums, drumkit_drums):
 
             buffer = madmom.audio.Signal("{}drum{}.wav".format(DRUMKIT_PATH, i), frame_size=FRAME_SIZE,
                                          hop_size=HOP_SIZE)
-            CC1, freqtemps, threshold = getPeaksFromBuffer(buffer, 1, nrOfPeaks, highEmph=highEmph[i])
+            CC1, freqtemps, threshold = getPeaksFromBuffer(buffer, nrOfPeaks)
             for j in range(K):
                 ind = i * K
                 fpr[:, ind + j, :] = freqtemps[0][:, :, j]
@@ -151,7 +153,7 @@ def soundCheck(drumkit_path, nrOfDrums, drumkit_drums):
             yield ("Play drum nr. {}".format(i + 1))
 
             def runThreaded():
-                CC1, freqtemps, threshold, buffer = getStompTemplate(nrOfPeaks, recordingLength=2, highEmph=highEmph[i])
+                CC1, freqtemps, threshold, buffer = getStompTemplate()
 
             threading.Thread(target=runThreaded()).start()
             # outBuffer=unFrameSignal(buffer)
@@ -170,7 +172,7 @@ def soundCheck(drumkit_path, nrOfDrums, drumkit_drums):
                 samples.append(tinyBuff)
 
             drums.append(
-                Drum(name=[i], highEmph=highEmph[i], peaks=CC1, templates=templates, samples=samples,
+                Drum(name=[i], highEmph=None, peaks=CC1, templates=templates, samples=samples,
                      threshold=threshold,
                      midinote=midinotes[i], probability_threshold=1))
         yield ('cont')
@@ -291,7 +293,7 @@ def play(filePath, K):
     for i in plst:
         hits = i.get_hits()
         binhits = i.get_hits()
-        hits = frame_to_time(hits, hop_length=Q_HOP)
+        hits = frame_to_time(hits, hop_length=HOP_SIZE)
         labels = np.full(len(hits), i.get_midinote(), np.int64)
         binlabels = np.full(len(binhits), i.get_name(), np.int64)
         inst = zip(hits, labels)
@@ -315,7 +317,7 @@ def play(filePath, K):
     gen.to_csv('generated_enc_dec0.csv', index=False, header=None, sep='\t')
     #print('pattern generating time:%0.2f' % (time() - t0))
     # change to time and midinotes
-    gen['time'] = frame_to_time(gen['time'], hop_length=Q_HOP)
+    gen['time'] = frame_to_time(gen['time'], hop_length=HOP_SIZE)
     gen['inst'] = to_midinote(gen['inst'])
     gen['duration'] = pd.Series(np.full((len(generated)), 0, np.int64))
     gen['vel'] = pd.Series(np.full((len(generated)), 127, np.int64))
@@ -328,7 +330,7 @@ def play(filePath, K):
     return True
 
 #Test method to check Eric Battenbergs onset detection function.
-def testOnsDet(filePath, alg=0, ppAlg=0):
+def testOnsDet(filePath, alg=0, ppAlg=0, ed=False):
     buffer=0
     try:
         buffer = madmom.audio.Signal("{}drumBeatAnnod.wav".format(filePath), frame_size=FRAME_SIZE,
@@ -364,17 +366,20 @@ def testOnsDet(filePath, alg=0, ppAlg=0):
         H0=H[0]
         for i in H[1:]:
             H0+=i
-        H0=energyDifference(H0, win_size=16)
+        if ed==True:
+            H0=energyDifference(H0, win_size=4)
     else:
         filtspec = get_preprocessed_spectrogram(buffer)
 
         H0 = superflux(spec_x=filtspec.T, win_size=16)
-    H0 = H0 / H0[3:].max()
+    #H0 = H0 / H0[3:].max()
     #showEnvelope(H0)
+    peaks=[]
     if ppAlg==0:
-        peaks=pick_onsets(H0,delta=0.02)
+
+        peaks=pick_onsets(H0,threshold=.35)
     else:
-        peaks = pick_onsets_dynT(H0, delta=0.02)
+        peaks = pick_onsets_dynT(H0, threshold=0.16)
 
 
     hits = pd.read_csv("{}midiBeatAnnod.csv".format(filePath), sep="\t", header=None)
@@ -411,10 +416,10 @@ def testOnsDet(filePath, alg=0, ppAlg=0):
 #initKitBG('Kits/mcd2/',8,K)
 #K=1
 #file='../DXSamplet/'
-#initKitBG(file,9,K=K)
+#initKitBG(file,9,K=K, drumwise=True)
 #loadKit(file)
 #play(file, K=K)
-#testOnsDet(file, alg=2, ppAlg=1)
+#testOnsDet(file, alg=1, ppAlg=0)
 #initKitBG('../DXSamplet/',9,K=K,rm_win=6)
 #loadKit('../trainSamplet/')
 #testOnsDet('../trainSamplet/', alg=0)

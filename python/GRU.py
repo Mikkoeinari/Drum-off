@@ -286,7 +286,7 @@ def generatePart(data, temp=None):
 
 
     if temp is -1:
-        fuzz = np.max([1.0 - lastLoss, 0.1])
+        fuzz = np.max([1.5 - lastLoss, 0.1])
     else:
         fuzz = temp
     print('fuzz factor:',fuzz)

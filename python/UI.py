@@ -2,22 +2,15 @@ import kivy
 
 kivy.require('1.10.1')
 from kivy.app import App
-from kivy.uix.widget import Widget
-from kivy.uix.button import Button
 from kivy.uix.checkbox import CheckBox
-from kivy.uix.gridlayout import GridLayout
-from kivy.uix.floatlayout import FloatLayout
-from kivy.properties import ListProperty
-from kivy.uix.label import Label
-from kivy.uix.textinput import TextInput
-from kivy.uix.filechooser import FileChooser
 from kivy.uix.screenmanager import ScreenManager, Screen
-from kivy.uix.slider import Slider
 from kivy.lang import Builder
 from kivy.factory import Factory
 from kivy.properties import StringProperty, NumericProperty, BooleanProperty
 from kivy.clock import Clock, mainthread
 from kivy.config import Config
+from kivy.uix.behaviors import ButtonBehavior
+from kivy.uix.image import Image
 Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
 import drumoff
 import utils
@@ -25,13 +18,67 @@ from os import mkdir, listdir
 import threading
 from os.path import join, isdir
 import time
-#from drumsynth import playFile
 import drumsynth
 import GRU as mgu
-# import GRU
+import numpy as np
+
 
 
 class CCheckBox(CheckBox):
+    pass
+class PicCheckBox(CheckBox):
+
+    pass
+class RecButton(ButtonBehavior, Image):
+    isActive=False
+    def on_press(self):
+        self.changeStatus()
+        if self.isActive:
+            print ('Rec')
+            self.source = "StopBtn.png"
+        else:
+            print ("deactivated")
+    def changeStatus(self):
+        if self.isActive:
+            self.isActive=False
+            self.source="RecBtn.png"
+        else:
+            self.isActive=True
+            self.source = "RecBtn.png"
+class PlayButton(ButtonBehavior, Image):
+    isActive=False
+    def on_press(self):
+        self.changeStatus()
+        if self.isActive:
+            print ('Play')
+            self.source = "StopBtn.png"
+        else:
+            print ("deactivated")
+    def changeStatus(self):
+        if self.isActive:
+            self.isActive=False
+            self.source="PlayBtn.png"
+        else:
+            self.isActive=True
+            self.source = "PlayBtn.png"
+class StopButton(ButtonBehavior, Image):
+    isActive=False
+    def on_press(self):
+        self.changeStatus()
+        if self.isActive:
+            print ('Stop')
+        else:
+            print ("deactivated")
+    def changeStatus(self):
+        if self.isActive:
+            self.isActive=False
+            self.source="StopBtnDeactivated.png"
+        else:
+            self.isActive=True
+            self.source = "StopBtn.png"
+
+class NumberButton(Image,PicCheckBox,ButtonBehavior):
+    activeNumber=None
     pass
 
 
@@ -47,7 +94,7 @@ drumNames = {'kick': 0,  # only one allowed
              'floor tom': 9,  # leave space for more
              'ride cymbal': 12,  # only one allowed
              'crash cymbal': 13,  # leave space for more
-             'misc': 20
+             'misc': 17
              }
 countInPath='./countIn.csv'
 countInWavPath='click.wav'
@@ -76,6 +123,63 @@ class StartScreen(Screen):
 
 
 class SoundCheckScreen(Screen):
+
+    performMessage = StringProperty()
+    btnMessage = StringProperty()
+    drmMessage = StringProperty()
+    nrMessage = StringProperty()
+    finishMessage = StringProperty()
+    finishStatus = StringProperty()
+    kdTake = NumericProperty()
+    snTake = NumericProperty()
+    hhTake = NumericProperty()
+    ttTake = NumericProperty()
+    ftTake = NumericProperty()
+    rdTake = NumericProperty()
+    crTake = NumericProperty()
+    toyTake = NumericProperty()
+
+    def __init__(self, **kwargs):
+        super(SoundCheckScreen, self).__init__(**kwargs)
+        self.performMessage = 'Next Drum:'
+        self.btnMessage = 'GO!'
+        self.drmMessage = 'Play 16 hits on each drum. \nPress run when ready!\n (You can re run souncheck as many times as you like)'
+        self.nrMessage = '1'
+        self.finishMessage = 'Load Soundchecked Kit and Exit'
+        self.finishStatus = 'Soundcheck not complete'
+        self.kdTake = 0
+        self.snTake = 0
+        self.hhTake = 0
+        self.ttTake = 0
+        self.ftTake = 0
+        self.rdTake = 0
+        self.crTake = 0
+        self.toyTake = 0
+
+    @mainthread
+    def getTxt(self):
+        app = App.get_running_app()
+        return str(app.NrOfDrums)
+
+    @mainthread
+    def setMsg(self, msg):
+        self.performMessage = msg
+
+    @mainthread
+    def setDrumNro(self, nr):
+        app = App.get_running_app()
+        if nr <= sum(app.NrOfDrums):
+            self.nrMessage = nr
+        else:
+            self.ids.checkBtn.txt = 'Finished'
+            self.nrMessage = ''
+    def addDrumToKit(self,nr):
+        app = App.get_running_app()
+        app.NrOfDrums[nr]=1
+    def getDrumChecked(self,nr):
+        app = App.get_running_app()
+        return app.NrOfDrums[nr]
+    # @mainthread
     def saveKitTemplate(self, instance):
         app = App.get_running_app()
         app.KitName = self.ids.drumkit_name.text
@@ -83,6 +187,92 @@ class SoundCheckScreen(Screen):
                          int(self.ids.ttn.text), int(self.ids.rdn.text), int(self.ids.crn.text), int(self.ids.ton.text)]
         # self.manager.get_screen('MainMenu').SetText()
         # print(app.KitName)
+    def getActivebtn(self):
+        return Activebtn
+    def setActivebtn(self, nr):
+        Activebtn=nr
+    def getDrumNro(self):
+        return int(self.ids.drumNro.text)
+
+
+    def stopSoundCheck(self):
+
+        if(utils._ImRunning):
+            #self.ids[name].changeStatus(1)
+            utils._ImRunning = False
+        elif(drumsynth._ImRunning):
+            #self.ids[name].changeStatus(1)
+            drumsynth._ImRunning=False
+
+    def playSoundCheck(self, nr):
+        app = App.get_running_app()
+        name='play'+str(nr)
+        #self.saveKitTemplate(*args)
+        print(app.KitName, int(sum(app.NrOfDrums)))
+        fullPath = './Kits/{}'.format(app.KitName)+'/drum'+str(nr)+'.wav'
+        print(fullPath)
+
+        def callback():
+            try:
+                drumsynth.playWav(fullPath)
+                self.ids[name].changeStatus()
+            except Exception as e:
+                print('playback SC: ', e)
+                self.ids[name].changeStatus()
+
+        t = threading.Thread(target=callback)
+        t.start()
+
+    def runSoundCheck(self, nr):
+        if nr == '' or nr == '0':
+            utils._ImRunning = False
+            return
+        self.btnMessage = 'NEXT DRUM!'
+
+        app = App.get_running_app()
+        if self.ids.drumkit_name.text is not None:
+            app.KitName=self.ids.drumkit_name.text
+        print(app.KitName, sum(app.NrOfDrums))
+        fullPath = './Kits/{}'.format(app.KitName)
+        try:
+            mkdir(fullPath)
+        except Exception as e:
+            pass
+        utils._ImRunning = False
+        # Should we have a count in?
+        #time.sleep(1)
+        self.performMessage = 'Start Playing!'
+
+        def callback():
+            try:
+                #fullPath init??
+                drumoff.soundcheckDrum(fullPath, nr)
+            except Exception as e:
+                print('souncheck ui:', e)
+
+        t = threading.Thread(target=callback)
+        t.start()
+        #self.nrMessage = str(self.getDrumNro() + 1)
+        #self.performMessage = 'Next Drum:'
+        #if (int(self.nrMessage) >= sum(app.NrOfDrums) + 1):
+        #    self.btnMessage = 'Finish'
+         #   self.finishStatus = 'Soundcheck Complete\nPress "Finish Souncheck" to load kit and exit'
+         #   self.nrMessage = str(0)
+
+    def finishSoundCheck(self):
+        app = App.get_running_app()
+        fullPath = './Kits/{}'.format(app.KitName)
+        try:
+            print(int(sum(app.NrOfDrums)))
+            drumoff.initKitBG(fullPath, int(sum(app.NrOfDrums)))
+            app.KitInit = 'Initialized'
+            app.root.current = 'MainMenu'
+        except Exception as e:
+            print('finish soundcheck: ', e)
+
+    def First_Thread(self, nr):
+        self.setMsg('soundcheck drum nr. {}'.format('0'))
+        threading.Thread(target=self.runSoundCheck(nr)).start()
 
 
 class SoundCheckPerformScreen(Screen):
@@ -93,14 +283,16 @@ class SoundCheckPerformScreen(Screen):
     finishMessage = StringProperty()
     finishStatus = StringProperty()
 
+
     def __init__(self, **kwargs):
         super(SoundCheckPerformScreen, self).__init__(**kwargs)
         self.performMessage = 'Next Drum:'
         self.btnMessage = 'GO!'
-        self.drmMessage = 'Play 32 hits on each drum. \nPress run when ready!\n (You can re run souncheck as many times as you like)'
+        self.drmMessage = 'Play 16 hits on each drum. \nPress run when ready!\n (You can re run souncheck as many times as you like)'
         self.nrMessage = '1'
         self.finishMessage = 'Load Soundchecked Kit and Exit'
         self.finishStatus = 'Soundcheck not complete'
+
 
     @mainthread
     def getTxt(self):
@@ -123,6 +315,9 @@ class SoundCheckPerformScreen(Screen):
     # @mainthread
     def getDrumNro(self):
         return int(self.ids.drumNro.text)
+    def stopSoundCheck(self):
+        utils._ImRunning = False
+        drumsynth._ImRunning = False
 
     def runSoundCheck(self, nr):
         if nr == '' or nr == '0':
@@ -204,6 +399,7 @@ class PlayScreen(Screen):
         self.step = True
         self.halt=True
 
+
     def setTrSize(self, *args):
         self.trSize=args[1]
 
@@ -237,7 +433,9 @@ class PlayScreen(Screen):
             self.ids.trs.disabled = False
         else:
             self.ids.trs.disabled = True
-
+    def stopAll(self):
+        drumsynth._ImRunning=False
+        self.halt=True
     def createLast(self, fileName,outFile=None, addCountInAndCountOut=True):
         """
         Calls a wav file to be created to the disk
@@ -251,11 +449,12 @@ class PlayScreen(Screen):
             try:
                 print('createfile')
                 #scale tempos to less abrupt areas to 100-200 bpm
+                countTempo=1
                 if self.deltaTempo<0.83:
-                    self.deltaTempo=self.deltaTempo*2
+                    countTempo=2
                 elif self.deltaTempo>1.66:
-                    self.deltaTempo=self.deltaTempo/2
-                self.lastMessage=drumsynth.createWav(fullPath,outFile, addCountInAndCountOut=addCountInAndCountOut, deltaTempo=self.deltaTempo)
+                    countTempo=.5
+                self.lastMessage=drumsynth.createWav(fullPath,outFile, addCountInAndCountOut=addCountInAndCountOut, deltaTempo=self.deltaTempo, countTempo=countTempo)
             except Exception as e:
                 print('createWav ui: ', e)
                 self.halt = True
@@ -331,6 +530,7 @@ class PlayScreen(Screen):
         if self.pBtnMessage == 'Stop':
             self.halt = True
             utils._ImRunning = False
+            drumsynth._ImRunning =False
             self.pBtnMessage = 'Play'
             return None
         else:
@@ -351,7 +551,8 @@ class PlayScreen(Screen):
         try:
             mkdir('{}/takes/'.format(fullPath))
         except Exception as e:
-            print('mkdir:',e)
+            #throws error if the folder exists
+            #print('mkdir:',e)
             pass
         self.performMessage = 'Start Playing!'
         def callback():
@@ -406,7 +607,7 @@ root_widget =Builder.load_file("UI.kv")
 
 class DrumOffApp(App):
 
-    NrOfDrums = []
+    NrOfDrums = np.zeros(24)
     KitName = 'none'
     Model = 'model not loaded'
     KitInit = 'Kit not initialized'

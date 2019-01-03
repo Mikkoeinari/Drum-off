@@ -6,7 +6,7 @@ import utils
 import time
 import pyaudio
 import wave
-
+from scipy.io import wavfile
 t0 = time.time()
 _ImRunning = False
 bd=None
@@ -50,7 +50,7 @@ def frame_to_time(frames, sr=bd.getframerate()):
     # samples = (np.asanyarray(frames) * (hop_length / hops_per_frame)).astype(int)
     return frames / float(sr)
 
-def createWav(filePath, outName=None, addCountInAndCountOut=True, deltaTempo=1.0):
+def createWav(filePath, outName=None, addCountInAndCountOut=True, deltaTempo=1.0, countTempo=1.0):
     """
     Creates a wav file from a notation .csv file
     :param filePath: String, the csv file that contains drum notation.
@@ -63,10 +63,15 @@ def createWav(filePath, outName=None, addCountInAndCountOut=True, deltaTempo=1.0
     if outName is None:
         outName='./default.wav'
     d = pd.read_csv(filePath, header=None, sep="\t").values
-    d = list(utils.truncZeros(np.array(d[:, 1])))
+    #d = list(utils.truncZeros(np.array(d[:, 1])))
+    d=list(d[:,1])
     if addCountInAndCountOut:
         c=pd.read_csv('countIn.csv', header=None, sep="\t").values
-        c = list(utils.truncZeros(np.array(c[:, 1])))
+        #c = list(utils.truncZeros(np.array(c[:, 1])))
+        c=list(c[:,1])
+        for i in range(len(c)):
+            if c[i]<0:
+                c[i]=c[i]/countTempo
         d=c+d+c
 
     d = utils.splitrowsanddecode(d, deltaTempo)
@@ -115,7 +120,24 @@ def playWav(filePath):
     global _ImRunning
     _ImRunning = True
 
+    #
+    file_sample_rate, wf=wavfile.read(filePath)
+    if wf.dtype==np.float32:
+        wf=wf.flatten()
+        #wf=wf/np.abs(wf).max()
+        wf=wf*float(32768)
+        np.clip(wf, -32768, 32767, out=wf)
+        wf=wf.astype(np.int16)
+        print(wf.shape, wf.max(), wf.min())
+        wavfile.write(filePath,file_sample_rate, wf)
+    #wauva = wave.open(filePath, 'w')
+
+    # pitääkö tsekata sampleja lukiessa???
+    #wauva.setparams((bd.getnchannels(), bd.getsampwidth(), bd.getframerate(), 0, 'NONE', 'not compressed'))
+    #wauva.writeframes(wf)
+    #wauva.close()
     wf = wave.open(filePath, 'rb')
+    print(wf.getframerate())
     print(wf.getnframes())
     p = pyaudio.PyAudio()
 
@@ -124,7 +146,7 @@ def playWav(filePath):
 
         return (data, pyaudio.paContinue)
 
-    stream = p.open(format=p.get_format_from_width(wf.getsampwidth()),
+    stream = p.open(format=p.get_format_from_width(bd.getsampwidth()),
                     channels=wf.getnchannels(),
                     rate=wf.getframerate(),
                     output=True
@@ -133,10 +155,10 @@ def playWav(filePath):
     data = wf.readframes(1024)
 
     # play stream (3)
-    while len(data) > 0:
+    while len(data) > 0 and _ImRunning:
         stream.write(data)
         data = wf.readframes(1024)
-    print(wf.tell())
+
     # start the stream (4)
     #stream.start_stream()
 
@@ -161,6 +183,7 @@ def playFile(filePath, *args):
     :param filePath: String, the source file
     :return: None
     """
+
     wavFile=createWav(filePath, *args)
     return playFile(wavFile)
     #
