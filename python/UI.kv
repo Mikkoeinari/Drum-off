@@ -274,16 +274,18 @@ MyScreenManager:
             source: './RecBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .45, 'y':0.85}
-            on_release:root.runSoundCheck(1+root.kdTake)if self.isActive else root.stopSoundCheck()
+            on_release:root.runSoundCheck(0+root.kdTake)if self.isActive else root.stopSoundCheck()
             on_release: if(root.getDrumChecked(0+root.kdTake)==0):root.addDrumToKit(0+root.kdTake)
-            on_release: if(root.getDrumChecked(0+root.kdTake)==1):root.ids['kd'+str(root.kdTake)].disabled=True
+            on_release:if(self.isActive==False):root.ids['kd'+str(root.kdTake)].background_radio_normal=root.ids['kd'+str(root.kdTake)].background_radio_disabled_normal
+            on_release:if(self.isActive==False):root.ids['kd'+str(root.kdTake)].background_radio_down=root.ids['kd'+str(root.kdTake)].background_radio_disabled_down
+
         PlayButton:
-            id:play1
+            id:play0
             text:'1'
             source: './PlayBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .5, 'y':0.85}
-            on_release:root.playSoundCheck(1) if self.isActive else root.stopSoundCheck()
+            on_release:root.playSoundCheck(0,root.kdTake) if self.isActive else root.stopSoundCheck()
 #        StopButton:
 #            source: './StopBtnDeactivated.png'
 #            size_hint:(.05, .05)
@@ -319,15 +321,17 @@ MyScreenManager:
             pos_hint: {"x": .45, 'y':0.80}
             on_release:root.runSoundCheck(1+root.snTake)if self.isActive else root.stopSoundCheck()
             on_release: if(root.getDrumChecked(1+root.snTake)==0):root.addDrumToKit(1+root.snTake)
-            on_release: if(root.getDrumChecked(1+root.snTake)==1):root.ids['sn'+str(root.snTake)].disabled=True
+            on_release:if(self.isActive==False):root.ids['sn'+str(root.snTake)].background_radio_normal=root.ids['sn'+str(root.snTake)].background_radio_disabled_normal
+            on_release:if(self.isActive==False):root.ids['sn'+str(root.snTake)].background_radio_down=root.ids['sn'+str(root.snTake)].background_radio_disabled_down
+
         PlayButton:
-            id:play2
+            id:play1
             text:'2'
             source: './PlayBtn.png'
             text: 'Kick'
             size_hint:(.05, .05)
             pos_hint: {"x": .5, 'y':0.80}
-            on_release:root.playSoundCheck(2) if self.isActive else root.stopSoundCheck()
+            on_release:root.playSoundCheck(1,root.snTake) if self.isActive else root.stopSoundCheck()
             #on_press: root.manager.current = 'MainMenu'
 #        StopButton:
 #            source: './StopBtnDeactivated.png'
@@ -364,6 +368,7 @@ MyScreenManager:
             background_radio_disabled_normal : './green' + 'Two' + '.png'
             background_radio_disabled_down :'./green' + 'Two' + 'Act.png'
             on_active:root.hhTake=1
+            on_active:disabled=False
             group:'hihat'
             size_hint:(.05, .05)
             pos_hint: {"x": .675, 'y':0.75}
@@ -383,15 +388,18 @@ MyScreenManager:
             pos_hint: {"x": .45, 'y':0.75}
             on_release:root.runSoundCheck(2+root.hhTake)if self.isActive else root.stopSoundCheck()
             on_release: if(root.getDrumChecked(2+root.hhTake)==0):root.addDrumToKit(2+root.hhTake)
-            on_release: if(root.getDrumChecked(2+root.hhTake)==1):root.ids['hh'+str(root.hhTake)].disabled=True
+            on_release:if(self.isActive==False):root.ids['hh'+str(root.hhTake)].background_radio_normal=root.ids['hh'+str(root.hhTake)].background_radio_disabled_normal
+            on_release:if(self.isActive==False):root.ids['hh'+str(root.hhTake)].background_radio_down=root.ids['hh'+str(root.hhTake)].background_radio_disabled_down
+            #on_release:if(self.isActive==False and root.hhTake<2):root.ids['hh'+str(root.hhTake+1)]._toggle_active()
+
             #on_release: if(root.getDrumChecked(3)==0):root.addDrumToKit(3)
         PlayButton:
-            id:play3
+            id:play2
             text:'3'
             source: './PlayBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .5, 'y':0.75}
-            on_release:root.playSoundCheck(3) if self.isActive else root.stopSoundCheck()
+            on_release:root.playSoundCheck(2,root.hhTake) if self.isActive else root.stopSoundCheck()
 #        StopButton:
 #            source: './StopBtnDeactivated.png'
 #            size_hint:(.05, .05)
@@ -404,7 +412,7 @@ MyScreenManager:
         TextInput:
             id: ttn
             input_filter: 'int'
-            hint_text:'# of Tom-Toms'
+            hint_text:''
             size_hint:(.25, .05)
             pos_hint: {"x": .625, 'y':0.70}
         NumberButton:
@@ -415,7 +423,7 @@ MyScreenManager:
             background_radio_disabled_down :'./green' + 'One' + 'Act.png'
             active:True
             on_active:root.ttTake=0
-            group:'hihat'
+            group:'toms'
             size_hint:(.05, .05)
             pos_hint: {"x": .625, 'y':0.70}
         NumberButton:
@@ -425,7 +433,7 @@ MyScreenManager:
             background_radio_disabled_normal : './green' + 'Two' + '.png'
             background_radio_disabled_down :'./green' + 'Two' + 'Act.png'
             on_active:root.ttTake=1
-            group:'hihat'
+            group:'toms'
             size_hint:(.05, .05)
             pos_hint: {"x": .675, 'y':0.70}
         NumberButton:
@@ -435,7 +443,7 @@ MyScreenManager:
             background_radio_disabled_normal : './green' + 'Three' + '.png'
             background_radio_disabled_down :'./green' + 'Three' + 'Act.png'
             on_active:root.ttTake=2
-            group:'hihat'
+            group:'toms'
             size_hint:(.05, .05)
             pos_hint: {"x": .725, 'y':0.70}
         RecButton:
@@ -444,7 +452,8 @@ MyScreenManager:
             pos_hint: {"x": .45, 'y':0.70}
             on_release:root.runSoundCheck(5+root.ttTake)if self.isActive else root.stopSoundCheck()
             on_release: if(root.getDrumChecked(5+root.ttTake)==0):root.addDrumToKit(5+root.ttTake)
-            on_release: if(root.getDrumChecked(5+root.ttTake)==1):root.ids['tt'+str(root.ttTake)].disabled=True
+            on_release:if(self.isActive==False):root.ids['tt'+str(root.ttTake)].background_radio_normal=root.ids['tt'+str(root.ttTake)].background_radio_disabled_normal
+            on_release:if(self.isActive==False):root.ids['tt'+str(root.ttTake)].background_radio_down=root.ids['tt'+str(root.ttTake)].background_radio_disabled_down
             #on_release: if(root.getDrumChecked(3)==0):root.addDrumToKit(3)
         PlayButton:
             id:play5
@@ -452,34 +461,59 @@ MyScreenManager:
             source: './PlayBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .5, 'y':0.70}
-            on_release:root.playSoundCheck(5) if self.isActive else root.stopSoundCheck()
+            on_release:root.playSoundCheck(5,root.ttTake) if self.isActive else root.stopSoundCheck()
 #        StopButton:
 #            source: './StopBtnDeactivated.png'
 #            size_hint:(.05, .05)
 #            pos_hint: {"x": .55, 'y':0.70}
 #            on_press:root.stopSoundCheck()
         Label:
-            text: 'Ride'
+            text: 'Floor Toms'
             size_hint:(.25, .05)
             pos_hint: {"x": 0, 'y':0.65}
         TextInput:
             id: rdn
             input_filter: 'int'
-            hint_text:'# of Ride cymbals'
+            hint_text:''
             size_hint:(.25, .05)
             pos_hint: {"x": .625, 'y':0.65}
+        NumberButton:
+            id:ft0
+            background_radio_normal : './red' + 'One' + '.png'
+            background_radio_down : './red' + 'One' + 'Act.png'
+            background_radio_disabled_normal : './green' + 'One' + '.png'
+            background_radio_disabled_down :'./green' + 'One' + 'Act.png'
+            active:True
+            on_active:root.ftTake=0
+            group:'floortoms'
+            size_hint:(.05, .05)
+            pos_hint: {"x": .625, 'y':0.65}
+        NumberButton:
+            id:ft1
+            background_radio_normal : './red' + 'Two' + '.png'
+            background_radio_down : './red' + 'Two' + 'Act.png'
+            background_radio_disabled_normal : './green' + 'Two' + '.png'
+            background_radio_disabled_down :'./green' + 'Two' + 'Act.png'
+            on_active:root.ftTake=1
+            group:'floortoms'
+            size_hint:(.05, .05)
+            pos_hint: {"x": .675, 'y':0.65}
         RecButton:
             source: './RecBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .45, 'y':0.65}
-            on_release:root.runSoundCheck(12) if self.isActive else root.stopSoundCheck()
+            on_release:root.runSoundCheck(8+root.ftTake)if self.isActive else root.stopSoundCheck()
+            on_release: if(root.getDrumChecked(8+root.ftTake)==0):root.addDrumToKit(8+root.ftTake)
+            on_release:if(self.isActive==False):root.ids['ft'+str(root.ftTake)].background_radio_normal=root.ids['ft'+str(root.ftTake)].background_radio_disabled_normal
+            on_release:if(self.isActive==False):root.ids['ft'+str(root.ftTake)].background_radio_down=root.ids['ft'+str(root.ftTake)].background_radio_disabled_down
+            #on_release: if(root.getDrumChecked(3)==0):root.addDrumToKit(3)
         PlayButton:
-            id:play12
-            text:'12'
+            id:play8
+            text:'8'
             source: './PlayBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .5, 'y':0.65}
-            on_release:root.playSoundCheck(12) if self.isActive else root.stopSoundCheck()
+            on_release:root.playSoundCheck(8,root.ftTake) if self.isActive else root.stopSoundCheck()
 #        StopButton:
 #            source: './StopBtnDeactivated.png'
 #            size_hint:(.05, .05)
@@ -487,28 +521,42 @@ MyScreenManager:
 #            on_press:root.stopSoundCheck()
 
         Label:
-            text: 'Crashes'
+            text: 'Ride'
             size_hint:(.25, .05)
             pos_hint: {"x": 0, 'y':0.60}
         TextInput:
             id: crn
             input_filter: 'int'
-            hint_text:'# of Crash cymbals'
+            hint_text:''
             size_hint:(.25, .05)
+            pos_hint: {"x": .625, 'y':0.60}
+        NumberButton:
+            id:rd0
+            background_radio_normal : './red' + 'One' + '.png'
+            background_radio_down : './red' + 'One' + 'Act.png'
+            background_radio_disabled_normal : './green' + 'One' + '.png'
+            background_radio_disabled_down :'./green' + 'One' + 'Act.png'
+            active:True
+            on_active:root.rdTake=0
+            group:'ride'
+            size_hint:(.05, .05)
             pos_hint: {"x": .625, 'y':0.60}
         RecButton:
             source: './RecBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .45, 'y':0.60}
-            on_release:root.runSoundCheck(13) if self.isActive else root.stopSoundCheck()
-
+            on_release:root.runSoundCheck(10+root.rdTake)if self.isActive else root.stopSoundCheck()
+            on_release: if(root.getDrumChecked(10+root.rdTake)==0):root.addDrumToKit(10+root.rdTake)
+            on_release:if(self.isActive==False):root.ids['rd'+str(root.rdTake)].background_radio_normal=root.ids['rd'+str(root.rdTake)].background_radio_disabled_normal
+            on_release:if(self.isActive==False):root.ids['rd'+str(root.rdTake)].background_radio_down=root.ids['rd'+str(root.rdTake)].background_radio_disabled_down
+            #on_release: if(root.getDrumChecked(3)==0):root.addDrumToKit(3)
         PlayButton:
-            id:play13
+            id:play10
             text:'13'
             source: './PlayBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .5, 'y':0.60}
-            on_release:root.playSoundCheck(13) if self.isActive else root.stopSoundCheck()
+            on_release:root.playSoundCheck(10,root.rdTake) if self.isActive else root.stopSoundCheck()
 
 #        StopButton:
 #            source: './StopBtnDeactivated.png'
@@ -517,29 +565,63 @@ MyScreenManager:
 #            on_press:root.stopSoundCheck()
 
         Label:
-            text: 'Toys'
+            text: 'Crashes'
             size_hint:(.25, .05)
             pos_hint: {"x": 0, 'y':0.55}
         TextInput:
             id: ton
             input_filter: 'int'
-            hint_text:'# of Misc. drums/cymbals'
+            hint_text:''
             size_hint:(.25, .05)
             pos_hint: {"x": .625, 'y':0.55}
+
+        NumberButton:
+            id:cr0
+            background_radio_normal : './red' + 'One' + '.png'
+            background_radio_down : './red' + 'One' + 'Act.png'
+            background_radio_disabled_normal : './green' + 'One' + '.png'
+            background_radio_disabled_down :'./green' + 'One' + 'Act.png'
+            active:True
+            on_active:root.crTake=0
+            group:'crashes'
+            size_hint:(.05, .05)
+            pos_hint: {"x": .625, 'y':0.55}
+        NumberButton:
+            id:cr1
+            background_radio_normal : './red' + 'Two' + '.png'
+            background_radio_down : './red' + 'Two' + 'Act.png'
+            background_radio_disabled_normal : './green' + 'Two' + '.png'
+            background_radio_disabled_down :'./green' + 'Two' + 'Act.png'
+            on_active:root.crTake=1
+            group:'crashes'
+            size_hint:(.05, .05)
+            pos_hint: {"x": .675, 'y':0.55}
+        NumberButton:
+            id:cr2
+            background_radio_normal : './red' + 'Three' + '.png'
+            background_radio_down : './red' + 'Three' + 'Act.png'
+            background_radio_disabled_normal : './green' + 'Three' + '.png'
+            background_radio_disabled_down :'./green' + 'Three' + 'Act.png'
+            on_active:root.crTake=2
+            group:'crashes'
+            size_hint:(.05, .05)
+            pos_hint: {"x": .725, 'y':0.55}
         RecButton:
-            id:rec17
-            text:'17'
             source: './RecBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .45, 'y':0.55}
-            on_release:root.runSoundCheck(17) if self.isActive else root.stopSoundCheck()
+            on_release:root.runSoundCheck(11+root.crTake)if self.isActive else root.stopSoundCheck()
+            on_release: if(root.getDrumChecked(11+root.crTake)==0):root.addDrumToKit(11+root.crTake)
+            on_release:if(self.isActive==False):root.ids['cr'+str(root.crTake)].background_radio_normal=root.ids['cr'+str(root.crTake)].background_radio_disabled_normal
+            on_release:if(self.isActive==False):root.ids['cr'+str(root.crTake)].background_radio_down=root.ids['cr'+str(root.crTake)].background_radio_disabled_down
+            #on_release: if(root.getDrumChecked(3)==0):root.addDrumToKit(3)
         PlayButton:
-            id:play17
+            id:play11
             text:'17'
             source: './PlayBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .5, 'y':0.55}
-            on_release:root.playSoundCheck(17) if self.isActive else root.stopSoundCheck()
+            on_release:root.playSoundCheck(11,root.crTake) if self.isActive else root.stopSoundCheck()
 
 
 #        StopButton:

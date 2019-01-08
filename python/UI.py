@@ -187,10 +187,7 @@ class SoundCheckScreen(Screen):
                          int(self.ids.ttn.text), int(self.ids.rdn.text), int(self.ids.crn.text), int(self.ids.ton.text)]
         # self.manager.get_screen('MainMenu').SetText()
         # print(app.KitName)
-    def getActivebtn(self):
-        return Activebtn
-    def setActivebtn(self, nr):
-        Activebtn=nr
+
     def getDrumNro(self):
         return int(self.ids.drumNro.text)
 
@@ -204,12 +201,12 @@ class SoundCheckScreen(Screen):
             #self.ids[name].changeStatus(1)
             drumsynth._ImRunning=False
 
-    def playSoundCheck(self, nr):
+    def playSoundCheck(self, nr,take):
         app = App.get_running_app()
         name='play'+str(nr)
         #self.saveKitTemplate(*args)
         print(app.KitName, int(sum(app.NrOfDrums)))
-        fullPath = './Kits/{}'.format(app.KitName)+'/drum'+str(nr)+'.wav'
+        fullPath = './Kits/{}'.format(app.KitName)+'/drum'+str(nr+take)+'.wav'
         print(fullPath)
 
         def callback():
@@ -230,7 +227,8 @@ class SoundCheckScreen(Screen):
         self.btnMessage = 'NEXT DRUM!'
 
         app = App.get_running_app()
-        if self.ids.drumkit_name.text is not None:
+        if self.ids.drumkit_name.text is not 'none':
+            print('oli none')
             app.KitName=self.ids.drumkit_name.text
         print(app.KitName, sum(app.NrOfDrums))
         fullPath = './Kits/{}'.format(app.KitName)

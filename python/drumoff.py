@@ -1,7 +1,7 @@
 from utils import *
 from time import time
 import threading
-
+import os,re
 t0 = time()
 import pickle
 
@@ -14,6 +14,7 @@ import pickle
 #list_y = []
 #msg = ''
 #highEmph = [0, 0, 1, 1, 0, 0, 1, 1, 0]
+
 K=1
 
 ###
@@ -26,18 +27,23 @@ def soundcheckDrum(drumkit_path, drumId):
 
 def initKitBG(drumkit_path, nrOfDrums, K=1, rm_win=4, bs_len=32, drumwise=False):
     K=K
-    #L=10
+    L=10
     global drums, fpr
     #print(nrOfDrums)
     drums = []
     #drs = [2, 4, 6, 3, 2, 2, 5, 1, 8]
     #n_frames = [12, 9, 11, 17, 15, 13, 10, 11, 15]
-    n_frames=np.full(nrOfDrums,10)
+    kit = [f for f in os.listdir(drumkit_path) if not f.startswith('.')]
+    kit.sort()
+    #print(kit)
+    #n_frames=np.full(nrOfDrums,10)
     filt_spec_all = 0
     shifts = []
-    for i in range(nrOfDrums):
-        L=n_frames[i]
-        buffer = madmom.audio.Signal("{}/drum{}.wav".format(drumkit_path, i), frame_size=FRAME_SIZE,
+    for i in range(len(kit)):
+        #HACK!!! remove when you have the time!!!
+        if (kit[i][:4] != 'drum' or len(kit[i])>9): continue
+        #print(i,re.findall('\d+',kit[i]), len(kit[i]))
+        buffer = madmom.audio.Signal("{}/{}".format(drumkit_path, kit[i]), frame_size=FRAME_SIZE,
                                      hop_size=HOP_SIZE)
         filt_spec = get_preprocessed_spectrogram(buffer, sm_win=4)
         peaks= getPeaksFromBuffer(filt_spec,nrOfPeaks)
@@ -52,9 +58,9 @@ def initKitBG(drumkit_path, nrOfDrums, K=1, rm_win=4, bs_len=32, drumwise=False)
             shifts.append(shift)
 
         drums.append(
-                Drum(name=[i], highEmph=0, peaks=peaks, heads=freqtemps[0], tails=freqtemps[1],
+                Drum(name=[int(re.findall('\d+',kit[i])[0])], highEmph=0, peaks=peaks, heads=freqtemps[0], tails=freqtemps[1],
                      threshold=0,
-                     midinote=midinotes[i], probability_threshold=1))
+                     midinote=midinotes[int(re.findall('\d+',kit[i])[0])], probability_threshold=1))
 
     recalculate_thresholds(filt_spec_all, shifts, drums, drumwise=drumwise, rm_win=rm_win)
     # Pickle the important data
@@ -252,21 +258,21 @@ def play(filePath, K):
                 precision, recall, fscore, true_tot = 0, 0, 0, 0
                 for i in plst:
                     predHits = frame_to_time(i.get_hits())
-                    b=-0.005
+                    b=0.00#825
 
                     actHits = hits[hits[1] == i.get_name()[0]]
                     actHits = actHits.iloc[:, 0]
 
                     # print(actHits.values, actHits.shape[0])
-                    trueHits = k_in_n(actHits.values, predHits, window=0.02)
+                    trueHits = k_in_n(actHits.values+b, predHits, window=0.02)
                     # print(trueHits)2
                     prec, rec, f_drum = f_score(trueHits, predHits.shape[0], actHits.shape[0])
                     #print(prec)
                     #print(rec)
-                    print(f_drum)
+                    #print(f_drum)
                     #fs[n,i.get_name()]=f_drum
                     #print(trueHits)
-                    print('\n')
+                    #print('\n')
                     # Multiply by n. of hits to get real f-score in the end.
                     precision += prec * actHits.shape[0]
                     recall += rec * actHits.shape[0]
@@ -309,7 +315,7 @@ def play(filePath, K):
     bindf = pd.DataFrame(bintimes, columns=['inst'])
     bindf.to_csv('testbeat0.csv', index=True, header=False, sep="\t")
     df = df[df.time != 0]
-    print('done!')
+    #print('done!')
 
     madmom.io.midi.write_midi(df.values, 'midi_testit_.mid')
     generated = splitrowsanddecode(bintimes)
@@ -317,7 +323,7 @@ def play(filePath, K):
     gen.to_csv('generated_enc_dec0.csv', index=False, header=None, sep='\t')
     #print('pattern generating time:%0.2f' % (time() - t0))
     # change to time and midinotes
-    gen['time'] = frame_to_time(gen['time'], hop_length=HOP_SIZE)
+    gen['time'] = frame_to_time(gen['time'], hop_length=353)
     gen['inst'] = to_midinote(gen['inst'])
     gen['duration'] = pd.Series(np.full((len(generated)), 0, np.int64))
     gen['vel'] = pd.Series(np.full((len(generated)), 127, np.int64))
@@ -331,6 +337,7 @@ def play(filePath, K):
 
 #Test method to check Eric Battenbergs onset detection function.
 def testOnsDet(filePath, alg=0, ppAlg=0, ed=False):
+    hopsize=HOP_SIZE
     buffer=0
     try:
         buffer = madmom.audio.Signal("{}drumBeatAnnod.wav".format(filePath), frame_size=FRAME_SIZE,
@@ -339,8 +346,9 @@ def testOnsDet(filePath, alg=0, ppAlg=0, ed=False):
         print(e)
         print('jotain meni vikaan!')
     if alg == 0:
-        filtspec=get_preprocessed_spectrogram(buffer, sm_win=4, test=True)
-        H0=filtspec[:,0]
+        filtspec=get_preprocessed_audio(buffer)
+        H0=filtspec
+        hopsize=256
     elif alg==1:
         filt_spec = get_preprocessed_spectrogram(buffer)
         onset_alg = 0
@@ -371,27 +379,42 @@ def testOnsDet(filePath, alg=0, ppAlg=0, ed=False):
     else:
         filtspec = get_preprocessed_spectrogram(buffer)
 
-        H0 = superflux(spec_x=filtspec.T, win_size=16)
+        H0 = superflux(spec_x=filtspec.T, win_size=6)
     #H0 = H0 / H0[3:].max()
     #showEnvelope(H0)
     peaks=[]
     if ppAlg==0:
-
-        peaks=pick_onsets(H0,threshold=.35)
+        peaks=pick_onsets(H0,threshold=.035)
     else:
-        peaks = pick_onsets_dynT(H0, threshold=0.16)
+        peaks = pick_onsets_bat(H0, threshold=0.1)
 
 
     hits = pd.read_csv("{}midiBeatAnnod.csv".format(filePath), sep="\t", header=None)
     precision, recall, fscore, true_tot = 0, 0, 0, 0
 
-    predHits = frame_to_time(peaks)
+    predHits = frame_to_time(peaks,sr=44100,hop_length=hopsize)
+    predHits=np.unique(predHits)
     actHits = hits[0]
+    print(actHits.shape)
 
+    def join_adjacents(hitlist):
+        i=hitlist.shape[0]-2
+        window=0.050
+        remlist=np.full(hitlist.shape[0], 1)
+        while i>0:
+            if (hitlist[i] >= hitlist[i+1] - window):
+                remlist[i]=0
+            i-=1
+        return hitlist[remlist.astype('bool')]
+
+    actHits=actHits.values
+    actHits=join_adjacents(actHits)
+
+    #print(list(zip(actHits, predHits)))
     #actHits = actHits.iloc[:, 0]
     # print(actHits.values, actHits.shape[0])
-    trueHits = k_in_n(actHits.values, predHits, window=0.05)
-    # print(trueHits)2
+    trueHits = k_in_n(predHits,actHits, window=0.025)
+    # print(trueHits)
     prec, rec, f_drum = f_score(trueHits, predHits.shape[0], actHits.shape[0])
     print(prec)
     print(rec)
@@ -415,11 +438,11 @@ def testOnsDet(filePath, alg=0, ppAlg=0, ed=False):
 #debug
 #initKitBG('Kits/mcd2/',8,K)
 #K=1
-#file='../DXSamplet/'
+#file='../trainSamplet/'
 #initKitBG(file,9,K=K, drumwise=True)
 #loadKit(file)
 #play(file, K=K)
-#testOnsDet(file, alg=1, ppAlg=0)
+#testOnsDet(file, alg=0, ppAlg=0)
 #initKitBG('../DXSamplet/',9,K=K,rm_win=6)
 #loadKit('../trainSamplet/')
 #testOnsDet('../trainSamplet/', alg=0)

@@ -27,12 +27,20 @@ bdBytes = open_and_merge('./Sounds/bigkit/mono/bd.wav')
 sdBytes = open_and_merge('./Sounds/bigkit/mono/sn.wav')
 chhBytes = open_and_merge('./Sounds/bigkit/mono/chh.wav')
 ohhBytes = open_and_merge('./Sounds/bigkit/mono/ohh.wav')
-ttBytes = open_and_merge('./Sounds/bigkit/mono/tt.wav')
+shhBytes = open_and_merge('./Sounds/bigkit/mono/shh.wav')
+ttBytes = open_and_merge('./Sounds/bigkit/mono/tth.wav')
+tt2Bytes = open_and_merge('./Sounds/bigkit/mono/tt.wav')
+tt3Bytes = open_and_merge('./Sounds/bigkit/mono/tt2.wav')
 ftBytes = open_and_merge('./Sounds/bigkit/mono/ft.wav')
+ft2Bytes = open_and_merge('./Sounds/bigkit/mono/ft2.wav')
 rdBytes = open_and_merge('./Sounds/bigkit/mono/rd.wav')
 crBytes = open_and_merge('./Sounds/bigkit/mono/cr1.wav')
-shhBytes = open_and_merge('./Sounds/bigkit/mono/shh.wav')
-sounds = [bdBytes, sdBytes, chhBytes, ohhBytes, ttBytes, ftBytes, rdBytes, crBytes, shhBytes]
+cr2Bytes = open_and_merge('./Sounds/bigkit/mono/cr2.wav')
+cr3Bytes = open_and_merge('./Sounds/bigkit/mono/cr3.wav')
+
+#sounds = [bdBytes, sdBytes, chhBytes, ohhBytes, ttBytes, ftBytes, rdBytes, crBytes, shhBytes]
+#Allow more drums as per midinotes:[36, 38, 42, 46, 44, 50, 48, 47, 43, 41, 51, 49, 57, 55]
+sounds = [bdBytes, sdBytes, chhBytes, ohhBytes, shhBytes, ttBytes, tt2Bytes, tt3Bytes, ftBytes, ft2Bytes, rdBytes, crBytes, cr2Bytes, cr3Bytes]
 
 #CHUNK = 2048
 #buffer = np.zeros(2048)
@@ -120,11 +128,10 @@ def playWav(filePath):
     global _ImRunning
     _ImRunning = True
 
-    #
+    #Convert float32 wav to int16 bit depth.
     file_sample_rate, wf=wavfile.read(filePath)
     if wf.dtype==np.float32:
         wf=wf.flatten()
-        #wf=wf/np.abs(wf).max()
         wf=wf*float(32768)
         np.clip(wf, -32768, 32767, out=wf)
         wf=wf.astype(np.int16)

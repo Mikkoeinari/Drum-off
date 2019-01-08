@@ -1,7 +1,8 @@
 #import matplotlib.pyplot as plt
 #import matplotlib.cm as cmaps
+from time import time
 
-import time
+
 import madmom
 import numpy as np
 import pandas as pd
@@ -26,8 +27,8 @@ DEFAULT_TEMPO = 120  # 117.1875
 DRUMKIT_PATH = '../trainSamplet/'
 REQUEST_RESULT = False
 DELTA = 0.15
-midinotes = [36, 38, 42, 46, 50, 43, 51, 49, 44]  # BD, SN, CHH, OHH, TT, FT, RD, CR, SHH, Here we need generality
-nrOfDrums = 24  # Maximum kit size
+midinotes = [36, 38, 42, 46, 44, 50,48,47, 43,41, 51, 49,57,55]  # BD, SN, CHH, OHH,SHH, TT,TT2,TT3, FT,FT2, RD, CR,CR2,splash, Here we need generality
+nrOfDrums = 14  # Maximum kit size
 nrOfPeaks =16  #IF CHANGED ALL PREVIOUS SOUNDCHECKS INVALIDATE!!!
 max_n_frames = 10
 total_priors = 0
@@ -41,10 +42,10 @@ proc = madmom.audio.filters.BarkFilterbank(
     madmom.audio.stft.fft_frequencies(num_fft_bins=int(FRAME_SIZE / 2), sample_rate=SAMPLE_RATE),
     num_bands='double', fmin=20.0, fmax=15500.0, norm_filters=False, unique_filters=True)
 # Mel scale filterbank
-#proc =madmom.audio.filters.MelFilterbank(
-#   madmom.audio.stft.fft_frequencies(num_fft_bins=int(FRAME_SIZE / 2), sample_rate=SAMPLE_RATE),
-# num_bands=128, fmin=20.0, fmax=17000.0, norm_filters=False, unique_filters=True)
-# log filterbank
+proc2 =madmom.audio.filters.MelFilterbank(
+   madmom.audio.stft.fft_frequencies(num_fft_bins=int(1024 / 2), sample_rate=SAMPLE_RATE),
+ num_bands=20, fmin=20.0, fmax=17000.0, norm_filters=False, unique_filters=True)
+# Logarithmic filterbank
 #proc =madmom.audio.filters.LogarithmicFilterbank(
 #    madmom.audio.stft.fft_frequencies(num_fft_bins=int(FRAME_SIZE / 2), sample_rate=SAMPLE_RATE),
 #    num_bands=18, fmin=20.0, fmax=17000.0, fref=110.0, norm_filters=True, unique_filters=True, bands_per_octave=True)
@@ -328,7 +329,7 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
         if onset_alg == 0:
             for k in range(K1):
                 index = ind + k
-                #HN = superflux(A=sum(Wpre.T[:, index, :]), B=H[index], win_size=6)
+                #HN = superflux(A=sum(Wpre.T[0, index, :]), B=H[index], win_size=3)
                 HN=energyDifference(H[index], win_size=6)
                 #HN = HN / HN.max()
                 if k == 0:
@@ -339,7 +340,7 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
         elif onset_alg==1:
             for k in range(K1):
                 index = ind + k
-                HN=get_preprocessed_spectrogram(A=sum(Wpre.T[:, index, :]), B=H[index], test=True)[:,0]
+                HN=get_preprocessed_spectrogram(A=sum(Wpre.T[0, index, :]), B=H[index], test=True)[:,0]
                 if k == 0:
                     H0 = HN
                 else:
@@ -391,7 +392,6 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
                 if f_drum > f_zero:
                     f_zero = f_drum
                     threshold = d
-
             #if optimal threshold is within a range [threshold, maxd] find a sweet spot empirically,
             #  increasing alpha lowers threshold and decreases precision
             if maxd>0:
@@ -402,9 +402,9 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
             #arbitrary minimum threshold check
             threshold=max((threshold,0.05))
 
-            print('delta:', threshold, f_zero)
+            #print('delta:', threshold, f_zero)
             drums[i].set_threshold(threshold)
-            #drums[i].set_threshold(.16)
+            #drums[i].set_threshold(.2)
 
     if not drumwise:
         # print(len(Hs))
@@ -445,7 +445,7 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
 
         # arbitrary minimum threshold check
         threshold = max((threshold, 0.15))
-        print('delta:', threshold, f_zero)
+        #print('delta:', threshold, f_zero)
         for i in range(len(drums)):
             drums[i].set_threshold(threshold)
 
@@ -496,8 +496,8 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=1.0, iters=0, met
     :return: list of drums containing onset locations in hits field and mean tempo of the take
     """
     onset_alg =2
-    filt_spec = get_preprocessed_spectrogram(liveBuffer, sm_win=4)
-    stacks = 1.
+    filt_spec = get_preprocessed_spectrogram(liveBuffer, sm_win=4, Print=True)
+    stacks = 1
     total_priors = 0
     for i in range(len(drums)):
         total_priors += drums[i].get_heads().shape[2]
@@ -520,8 +520,7 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=1.0, iters=0, met
         for j in range(K2):
             Wpre[:, ind + j, :] = tails[:, :, j]
             total_tails += 1
-    # Wpre = Wpre[:, :total_heads + total_tails, :]
-    #PSA(filt_spec[:1500], Wpre[:,:9,0])
+
     for i in range(int(stacks)):
         if method == 'NMFD' or method == 'ALL':
             H,Wpre, err1 = NMFD(filt_spec.T, iters=iters, Wpre=Wpre, include_priors=True)
@@ -547,17 +546,19 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=1.0, iters=0, met
     allPeaks=[]
     #showEnvelope(superflux(A=sum(Wpre.T[:, 2, :]), B=H[2],win_size=2)[:500])
     #showEnvelope(energyDifference(H[2], win_size=2)[:500])
-    #showEnvelope((H[2]/H[2].max())[:500])
+    #showEnvelope([(H[1]/H[1].max())[100:600], 0.09090909090909091,0.2318181818181818, 0.4040404040404041])
+    times=0
     for i in range(len(drums)):
         #if i<=9:
         #    showEnvelope(H[i][:1500])
         heads = drums[i].get_heads()
         K1 = heads.shape[2]
         ind = total_heads
+        #t0=time()
         if onset_alg == 0:
             for k in range(K1):
                 index = ind + k
-                #HN = superflux(A=sum(Wpre.T[:, index, :]), B=H[index],win_size=6)
+                #HN = superflux(A=sum(Wpre.T[0, index, :]), B=H[index],win_size=3)
                 HN = energyDifference(H[index], win_size=6)
                 #HN = HN / HN.max()
                 if k == 0:
@@ -568,7 +569,7 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=1.0, iters=0, met
         elif onset_alg==1:
             for k in range(K1):
                 index = ind + k
-                HN=get_preprocessed_spectrogram(A=sum(Wpre.T[:, index, :]), B=H[index], test=True)[:,0]
+                HN=get_preprocessed_spectrogram(A=sum(Wpre.T[0, index, :]), B=H[index], test=True)[:,0]
                 if k == 0:
                     H0 = HN
                 else:
@@ -592,6 +593,7 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=1.0, iters=0, met
             onsets = H0
         else:
             onsets = onsets+H0
+        #times+=time()-t0
         #H0 = H0[:-(rm_win-1)] - running_mean(H0, rm_win)
         #H0 = np.array([0 if i < 0 else i for i in H0])
         #H0=H0/H0.max()
@@ -604,7 +606,9 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=1.0, iters=0, met
         #     kernel = np.hanning(8)
         # remove extrahits used to level peak picking algorithm:
         peaks = peaks[np.where(peaks < filt_spec.shape[0] - 1)]
-        #showEnvelope((H0[:500], peaks[peaks<500]))
+        #showEnvelope((H0, peaks, drums[i].get_threshold()))
+
+        #showFFT(np.outer(Wpre.T[0, i, :],H0))
         drums[i].set_hits(peaks)
         # onsets[peaks] = 1
         # quant_factor > 0:
@@ -615,7 +619,7 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=1.0, iters=0, met
         # else:
 
 
-
+    #print('OD time:',times)
     #sanity check
     if False:
         allPeaks.extend(peaks)
@@ -639,16 +643,19 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=1.0, iters=0, met
 
     if quant_factor > 0:
         onsets = onsets / onsets.max()
-        print('ons_len:', onsets.shape[0])
+        #print('ons_len:', onsets.shape[0])
+        newOnsets=np.zeros(onsets.shape[0])
+        maxi=[]
+
         deltaTempo = extract_tempo(onsets, constant_tempo=False)
-        print('dt_len:', deltaTempo.shape[0])
+        #print('dt_len:', deltaTempo.shape[0])
         for i in drums:
             hits = i.get_hits()
             if len(hits) is None:
                 i.set_hits([])
             else:
                 i.set_hits(conform_time(i.get_hits(), deltaTempo, quantize=True))
-        #print(np.mean(deltaTempo))
+
         return drums, np.mean(deltaTempo)
     else:
         return drums, 1.0
@@ -664,8 +671,59 @@ def hann_poisson_window(N=8, alpha=0.2):
     for n in range(1,N):
         window[n]=.5*(1-np.cos((2*np.pi*n)/n-1))*np.exp(-alpha*(np.abs(N-1-2*n)/(N-1)))
     return window
+def get_preprocessed_audio(buffer,sr=44100, window_size_in_ms=24, bark_bands=24):
+    from scipy.signal import filtfilt,butter, lfilter
+    buffer=madmom.audio.signal.normalize(buffer)
+    bark_frequencies=[20,100,200,300,400,510,630,770,920,1080,1270,1480,1720,
+                      2000,2320,2700,3150,3700,4400,5300,6400,7700,9500,12000,
+                      15500]
+    #From scipy cookbooks
+    def butter_bandpass(lowcut, highcut, fs, order=5):
+        nyq = 0.5 * fs
+        low = lowcut / nyq
+        high = highcut / nyq
+        b, a = butter(order, [low, high], btype='band')
+        return b, a
 
-def get_preprocessed_spectrogram(buffer=None,A=None,B=None, sm_win=4, test=False):
+    def butter_bandpass_filter(data, lowcut, highcut, fs, order=2):
+        b, a = butter_bandpass(lowcut, highcut, fs, order=order)
+        y = lfilter(b, a, data)
+        return y
+    def get_filtered_band(buffer, low,hi, fs):
+        b, a = butter_bandpass(low,hi, fs, order=5)
+        return filtfilt(b,a,buffer)
+
+    sub_band_audio=np.zeros((buffer.shape[0],bark_bands))
+    mu=10**8
+    kernel=np.hanning(3)
+
+    sub_band_audio = madmom.audio.spectrogram.FilteredSpectrogram(buffer, filterbank=proc2, sample_rate=SAMPLE_RATE,
+                                                        frame_size=1024, hop_size=256, fmin=20,
+                                                        fmax=17000)#, window=np.kaiser(FRAME_SIZE, np.pi ** 2))
+
+    for i in range(20):
+        #sub_band_audio[:,i]=butter_bandpass_filter(buffer, bark_frequencies[i],bark_frequencies[i+1],sr)
+        sub_band_audio[:, i] = np.log(1+mu * np.abs(sub_band_audio[:, i])) / np.log(1 + mu)
+        #sub_band_audio[:, i] = ((np.sign(sub_band_audio[:,i]) * np.log(1 + mu * np.abs(sub_band_audio[:,i])))) / (1 + np.log(mu))
+        #sub_band_audio[:, i] = np.gradient(sub_band_audio[:, i], axis=0)
+        #sub_band_audio[:, i] = np.clip(sub_band_audio[:, i], 0, None, out=sub_band_audio[:, i])
+        #sub_band_audio[:, i] = np.mean(sub_band_audio[:, i])
+        #sub_band_audio[:, i] = np.convolve(sub_band_audio[:, i], kernel, 'same')
+        #sub_band_audio[:-1, i] = np.diff(sub_band_audio[:, i],n=1, axis=0)
+        #np.clip(sub_band_audio[:, i], 0, None, out=sub_band_audio[:, i])
+    bat_odf=np.zeros(sub_band_audio.shape[0])
+    for i in range(sub_band_audio.shape[0]):
+        bat_odf[i] = np.mean(sub_band_audio[i, :])
+    #bat_odf = np.convolve(bat_odf[:-1], kernel, 'same')
+    bat_odf[:-1]=np.diff(bat_odf,n=1, axis=0)
+    np.clip(bat_odf, 0, None, out=bat_odf)
+
+    bat_odf=bat_odf/max(bat_odf[2:-2])
+    #showEnvelope(bat_odf[2:-2])
+    return bat_odf[:-2]
+    #showEnvelope(sub_band_audio[800000:900000])
+
+def get_preprocessed_spectrogram(buffer=None,A=None,B=None, sm_win=4, test=False, Print=False):
     """
     Preprocess source audio data and return a processed stft
     :param buffer: numpy array, None, source audio
@@ -676,19 +734,23 @@ def get_preprocessed_spectrogram(buffer=None,A=None,B=None, sm_win=4, test=False
     :return: numpy array, preprocessed stft of the source data
     """
     if buffer is not None:
-        buffer = madmom.audio.FramedSignal(buffer, sample_rate=SAMPLE_RATE, frame_size=FRAME_SIZE, hop_size=HOP_SIZE)
         spec = madmom.audio.spectrogram.FilteredSpectrogram(buffer, filterbank=proc, sample_rate=SAMPLE_RATE,
                                                             frame_size=FRAME_SIZE, hop_size=HOP_SIZE,fmin=20,
                                                             fmax=17000, window=np.kaiser(FRAME_SIZE, np.pi**2))
-                                                                       # window=hann_poisson_window(FRAME_SIZE,2))
+
+
+        #if Print:
+        #    showEnvelope((buffer[600000:1100000]))
+        #    pass
+
     if A is not None:
         spec = np.outer(A, B).T
     #kernel=np.kaiser(6,5)
     if test:
-        mu =0.4
+        mu =10**8
         for i in range(spec.shape[1]):
-            # spec[:, i] = (mu * np.abs(spec[:, i])) / (1+np.log( mu))
-            spec[:, i] = ((np.sign(spec[:, i]) * np.log(1 + mu * np.abs(spec[:, i])))) / (1 + np.log(mu))
+            spec[:, i] = np.log(1+mu * np.abs(spec[:, i])) / np.log(1+ mu)
+            #spec[:, i] = ((np.sign(spec[:, i]) * np.log(1 + mu * np.abs(spec[:, i])))) / (1 + np.log(mu))
 
     kernel=np.hanning(sm_win)
     for i in range(spec.shape[1]):
@@ -703,7 +765,6 @@ def get_preprocessed_spectrogram(buffer=None,A=None,B=None, sm_win=4, test=False
         #spec[1:]=spec[1:]-spec[:-1]
         #spec=(spec+np.abs(spec))/2
         #spec=spec/spec.max()
-
     return spec
 
 
@@ -731,6 +792,7 @@ def superflux(spec_x=[], A=None, B=None, win_size=8):
         B = np.convolve(B, kernel, 'same')
 
         #rebuild spectrogram
+
         spec_x = np.outer(A, B)
 
     #To log magnitude
@@ -837,10 +899,12 @@ def k_in_n(k, n, window=1):
     :return: float, true positive hits
     """
     hits = 0
+
     for i in n:
         for j in k:
             if (j - window <= i <= j + window):
                 hits += 1
+
                 break
             if (j + window > i):
                 break
@@ -859,8 +923,7 @@ def extract_tempo(onsets=None, window_size_in_s=10, constant_tempo=True):
     win_len_s = window_size_in_s
     N = int(SAMPLE_RATE / LH * win_len_s)
     min_bpm = int(DEFAULT_TEMPO / 4)  # 30
-    tic = time.clock()
-
+    #tic = time()
 
     pad_len=360 #fixed pad length
 
@@ -873,14 +936,13 @@ def extract_tempo(onsets=None, window_size_in_s=10, constant_tempo=True):
     fonsets = np.lib.stride_tricks.as_strided(onsets, shape=(N, n_frames),
                                               strides=(onsets.itemsize, onsets.itemsize))
 
-    powerspec = np.abs(fft.fft(fonsets, n=360, axis=0)) ** 2
-
-
-    autocorr = fft.ifft(powerspec, axis=0, overwrite_x=True)
+    fftonsets=fft.fft(fonsets, n=360, axis=0)
+    comp=fftonsets*np.conj(fftonsets)
+    autocorr = fft.ifft(comp, axis=0, overwrite_x=True)
     sff = (autocorr.real / autocorr.real.max())
-
-    # mean calcs.
+    # showFFT(sff)
     sff_mean = np.mean(sff, axis=1, keepdims=True)
+
     bpms = np.zeros(int(sff.shape[0]), dtype=np.float)
     bpms[0] = np.inf
     bpms[1:] = 60.0 * SAMPLE_RATE / (HOP_SIZE * np.arange(1.0,sff.shape[0]))
@@ -895,8 +957,8 @@ def extract_tempo(onsets=None, window_size_in_s=10, constant_tempo=True):
     prior = np.exp(-0.5 * ((np.log2(bpms) - np.log2(tempi_mean)) / 0.2) ** 2)
     best_period = np.argmax(sff * prior[:, np.newaxis], axis=0)
     tempi = bpms[best_period]
-    print('testi',np.mean(tempi))
-    print(tempi_mean)
+    #print('testi',np.mean(tempi))
+    #print(tempi_mean)
     # Wherever the best tempo is index 0, return start_bpm
     tempi[best_period == 0] = min_bpm
     #showEnvelope(tempi)
@@ -922,7 +984,7 @@ def extract_tempo(onsets=None, window_size_in_s=10, constant_tempo=True):
 
     target_median=np.median(target_tempos)
     tempi_smooth[:] = tempi_smooth[:] / target_median
-    print('\ntempomap time:{}'.format(time.clock() - tic))
+    #print('\ntempomap time:{}'.format(time() - tic))
 
     return (tempi_smooth)
 
@@ -1012,7 +1074,7 @@ def pick_onsets(F, threshold=0.15, w=3.5):
     # Pick local maxima greater than threshold
     # (-.2 to move optimal threshold range away from zero in automatic threshold
     # calculation, This should not make a difference but it does, investigate)
-    onsets = np.where(localMaxima >= threshold-.2)
+    onsets = np.where(localMaxima >= threshold -.2)
     #Onset indices array
     rets = localMaximaInd[0][onsets]
 
@@ -1106,7 +1168,7 @@ def pick_onsets_dynT(F, threshold=0., N=10):
     # Return onset indices
     return rets
 
-def pick_onsets_bat(F, threshold=0.15, N=50, w=3.5, print=False):
+def pick_onsets_bat(F, threshold=0.15, N=100, w=3.5, print=False):
     """
     Simple onset peak picking algorithm, picks local maxima that are
     greater than median of local maxima + correction factor.
@@ -1304,11 +1366,16 @@ def showEnvelope(env, legend=None, labels=None):
         plt.tight_layout()
     else:
         plt.figure(figsize=(10, 2))
-        plt.ylim(ymax=1)
-        plt.plot(env[0],color='b')
-        plt.plot(env[1], color='r', linestyle='-')
-        #plt.vlines(env[1], 0,
-        #           1, color='r', alpha=0.8, label='peaks', linestyles='-')
+        #plt.ylim(ymax=1)
+        plt.plot(env)
+        # plt.plot(env[0], label='Onset envelope')
+        #
+        # #plt.hlines(env[2],0,8000, color='r', linestyle=':')
+        # plt.hlines(env[2], 0,500, color='r', alpha=0.8, label='threshold', linestyles='-')
+        # plt.hlines(env[3], 0, 500, color='k', alpha=0.8, label='highest optimal threshold', linestyles='--')
+        # plt.hlines(env[1], 0, 500, color='g', alpha=0.8, label='lowest optimal threshold', linestyles=':')
+        #
+        # plt.gca().legend(('signal','final threshold','highest optimal threshold','lowest optimal threshold'), loc='right')
         plt.show()
         #ax = plt.subplot(111)
         if legend != None:
@@ -1362,7 +1429,7 @@ def showFFT(env, ticks=None):
         plt.ylabel('tempo', fontsize=12)
         plt.yticks(np.arange(0, top, 10), np.rint(np.fliplr([ticks[0:top:10], ]))[0])
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(10, 3))
     plt.imshow(env, aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
     plt.show()
     # plt.xlabel('frame', fontsize=12)
@@ -1508,7 +1575,7 @@ def splitrowsanddecode(a, deltaTempo=1.0):
         """
     decodedFrames = []
     # multiplier to make tempo the global tempo after generation.
-    print(deltaTempo)
+    #print(deltaTempo)
     frameMul = 1/deltaTempo
     if False:
         frameMul = SAMPLE_RATE / Q_HOP / SXTH_DIV
