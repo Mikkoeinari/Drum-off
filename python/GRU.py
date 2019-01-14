@@ -9,6 +9,7 @@ t0 = time()
 import os
 import sys
 import tensorflow as tf
+import pandas as pd
 
 sys.setrecursionlimit(10000)
 from sklearn.utils import resample

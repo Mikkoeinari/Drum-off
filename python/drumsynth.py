@@ -84,7 +84,7 @@ def createWav(filePath, outName=None, addCountInAndCountOut=True, deltaTempo=1.0
 
     d = utils.splitrowsanddecode(d, deltaTempo)
     gen = pd.DataFrame(d, columns=['time', 'inst'])
-    gen['time'] = utils.frame_to_time(gen['time'], hop_length=int(utils.Q_HOP * 2))
+    gen['time'] = utils.frame_to_time(gen['time'],sr=int(utils.SAMPLE_RATE/2), hop_length=int(utils.Q_HOP))
     d = gen.values
     # file pointer
     cursor = 0

@@ -262,16 +262,16 @@ MyScreenManager:
         NumberButton:
             id:kd0
             group:'kick'
-            background_radio_normal : './red' + 'One' + '.png'
-            background_radio_down : './red' + 'One' + 'Act.png'
-            background_radio_disabled_normal : './green' + 'One' + '.png'
-            background_radio_disabled_down :'./green' + 'One' + 'Act.png'
+            background_radio_normal : './UiImg/red' + 'One' + '.png'
+            background_radio_down : './UiImg/red' + 'One' + 'Act.png'
+            background_radio_disabled_normal : './UiImg/green' + 'One' + '.png'
+            background_radio_disabled_down :'./UiImg/green' + 'One' + 'Act.png'
             on_active:root.kdTake=0
             active:True
             size_hint:(.05, .05)
             pos_hint: {"x": .625, 'y':0.85}
         RecButton:
-            source: './RecBtn.png'
+            source: './UiImg/RecBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .45, 'y':0.85}
             on_release:root.runSoundCheck(0+root.kdTake)if self.isActive else root.stopSoundCheck()
@@ -282,7 +282,7 @@ MyScreenManager:
         PlayButton:
             id:play0
             text:'1'
-            source: './PlayBtn.png'
+            source: './UiImg/PlayBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .5, 'y':0.85}
             on_release:root.playSoundCheck(0,root.kdTake) if self.isActive else root.stopSoundCheck()
@@ -304,10 +304,10 @@ MyScreenManager:
             pos_hint: {"x": .625, 'y':0.80}
         NumberButton:
             id:sn0
-            background_radio_normal : './red' + 'One' + '.png'
-            background_radio_down : './red' + 'One' + 'Act.png'
-            background_radio_disabled_normal : './green' + 'One' + '.png'
-            background_radio_disabled_down :'./green' + 'One' + 'Act.png'
+            background_radio_normal : './UiImg/red' + 'One' + '.png'
+            background_radio_down : './UiImg/red' + 'One' + 'Act.png'
+            background_radio_disabled_normal : './UiImg/green' + 'One' + '.png'
+            background_radio_disabled_down :'./UiImg/green' + 'One' + 'Act.png'
             active:True
             on_active:root.snTake=0
             group:'snare'
@@ -315,7 +315,7 @@ MyScreenManager:
             size_hint:(.05, .05)
             pos_hint: {"x": .625, 'y':0.80}
         RecButton:
-            source: './RecBtn.png'
+            source: './UiImg/RecBtn.png'
             text: 'Kick'
             size_hint:(.05, .05)
             pos_hint: {"x": .45, 'y':0.80}
@@ -327,7 +327,7 @@ MyScreenManager:
         PlayButton:
             id:play1
             text:'2'
-            source: './PlayBtn.png'
+            source: './UiImg/PlayBtn.png'
             text: 'Kick'
             size_hint:(.05, .05)
             pos_hint: {"x": .5, 'y':0.80}
@@ -352,10 +352,10 @@ MyScreenManager:
             pos_hint: {"x": .625, 'y':0.75}
         NumberButton:
             id:hh0
-            background_radio_normal : './red' + 'One' + '.png'
-            background_radio_down : './red' + 'One' + 'Act.png'
-            background_radio_disabled_normal : './green' + 'One' + '.png'
-            background_radio_disabled_down :'./green' + 'One' + 'Act.png'
+            background_radio_normal : './UiImg/red' + 'One' + '.png'
+            background_radio_down : './UiImg/red' + 'One' + 'Act.png'
+            background_radio_disabled_normal : './UiImg/green' + 'One' + '.png'
+            background_radio_disabled_down :'./UiImg/green' + 'One' + 'Act.png'
             active:True
             on_active:root.hhTake=0
             group:'hihat'
@@ -363,10 +363,10 @@ MyScreenManager:
             pos_hint: {"x": .625, 'y':0.75}
         NumberButton:
             id:hh1
-            background_radio_normal : './red' + 'Two' + '.png'
-            background_radio_down : './red' + 'Two' + 'Act.png'
-            background_radio_disabled_normal : './green' + 'Two' + '.png'
-            background_radio_disabled_down :'./green' + 'Two' + 'Act.png'
+            background_radio_normal : './UiImg/red' + 'Two' + '.png'
+            background_radio_down : './UiImg/red' + 'Two' + 'Act.png'
+            background_radio_disabled_normal : './UiImg/green' + 'Two' + '.png'
+            background_radio_disabled_down :'./UiImg/green' + 'Two' + 'Act.png'
             on_active:root.hhTake=1
             on_active:disabled=False
             group:'hihat'
@@ -374,16 +374,16 @@ MyScreenManager:
             pos_hint: {"x": .675, 'y':0.75}
         NumberButton:
             id:hh2
-            background_radio_normal : './red' + 'Three' + '.png'
-            background_radio_down : './red' + 'Three' + 'Act.png'
-            background_radio_disabled_normal : './green' + 'Three' + '.png'
-            background_radio_disabled_down :'./green' + 'Three' + 'Act.png'
+            background_radio_normal : './UiImg/red' + 'Three' + '.png'
+            background_radio_down : './UiImg/red' + 'Three' + 'Act.png'
+            background_radio_disabled_normal : './UiImg/green' + 'Three' + '.png'
+            background_radio_disabled_down :'./UiImg/green' + 'Three' + 'Act.png'
             on_active:root.hhTake=2
             group:'hihat'
             size_hint:(.05, .05)
             pos_hint: {"x": .725, 'y':0.75}
         RecButton:
-            source: './RecBtn.png'
+            source: './UiImg/RecBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .45, 'y':0.75}
             on_release:root.runSoundCheck(2+root.hhTake)if self.isActive else root.stopSoundCheck()
@@ -396,7 +396,7 @@ MyScreenManager:
         PlayButton:
             id:play2
             text:'3'
-            source: './PlayBtn.png'
+            source: './UiImg/PlayBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .5, 'y':0.75}
             on_release:root.playSoundCheck(2,root.hhTake) if self.isActive else root.stopSoundCheck()
@@ -417,10 +417,10 @@ MyScreenManager:
             pos_hint: {"x": .625, 'y':0.70}
         NumberButton:
             id:tt0
-            background_radio_normal : './red' + 'One' + '.png'
-            background_radio_down : './red' + 'One' + 'Act.png'
-            background_radio_disabled_normal : './green' + 'One' + '.png'
-            background_radio_disabled_down :'./green' + 'One' + 'Act.png'
+            background_radio_normal : './UiImg/red' + 'One' + '.png'
+            background_radio_down : './UiImg/red' + 'One' + 'Act.png'
+            background_radio_disabled_normal : './UiImg/green' + 'One' + '.png'
+            background_radio_disabled_down :'./UiImg/green' + 'One' + 'Act.png'
             active:True
             on_active:root.ttTake=0
             group:'toms'
@@ -428,26 +428,26 @@ MyScreenManager:
             pos_hint: {"x": .625, 'y':0.70}
         NumberButton:
             id:tt1
-            background_radio_normal : './red' + 'Two' + '.png'
-            background_radio_down : './red' + 'Two' + 'Act.png'
-            background_radio_disabled_normal : './green' + 'Two' + '.png'
-            background_radio_disabled_down :'./green' + 'Two' + 'Act.png'
+            background_radio_normal : './UiImg/red' + 'Two' + '.png'
+            background_radio_down : './UiImg/red' + 'Two' + 'Act.png'
+            background_radio_disabled_normal : './UiImg/green' + 'Two' + '.png'
+            background_radio_disabled_down :'./UiImg/green' + 'Two' + 'Act.png'
             on_active:root.ttTake=1
             group:'toms'
             size_hint:(.05, .05)
             pos_hint: {"x": .675, 'y':0.70}
         NumberButton:
             id:tt2
-            background_radio_normal : './red' + 'Three' + '.png'
-            background_radio_down : './red' + 'Three' + 'Act.png'
-            background_radio_disabled_normal : './green' + 'Three' + '.png'
-            background_radio_disabled_down :'./green' + 'Three' + 'Act.png'
+            background_radio_normal : './UiImg/red' + 'Three' + '.png'
+            background_radio_down : './UiImg/red' + 'Three' + 'Act.png'
+            background_radio_disabled_normal : './UiImg/green' + 'Three' + '.png'
+            background_radio_disabled_down :'./UiImg/green' + 'Three' + 'Act.png'
             on_active:root.ttTake=2
             group:'toms'
             size_hint:(.05, .05)
             pos_hint: {"x": .725, 'y':0.70}
         RecButton:
-            source: './RecBtn.png'
+            source: './UiImg/RecBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .45, 'y':0.70}
             on_release:root.runSoundCheck(5+root.ttTake)if self.isActive else root.stopSoundCheck()
@@ -458,7 +458,7 @@ MyScreenManager:
         PlayButton:
             id:play5
             text:'5'
-            source: './PlayBtn.png'
+            source: './UiImg/PlayBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .5, 'y':0.70}
             on_release:root.playSoundCheck(5,root.ttTake) if self.isActive else root.stopSoundCheck()
@@ -479,10 +479,10 @@ MyScreenManager:
             pos_hint: {"x": .625, 'y':0.65}
         NumberButton:
             id:ft0
-            background_radio_normal : './red' + 'One' + '.png'
-            background_radio_down : './red' + 'One' + 'Act.png'
-            background_radio_disabled_normal : './green' + 'One' + '.png'
-            background_radio_disabled_down :'./green' + 'One' + 'Act.png'
+            background_radio_normal : './UiImg/red' + 'One' + '.png'
+            background_radio_down : './UiImg/red' + 'One' + 'Act.png'
+            background_radio_disabled_normal : './UiImg/green' + 'One' + '.png'
+            background_radio_disabled_down :'./UiImg/green' + 'One' + 'Act.png'
             active:True
             on_active:root.ftTake=0
             group:'floortoms'
@@ -490,16 +490,16 @@ MyScreenManager:
             pos_hint: {"x": .625, 'y':0.65}
         NumberButton:
             id:ft1
-            background_radio_normal : './red' + 'Two' + '.png'
-            background_radio_down : './red' + 'Two' + 'Act.png'
-            background_radio_disabled_normal : './green' + 'Two' + '.png'
-            background_radio_disabled_down :'./green' + 'Two' + 'Act.png'
+            background_radio_normal : './UiImg/red' + 'Two' + '.png'
+            background_radio_down : './UiImg/red' + 'Two' + 'Act.png'
+            background_radio_disabled_normal : './UiImg/green' + 'Two' + '.png'
+            background_radio_disabled_down :'./UiImg/green' + 'Two' + 'Act.png'
             on_active:root.ftTake=1
             group:'floortoms'
             size_hint:(.05, .05)
             pos_hint: {"x": .675, 'y':0.65}
         RecButton:
-            source: './RecBtn.png'
+            source: './UiImg/RecBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .45, 'y':0.65}
             on_release:root.runSoundCheck(8+root.ftTake)if self.isActive else root.stopSoundCheck()
@@ -510,7 +510,7 @@ MyScreenManager:
         PlayButton:
             id:play8
             text:'8'
-            source: './PlayBtn.png'
+            source: './UiImg/PlayBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .5, 'y':0.65}
             on_release:root.playSoundCheck(8,root.ftTake) if self.isActive else root.stopSoundCheck()
@@ -532,17 +532,17 @@ MyScreenManager:
             pos_hint: {"x": .625, 'y':0.60}
         NumberButton:
             id:rd0
-            background_radio_normal : './red' + 'One' + '.png'
-            background_radio_down : './red' + 'One' + 'Act.png'
-            background_radio_disabled_normal : './green' + 'One' + '.png'
-            background_radio_disabled_down :'./green' + 'One' + 'Act.png'
+            background_radio_normal : './UiImg/red' + 'One' + '.png'
+            background_radio_down : './UiImg/red' + 'One' + 'Act.png'
+            background_radio_disabled_normal : './UiImg/green' + 'One' + '.png'
+            background_radio_disabled_down :'./UiImg/green' + 'One' + 'Act.png'
             active:True
             on_active:root.rdTake=0
             group:'ride'
             size_hint:(.05, .05)
             pos_hint: {"x": .625, 'y':0.60}
         RecButton:
-            source: './RecBtn.png'
+            source: './UiImg/RecBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .45, 'y':0.60}
             on_release:root.runSoundCheck(10+root.rdTake)if self.isActive else root.stopSoundCheck()
@@ -553,7 +553,7 @@ MyScreenManager:
         PlayButton:
             id:play10
             text:'13'
-            source: './PlayBtn.png'
+            source: './UiImg/PlayBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .5, 'y':0.60}
             on_release:root.playSoundCheck(10,root.rdTake) if self.isActive else root.stopSoundCheck()
@@ -577,10 +577,10 @@ MyScreenManager:
 
         NumberButton:
             id:cr0
-            background_radio_normal : './red' + 'One' + '.png'
-            background_radio_down : './red' + 'One' + 'Act.png'
-            background_radio_disabled_normal : './green' + 'One' + '.png'
-            background_radio_disabled_down :'./green' + 'One' + 'Act.png'
+            background_radio_normal : './UiImg/red' + 'One' + '.png'
+            background_radio_down : './UiImg/red' + 'One' + 'Act.png'
+            background_radio_disabled_normal : './UiImg/green' + 'One' + '.png'
+            background_radio_disabled_down :'./UiImg/green' + 'One' + 'Act.png'
             active:True
             on_active:root.crTake=0
             group:'crashes'
@@ -588,26 +588,26 @@ MyScreenManager:
             pos_hint: {"x": .625, 'y':0.55}
         NumberButton:
             id:cr1
-            background_radio_normal : './red' + 'Two' + '.png'
-            background_radio_down : './red' + 'Two' + 'Act.png'
-            background_radio_disabled_normal : './green' + 'Two' + '.png'
-            background_radio_disabled_down :'./green' + 'Two' + 'Act.png'
+            background_radio_normal : './UiImg/red' + 'Two' + '.png'
+            background_radio_down : './UiImg/red' + 'Two' + 'Act.png'
+            background_radio_disabled_normal : './UiImg/green' + 'Two' + '.png'
+            background_radio_disabled_down :'./UiImg/green' + 'Two' + 'Act.png'
             on_active:root.crTake=1
             group:'crashes'
             size_hint:(.05, .05)
             pos_hint: {"x": .675, 'y':0.55}
         NumberButton:
             id:cr2
-            background_radio_normal : './red' + 'Three' + '.png'
-            background_radio_down : './red' + 'Three' + 'Act.png'
-            background_radio_disabled_normal : './green' + 'Three' + '.png'
-            background_radio_disabled_down :'./green' + 'Three' + 'Act.png'
+            background_radio_normal : './UiImg/red' + 'Three' + '.png'
+            background_radio_down : './UiImg/red' + 'Three' + 'Act.png'
+            background_radio_disabled_normal : './UiImg/green' + 'Three' + '.png'
+            background_radio_disabled_down :'./UiImg/green' + 'Three' + 'Act.png'
             on_active:root.crTake=2
             group:'crashes'
             size_hint:(.05, .05)
             pos_hint: {"x": .725, 'y':0.55}
         RecButton:
-            source: './RecBtn.png'
+            source: './UiImg/RecBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .45, 'y':0.55}
             on_release:root.runSoundCheck(11+root.crTake)if self.isActive else root.stopSoundCheck()
@@ -618,7 +618,7 @@ MyScreenManager:
         PlayButton:
             id:play11
             text:'17'
-            source: './PlayBtn.png'
+            source: './UiImg/PlayBtn.png'
             size_hint:(.05, .05)
             pos_hint: {"x": .5, 'y':0.55}
             on_release:root.playSoundCheck(11,root.crTake) if self.isActive else root.stopSoundCheck()

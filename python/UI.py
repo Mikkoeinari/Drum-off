@@ -35,32 +35,32 @@ class RecButton(ButtonBehavior, Image):
         self.changeStatus()
         if self.isActive:
             print ('Rec')
-            self.source = "StopBtn.png"
+            self.source = "./UiImg/StopBtn.png"
         else:
             print ("deactivated")
     def changeStatus(self):
         if self.isActive:
             self.isActive=False
-            self.source="RecBtn.png"
+            self.source="./UiImg/RecBtn.png"
         else:
             self.isActive=True
-            self.source = "RecBtn.png"
+            self.source = "./UiImg/RecBtn.png"
 class PlayButton(ButtonBehavior, Image):
     isActive=False
     def on_press(self):
         self.changeStatus()
         if self.isActive:
             print ('Play')
-            self.source = "StopBtn.png"
+            self.source = "./UiImg/StopBtn.png"
         else:
             print ("deactivated")
     def changeStatus(self):
         if self.isActive:
             self.isActive=False
-            self.source="PlayBtn.png"
+            self.source="./UiImg/PlayBtn.png"
         else:
             self.isActive=True
-            self.source = "PlayBtn.png"
+            self.source = "./UiImg/PlayBtn.png"
 class StopButton(ButtonBehavior, Image):
     isActive=False
     def on_press(self):
@@ -72,10 +72,10 @@ class StopButton(ButtonBehavior, Image):
     def changeStatus(self):
         if self.isActive:
             self.isActive=False
-            self.source="StopBtnDeactivated.png"
+            self.source="./UiImg/StopBtnDeactivated.png"
         else:
             self.isActive=True
-            self.source = "StopBtn.png"
+            self.source = "./UiImg/StopBtn.png"
 
 class NumberButton(Image,PicCheckBox,ButtonBehavior):
     activeNumber=None
@@ -593,7 +593,8 @@ class LoadScreen(Screen):
             for i in drumoff.drums:
                 drum = i.get_name()[0]
                 # make hihats one drum?? nope
-                app.NrOfDrums[drum] += 1
+##HÄTÄ PÄÄLLÄ!!!_________________________________________________________________________________________
+                #app.NrOfDrums[drum] += 1
             app.root.current = 'MainMenu'
         except Exception as e:
             print('load kit ui: ',e)

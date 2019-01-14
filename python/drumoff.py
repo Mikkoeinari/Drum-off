@@ -1,10 +1,11 @@
 from utils import *
 from time import time
+import pandas as pd
 import threading
 import os,re
 t0 = time()
 import pickle
-
+from scipy import signal
 # live audio
 #print("Souncheck")
 
@@ -78,6 +79,26 @@ def loadKit(drumkit_path):
     drums = pickle.load(open("{}/pickledDrumkit.drm".format(drumkit_path), 'rb'))
     #fpr = pickle.load(open("{}/pickledFpr.drm".format(drumkit_path), 'rb'))
 
+# gaus=np.zeros((517,5))
+# gaus[::516,0]+=1
+# gaus[::256,1]+=1
+# gaus[::128,2]+=1
+# gaus[::64,3]+=1
+# gaus[::32,4]+=1
+#
+#
+# window = signal.gaussian(516,std=128)
+# gaus[:,0]=np.convolve(gaus[:,0], window, 'same')
+# window = signal.gaussian(516,std=64)
+# gaus[:,1]=np.convolve(gaus[:,1], window, 'same')
+# window = signal.gaussian(516,std=32)
+# gaus[:,2]=np.convolve(gaus[:,2], window, 'same')
+# window = signal.gaussian(516,std=16)
+# gaus[:,3]=np.convolve(gaus[:,3], window, 'same')
+# window = signal.gaussian(516,std=8)
+# gaus[:,4]=np.convolve(gaus[:,4], window, 'same')
+# #gaus=list(gaus)
+# showEnvelope(gaus+np.flip(gaus, axis=0))
 
 def playLive(drumkit_path, thresholdAdj=0.0, saveAll=False):
     ###T live input
@@ -239,17 +260,17 @@ def play(filePath, K):
         print('jotain meni vikaan!')
 
     #fs=np.zeros((16,3))
-    skip_secs=int(44100*0)
+    skip_secs=int(44100*0)#train:17.5
     for n in range(1):
         #print(2**n)
 
         #initKitBG(filePath, 9, K=n)#, rm_win=n, bs_len=350)
         t0 = time()
         plst,i = processLiveAudio(liveBuffer=buffer[skip_secs:],
-                                  drums=drums, quant_factor=0.0, iters=128, method='NMFD')
+                                  drums=drums, quant_factor=1.0, iters=128, method='NMFD')
         print('\nNMFDtime:%0.2f' % (time() - t0))
         #Print scores if annotated
-        annotated = True
+        annotated = False
         for k in range(1):
             if (annotated):
                 # print f-score:
@@ -299,7 +320,7 @@ def play(filePath, K):
     for i in plst:
         hits = i.get_hits()
         binhits = i.get_hits()
-        hits = frame_to_time(hits, hop_length=HOP_SIZE)
+        hits = frame_to_time(hits, hop_length=Q_HOP)
         labels = np.full(len(hits), i.get_midinote(), np.int64)
         binlabels = np.full(len(binhits), i.get_name(), np.int64)
         inst = zip(hits, labels)
@@ -319,11 +340,18 @@ def play(filePath, K):
 
     madmom.io.midi.write_midi(df.values, 'midi_testit_.mid')
     generated = splitrowsanddecode(bintimes)
+    bintimes = mergerowsandencode(generated)
+    df = pd.DataFrame(times, columns=['time', 'inst'])
+    df['duration'] = pd.Series(np.full((len(times)), 0, np.int64))
+    df['vel'] = pd.Series(np.full((len(times)), 127, np.int64))
+    bindf = pd.DataFrame(bintimes, columns=['inst'])
+    bindf.to_csv('testbeat0.csv', index=True, header=False, sep="\t")
     gen = pd.DataFrame(generated, columns=['time', 'inst'])
     gen.to_csv('generated_enc_dec0.csv', index=False, header=None, sep='\t')
+
     #print('pattern generating time:%0.2f' % (time() - t0))
     # change to time and midinotes
-    gen['time'] = frame_to_time(gen['time'], hop_length=353)
+    gen['time'] = frame_to_time(gen['time'], hop_length=Q_HOP)
     gen['inst'] = to_midinote(gen['inst'])
     gen['duration'] = pd.Series(np.full((len(generated)), 0, np.int64))
     gen['vel'] = pd.Series(np.full((len(generated)), 127, np.int64))
@@ -438,10 +466,12 @@ def testOnsDet(filePath, alg=0, ppAlg=0, ed=False):
 #debug
 #initKitBG('Kits/mcd2/',8,K)
 #K=1
-#file='../trainSamplet/'
+file='../trainSamplet/'
 #initKitBG(file,9,K=K, drumwise=True)
-#loadKit(file)
-#play(file, K=K)
+loadKit(file)
+play(file, K=K)
+play(file, K=K)
+play(file, K=K)
 #testOnsDet(file, alg=0, ppAlg=0)
 #initKitBG('../DXSamplet/',9,K=K,rm_win=6)
 #loadKit('../trainSamplet/')
