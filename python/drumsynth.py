@@ -3,11 +3,11 @@
 import pandas as pd
 import numpy as np
 import utils
-import time
+
 import pyaudio
 import wave
 from scipy.io import wavfile
-t0 = time.time()
+
 _ImRunning = False
 bd=None
 
@@ -144,8 +144,8 @@ def playWav(filePath):
     #wauva.writeframes(wf)
     #wauva.close()
     wf = wave.open(filePath, 'rb')
-    print(wf.getframerate())
-    print(wf.getnframes())
+    #print(wf.getframerate())
+    #print(wf.getnframes())
     p = pyaudio.PyAudio()
 
     def callback(in_data, frame_count, time_info, status):

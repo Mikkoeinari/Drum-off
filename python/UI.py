@@ -17,7 +17,7 @@ import utils
 from os import mkdir, listdir
 import threading
 from os.path import join, isdir
-import time
+
 import drumsynth
 import GRU as mgu
 import numpy as np
@@ -102,7 +102,7 @@ countInLength=2
 class StartScreen(Screen):
     def getStatus(self):
         app = App.get_running_app()
-        string = 'Current Kit:{} (kit size:{} drums)\n'.format(app.KitName, app.NrOfDrums) + 'Kit Ready:{}\n'.format(
+        string = 'Current Kit: {} (kit size: {} drums)\n'.format(app.KitName, app.NrOfDrums) + 'Kit Ready:{}\n'.format(
             app.KitInit) + 'Model ready:{}'.format(app.Model)
         return string
 
@@ -112,7 +112,7 @@ class StartScreen(Screen):
             nr = sum(app.NrOfDrums)
         else:
             nr = 0
-        string = 'Current Kit:{} (kit size:{} drums)\n'.format(app.KitName, nr) + 'Kit Ready:{}\n'.format(
+        string = 'Current Kit: {} (kit size: {} drums)\n'.format(app.KitName, nr) + 'Kit Ready:{}\n'.format(
             app.KitInit) + 'Model ready:{}'.format(app.Model)
         self.ids.status.text = string
     def quit(self):
@@ -130,6 +130,7 @@ class SoundCheckScreen(Screen):
     nrMessage = StringProperty()
     finishMessage = StringProperty()
     finishStatus = StringProperty()
+    model_type=StringProperty()
     kdTake = NumericProperty()
     snTake = NumericProperty()
     hhTake = NumericProperty()
@@ -147,6 +148,7 @@ class SoundCheckScreen(Screen):
         self.nrMessage = '1'
         self.finishMessage = 'Load Soundchecked Kit and Exit'
         self.finishStatus = 'Soundcheck not complete'
+        self.model_type = 'parallel_mgu'
         self.kdTake = 0
         self.snTake = 0
         self.hhTake = 0
@@ -263,6 +265,8 @@ class SoundCheckScreen(Screen):
         try:
             print(int(sum(app.NrOfDrums)))
             drumoff.initKitBG(fullPath, int(sum(app.NrOfDrums)))
+            mgu.buildVocabulary(hits=utils.get_possible_notes([i.get_name()[0] for i in drumoff.drums]))
+            mgu.initModel(kitPath=fullPath,destroy_old=True, model_type=self.model_type)
             app.KitInit = 'Initialized'
             app.root.current = 'MainMenu'
         except Exception as e:
@@ -374,6 +378,7 @@ class PlayScreen(Screen):
     lastPlayerPart = StringProperty()
     playBackMessage = StringProperty()
     trSize=NumericProperty()
+    model_type=StringProperty()
     temperature = NumericProperty()
     threshold = NumericProperty()
     deltaTempo = NumericProperty()
@@ -389,6 +394,7 @@ class PlayScreen(Screen):
         self.lastPlayerPart = ''
         self.lastGenPart = ''
         self.playBackMessage = ''
+        self.model_type='parallel_mgu'
         self.trSize=1.33
         self.temperature=0.8
         self.threshold = 0.0
@@ -453,6 +459,7 @@ class PlayScreen(Screen):
                 elif self.deltaTempo>1.66:
                     countTempo=.5
                 self.lastMessage=drumsynth.createWav(fullPath,outFile, addCountInAndCountOut=addCountInAndCountOut, deltaTempo=self.deltaTempo, countTempo=countTempo)
+
             except Exception as e:
                 print('createWav ui: ', e)
                 self.halt = True
@@ -478,6 +485,7 @@ class PlayScreen(Screen):
         def callback():
             try:
                 self.playBackMessage = 'Stop Playback'
+                print('playing:', fullPath)
                 drumsynth.playWav(fullPath)
                 if (self.lastMessage == ''):
                     self.playBackMessage = ''
@@ -505,9 +513,11 @@ class PlayScreen(Screen):
             try:##INIT MODEL!!
                 self.lastGenPart = mgu.generatePart(
                         mgu.train(fullPath, sampleMul=self.trSize,
-                                  forceGen=False, updateModel=self.modify), temp=self.temperature)
+                                  forceGen=False, updateModel=self.modify, model_type=self.model_type), temp=self.temperature, model_type=self.model_type)
                 self.createLast(self.lastGenPart,outFile='./generated.wav',addCountInAndCountOut=(not self.step))
-                #print(self.step)
+                #Remove hack!!
+                while self.lastMessage!='./generated.wav':
+                    pass
                 if self.step:
                     self.playBackMessage == 'Play Back Computer Performance'
                     return
@@ -519,6 +529,7 @@ class PlayScreen(Screen):
                 self.pBtnMessage = 'Play'
         t = threading.Thread(target=callback)
         t.start()
+
 
     def playButton(self):
         """
@@ -559,7 +570,7 @@ class PlayScreen(Screen):
                 self.lastPlayerPart, self.deltaTempo=drumoff.playLive(fullPath, self.threshold, saveAll=False)
                 if self.lastPlayerPart==False:
                     return
-                self.createLast(self.lastPlayerPart,addCountInAndCountOut=(not self.step))
+                self.createLast(self.lastPlayerPart,outFile='./player_performance.wav',addCountInAndCountOut=(not self.step))
                 if self.step:
                     self.playBackMessage = 'Play Back Last Performance'
                     self.pBtnMessage='Play'
@@ -585,16 +596,22 @@ class LoadScreen(Screen):
     def loadKit(self, filename):
         try:
             drumoff.loadKit(filename[0])
+            mgu.buildVocabulary(hits=utils.get_possible_notes([i.get_name()[0] for i in drumoff.drums]))
+            mgu.initModel(kitPath=filename[0]+'/', destroy_old=False)
             app = App.get_running_app()
             app.KitName = (filename[0].split('/')[-1])
             app.KitInit = 'Initialized'
-            app.NrOfDrums = [0] * len(drumoff.drums)
-            drumoff.initKitBG(filename[0],len(drumoff.drums))
+            app.Model='Loaded'
+            #app.NrOfDrums = [0] * len(drumoff.drums)
+            #No need for this unless initialization parameters changed
+            #drumoff.initKitBG(filename[0],len(drumoff.drums))
             for i in drumoff.drums:
                 drum = i.get_name()[0]
+
                 # make hihats one drum?? nope
 ##HÄTÄ PÄÄLLÄ!!!_________________________________________________________________________________________
-                #app.NrOfDrums[drum] += 1
+                app.NrOfDrums[drum] += 1
+            print(app.NrOfDrums)
             app.root.current = 'MainMenu'
         except Exception as e:
             print('load kit ui: ',e)
@@ -606,7 +623,7 @@ root_widget =Builder.load_file("UI.kv")
 
 class DrumOffApp(App):
 
-    NrOfDrums = np.zeros(24)
+    NrOfDrums = np.zeros(24).astype(int)
     KitName = 'none'
     Model = 'model not loaded'
     KitInit = 'Kit not initialized'

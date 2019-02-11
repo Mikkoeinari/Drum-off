@@ -1,9 +1,11 @@
-from time import time
+#from time import time
 import time
 import madmom
+
 #Uncomment to plot, conflicts with kivy!
-import matplotlib.cm as cmaps
-import matplotlib.pyplot as plt
+#import matplotlib.cm as cmaps
+#import matplotlib.pyplot as plt
+import OPTICS
 import numpy as np
 import scipy
 from scipy import fftpack as fft
@@ -20,7 +22,7 @@ HOP_SIZE = 2 ** 9
 Q_HOP = 689.0625*2 #have options[459.375,612.5,689.0625,1378.125]*[.5,1,2,4,8,16]
 SAMPLE_RATE = 44100
 FREQUENCY_PRE = np.ones((24))  # [0,16384]#0-2^14
-MIDINOTE = 16  # kickdrum in most systems
+MIDINOTE = 36  # kickdrum in standard midi notation
 THRESHOLD = 0.0
 PROBABILITY_THRESHOLD = 0.0
 DEFAULT_TEMPO = 120  # 175.44bpm 1/16 with hop 516
@@ -30,7 +32,7 @@ DELTA = 0.15
 midinotes = [36, 38, 42, 46, 44, 50, 48, 47, 43, 41, 51, 49, 57,
              55]  # BD, SN, CHH, OHH,SHH, TT,TT2,TT3, FT,FT2, RD, CR,CR2,splash, Here we need generality
 nrOfDrums = 14  # Maximum kit size
-nrOfPeaks = 32  # IF CHANGED ALL PREVIOUS SOUNDCHECKS INVALIDATE!!!
+nrOfPeaks = 16  # IF CHANGED ALL PREVIOUS SOUNDCHECKS INVALIDATE!!!
 max_n_frames = 10
 total_priors = 0
 MS_IN_MIN = 60000
@@ -166,6 +168,37 @@ class Drum(object):
         return self.probability_threshold
 
 
+def get_possible_notes(drum_kit=None):
+    """
+    Defines all notes producable with a human body and given drum kit
+    :param drum_kit: List of integers, drum identifiers of a drum kit
+    For instance kick, snare and closed hi-hat is [0,1,2]
+    :return: numpy array of integers, notes playable on the kit plus pause notes.
+    """
+    from itertools import combinations
+    # Pause notes[-1,...,-32]
+    pauses = [-i for i in range(1, 32)]
+    # remove kick from combinations, add back later
+    kickless = drum_kit[1:]
+    # Possible hits with 2 hands
+    hits_without_kick = list(combinations(kickless, 2))
+    # Add possible hits with one hand
+    hits_without_kick = hits_without_kick + [(i,) for i in kickless]
+    # Add kick to possible hits
+    hits_with_kick = [h + (drum_kit[0],) for h in hits_without_kick]
+    # concatenate all and add a solo kick drum
+    hits_with_and_without_kick = hits_with_kick + hits_without_kick + [(drum_kit[0],)]
+    # Notes array
+    possible_notes = np.zeros(len(hits_with_and_without_kick)).astype(int)
+    # Encode notes
+    for i in range(len(hits_with_and_without_kick)):
+        for j in hits_with_and_without_kick[i]:
+            possible_notes[i] = np.bitwise_or(possible_notes[i], 2 ** int(j))
+    # Add pauses to the notes
+    possible_notes = np.concatenate((possible_notes, pauses))
+    # return possible notes
+    return (possible_notes)
+
 def to_midinote(notes):
     return list(midinotes[i] for i in notes)
 
@@ -181,8 +214,8 @@ def findDefBinsBG(frames, filteredSpec, ConvFrames, K, bs_len=32):
     :return: tuple of Numpy arrays, prior vectors Wpre,heads for actual hits and tails for decay part of the sound
     """
 
-    global total_priors
-
+    global total_priors, max_n_frames
+    max_n_frames=ConvFrames
     gaps = np.zeros((frames.shape[0], max_n_frames))
     # gaps = np.zeros((frames.shape[0], ConvFrames))
     for i in range(frames.shape[0]):
@@ -290,7 +323,7 @@ def getPeaksFromBuffer(filt_spec, numHits):
     return peaks
 
 
-def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
+def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, method='NMFD'):
     """
 
     :param filt_spec: numpy array, The spectrum containing sound check
@@ -319,8 +352,10 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
         for j in range(K2):
             Wpre[:, ind + j, :] = tails[:, :, j]
             total_tails += 1
-
-    H, Wpre, err1 = NMFD(filt_spec.T, iters=128, Wpre=Wpre, include_priors=True)
+    if method=='NMFD':
+        H, Wpre, err1 = NMFD(filt_spec.T, iters=128, Wpre=Wpre, include_priors=True, n_heads=total_heads)
+    else:
+        H, err1=semi_adaptive_NMFB(filt_spec.T,  Wpre=Wpre,iters=128,n_heads=total_heads)
     total_heads = 0
     Hs = []
     for i in range(len(drums)):
@@ -330,8 +365,8 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
         if onset_alg == 0:
             for k in range(K1):
                 index = ind + k
-                # HN = superflux(A=sum(Wpre.T[0, index, :]), B=H[index], win_size=3)
-                HN = energyDifference(H[index], win_size=6)
+                HN = superflux(A=sum(Wpre.T[0, index, :]), B=H[index], win_size=3)
+                #HN = energyDifference(H[index], win_size=6)
                 # HN = HN / HN.max()
                 if k == 0:
                     H0 = HN
@@ -403,7 +438,7 @@ def recalculate_thresholds(filt_spec, shifts, drums, drumwise=False, rm_win=3):
             # arbitrary minimum threshold check
             threshold = max((threshold, 0.05))
 
-            # print('delta:', threshold, f_zero)
+            print('delta:', threshold, f_zero)
             drums[i].set_threshold(threshold)
             # drums[i].set_threshold(.2)
 
@@ -498,8 +533,7 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=1.0, iters=0, met
     """
 
     onset_alg = 2
-    filt_spec = get_preprocessed_spectrogram(liveBuffer, sm_win=4, Print=True)
-
+    filt_spec = get_preprocessed_spectrogram(liveBuffer, sm_win=4)
     stacks = 1
     total_priors = 0
     for i in range(len(drums)):
@@ -524,18 +558,16 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=1.0, iters=0, met
         for j in range(K2):
             Wpre[:, ind + j, :] = tails[:, :, j]
             total_tails += 1
-
-
-
     for i in range(int(stacks)):
         if method == 'NMFD' or method == 'ALL':
-            H, Wpre, err1 = NMFD(filt_spec.T, iters=iters, Wpre=Wpre, include_priors=True)
+            H, Wpre, err1 = NMFD(filt_spec.T, iters=iters, Wpre=Wpre, include_priors=True, n_heads=total_heads, hand_break=True)
         if method == 'NMF' or method == 'ALL':
-            H, err2 = semi_adaptive_NMFB(filt_spec.T, Wpre=Wpre, iters=iters)
+            H, err2 = semi_adaptive_NMFB(filt_spec.T, Wpre=Wpre, iters=iters, n_heads=total_heads, hand_break=True)
         if method == 'ALL':
             errors = np.zeros((err1.size, 2))
             errors[:, 0] = err1
             errors[:, 1] = err2
+
             # showEnvelope(errors, ('NMFD Error', 'NMF Error'), ('iterations', 'error'))
         if i == 0:
             WTot, HTot = Wpre, H
@@ -563,8 +595,8 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=1.0, iters=0, met
         if onset_alg == 0:
             for k in range(K1):
                 index = ind + k
-                # HN = superflux(A=sum(Wpre.T[0, index, :]), B=H[index],win_size=3)
-                HN = energyDifference(H[index], win_size=6)
+                HN = superflux(A=sum(Wpre.T[0, index, :]), B=H[index],win_size=3)
+                #HN = energyDifference(H[index], win_size=6)
                 # HN = HN / HN.max()
                 if k == 0:
                     H0 = HN
@@ -602,7 +634,6 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=1.0, iters=0, met
         # H0 = H0[:-(rm_win-1)] - running_mean(H0, rm_win)
         # H0 = np.array([0 if i < 0 else i for i in H0])
         # H0=H0/H0.max()
-
         peaks = pick_onsets(H0, threshold=drums[i].get_threshold() + thresholdAdj)
         # remove extrahits used to level peak picking algorithm:
         peaks = peaks[np.where(peaks < filt_spec.shape[0] - 1)]
@@ -640,7 +671,7 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=1.0, iters=0, met
 
     # duplicate cleaning
     if False:
-        duplicateResolution = 0.025
+        duplicateResolution = 0.05
         for i in drums:
             precHits = frame_to_time(i.get_hits())
             i.set_hits(time_to_frame(cleanDoubleStrokes(precHits, resolution=duplicateResolution)))
@@ -651,60 +682,56 @@ def processLiveAudio(liveBuffer=None, drums=None, quant_factor=1.0, iters=0, met
         newmax=0
         for i in drums:
             hits = i.get_hits()
-            if len(hits) is None:
+            if len(hits) is None or len(hits)==0:
                 i.set_hits([])
             else:
                 i.set_hits(conform_time(hits, deltaTempo))
-            if newmax<i.get_hits().max():
-                newmax=i.get_hits().max()
+                if newmax<max(i.get_hits()):
+                    newmax=max(i.get_hits())
 
         #TESTING librosa implementation of Ellis's dp beat detection, Improves quantization!!
         if True:
-            def find_nearest(array, value):
-                idx = (np.abs(array - value)).argmin()
-                return idx
             beats = np.zeros(newmax+1)
             for i in drums:
                 #create an odf from already found onsets weigh toward kick and snare
                 beats[i.get_hits()] += 1 - (i.get_name()[0] / (nrOfDrums))
             trimmed_beats=np.trim_zeros(beats)
-            import librosa
-            tracked_beats=librosa.beat.beat_track(onset_envelope=trimmed_beats, sr=44100,hop_length=Q_HOP, tightness=100)
-            beat_interval=round((tracked_beats[1].max()-tracked_beats[1].min())/tracked_beats[1].size)
-            print(beat_interval)
-            fixed_beats=range(tracked_beats[1].min(),tracked_beats[1].max()+100,int(beat_interval))
-            beat_diff=np.zeros(tracked_beats[1].size)
-            for i in range(tracked_beats[1].size):
-                beat_diff[i]=fixed_beats[i]-tracked_beats[1][i]
+            tracked_beats=beatSimpleDP(trimmed_beats, alpha=100)
+            beat_interval=round((tracked_beats.max()-tracked_beats.min())/tracked_beats.size)
+            #print(beat_interval)
+            fixed_beats=range(tracked_beats.min(),tracked_beats.max()+100,int(beat_interval))
+            beat_diff=np.zeros(tracked_beats.size)
+            for i in range(tracked_beats.size):
+                beat_diff[i]=fixed_beats[i]-tracked_beats[i]
             for i in drums:
                 quant_hits=[]
                 for j in i.get_hits():
-                    a=find_nearest(tracked_beats[1],j)
+                    a= (np.abs(tracked_beats -j)).argmin()
                     quant_hits.append(j+int(beat_diff[a]))
                 i.set_hits(quant_hits)
         return drums, np.mean(deltaTempo)
     else:
         return drums, 1.0
 
-#Ellis dp pseudocode, complete one fine day...
-def beatsimple(onsets, bpm=DEFAULT_TEMPO, sr=SAMPLE_RATE, hop_length=HOP_SIZE, alpha=100):
-    period=round(60.0 * sr/hop_length/bpm)
+#Ellis dp pseudocode to python
+def beatSimpleDP(onsets, alpha=100):
+    period=round(60.0 * SAMPLE_RATE/Q_HOP/DEFAULT_TEMPO)
     backlink = np.full(onsets.size, -1)
     cumscore = onsets
-    prange = range(np.rint(-2*period),-np.rint(period/2))
-
+    prange = np.arange(-2 * period, -np.round(period / 2) + 1, dtype=int)
     txcost= (-alpha*abs((np.log(prange/-period))**2))
-    for i in range(0,max(-prange + 1,onsets.size)):
+    for i in range(max(-prange + 1),onsets.size):
         timerange = i + prange
-        scorecands = txcost + cumscore(timerange)
-        [vv,xx] = max(scorecands)
+        scorecands = txcost + cumscore[timerange]
+        vv,xx = max(scorecands),scorecands.argmax()
         cumscore[i] = vv + onsets[i]
         backlink[i] = timerange[xx]
+    beats = [cumscore.argmax()]
+    while backlink[beats[-1]] >= 0:
+        beats.append(backlink[beats[-1]])
+    beats = np.array(beats[::-1], dtype=int)
+    return beats
 
-    [vv,beats] = max(cumscore)
-
-    while backlink(beats(1)) > 0:
-        beats = [backlink(beats(1)),beats]
 
 
 
@@ -809,6 +836,7 @@ def get_preprocessed_spectrogram(buffer=None, A=None, B=None, sm_win=4, test=Fal
         # spec[1:]=spec[1:]-spec[:-1]
         # spec=(spec+np.abs(spec))/2
         # spec=spec/spec.max()
+
     return spec
 
 
@@ -990,6 +1018,7 @@ def extract_tempo(onsets=None, win_len_s=3, smooth_win_scalar=2, constant_tempo=
     :param constant_tempo: boolean, if True one tempo is used for all frames.
     :return: numpy array, a list of tempi
     """
+    print('called')
     #Window in samples
     fps=SAMPLE_RATE/h
     N = int(fps * win_len_s)
@@ -1018,7 +1047,7 @@ def extract_tempo(onsets=None, win_len_s=3, smooth_win_scalar=2, constant_tempo=
     #mean value
     sff_mean = np.mean(sff, axis=1, keepdims=True)
 
-    #frequancy to bpm bins
+    #frequency to bpm bins
     bpms = 60 * fps / np.array(range(0,max_bpm))
 
     #gaussian weighing
@@ -1217,7 +1246,7 @@ def pick_onsets_simpleDyn(F, threshold=0.15, N=2, w=3.5):
     return rets
 
 
-def pick_onsets_dynT(F, threshold=0., N=10):
+def pick_onsets_dynT(F, threshold=0.15, N=10, w=3.5):
     """
     Peak picking with a dynamic threshold
     :param F: ODF
@@ -1232,9 +1261,11 @@ def pick_onsets_dynT(F, threshold=0., N=10):
     localMaxima = F[localMaximaInd[0]]
 
     # Pick local maxima greater than threshold
-    threshold_dyn = np.ones((F.shape))
+    threshold_dyn = np.full((F.shape), threshold)
+    #mova=movingAverage(F,N)
     for i in range(N, F.shape[0]):
-        threshold_dyn[i] = threshold + .5 * np.median(F[i - N:i]) + .5 * np.mean(F[i - N:i])
+        threshold_dyn[i] = threshold-0.2 + .25 * np.median(F[i - N:i]) + .25 * np.mean(F[i - N:i])
+        #threshold_dyn[i] = threshold - 0.2 + .5 * mova[i]
     # showEnvelope(threshold)
     # showEnvelope(F)
     # threshold=thresh*np.median(localMaxima)+delta
@@ -1245,13 +1276,14 @@ def pick_onsets_dynT(F, threshold=0., N=10):
     # remove peak if detFunc has not been under threshold.
     i = 0
     while i in range(len(rets) - 1):
-        if F[rets[i]:rets[i + 1]].min() >= np.mean(threshold_dyn[localMaximaInd[0][i]:localMaximaInd[0][i + 1]]):
+        # Check that the ODF goes under the threshold between onsets
+        if F[rets[i]:rets[i + 1]].min() >= threshold:
             rets = np.delete(rets, i + 1)
-            pass
-            # = np.delete(threshold, i + 1)
+        # Check that two onsets are not too close to each other
+        elif rets[i] - rets[i + 1] > -w:
+            rets = np.delete(rets, i + 1)
         else:
             i += 1
-    # print(len(rets))
     # Return onset indices
     return rets
 
@@ -1302,88 +1334,115 @@ def pick_onsets_bat(F, threshold=0.15, N=100, w=3.5, print=False):
     return rets
 
 
-def NMFD(X, iters=500, Wpre=[], include_priors=False):
+def NMFD(X, iters=128, Wpre=[], include_priors=False,n_heads=1, semi_adaptive=False, beta=4, partially_fixed=False, add_h=0, fully_adaptive=False, random_init=False, hand_break=True):
     """
-    :param :
-       - X : numpy array, The spectrogram
-       - iters : int, maximum number of iterations
-       - Wpre : Prior vectors of W
 
-    :return :
-       - H : Activations of different drums in X
+    :param X:  numpy array, The spectrogram
+    :param iters: int, maximum number of iterations
+    :param Wpre: numpy array, prior basis matrix
+    :param include_priors: boolean, include training data to analysis to avoid false activations
+    if no hits of a certain drum is present in the data.
+    :param n_heads: int, number of Wpre heads
+    :param semi_adaptive: boolean, use semi adaptive updates for W
+    :param beta: beta of SA-NMFD
+    :param partially_fixed: DO NOT USE, work in progress.
+    :param add_h: int, add extra random basis vectors
+    :param fully_adaptive: boolean, adapt W every iteration
+    :param random_init: boolean, initialize W with random values
+    :param hand_break:
+    :return: numpy array, numpy array, int, H(Activations of different drums in X), W(basis matrix), normalized errors at iterations
 
     """
     # epsilon, added to matrix elements to ensure non-negativity in matrices
     eps = 10 ** -18
-
-    originalN = X.shape[1]
-
-    # Add samples to the audio to prevent normalization error when no hits of certain drums are present
+    #X=X/X.max()
+    #remove tails
+    #Wpre=Wpre[:, :n_heads, :]
+    # Add sound check samples to the audio to prevent normalization error when no hits of certain drums are present
     # The multiplier is arbitrarily chosen, lower than .5 ensures that the quieter hits are not lost
     # as the soundcheck hits are possibly very loud compared to actual playing
     if include_priors:
         for i in range(int(Wpre.shape[1] / 2)):
             pass
             X = np.hstack((X, .28 * Wpre[:, i, :]))
+    #remove prior templates
+    if random_init:
+        split=0
+        if partially_fixed:
+            split=n_heads
+        Wpre[:,split:,:]=np.random.rand(Wpre.shape[0],Wpre.shape[1]-split, Wpre.shape[2])
 
-    # add noise priors, DO NOT USE, minimal improvement with serious speed drop.
-    # W_z=np.random.rand(Wpre.shape[0],Wpre.shape[1], Wpre.shape[2])
-    # Wpre=np.concatenate((Wpre, W_z), axis=1)
-
+    # add noise priors for partially_fixed, DO NOT USE, minimal improvement with serious speed drop.
+    if partially_fixed or add_h > 0:
+        W_z = np.random.rand(Wpre.shape[0], add_h, Wpre.shape[2])
+        Wpre = np.concatenate((Wpre, W_z), axis=1)
     # data size
     M, N = X.shape
     W = Wpre
     M, R, T = W.shape
-
     # Initial H, non negative, non negative. any non negative value works
-    H = np.full((R, N), .15)
+    H = np.full((R, N), .3)
 
     # Make sure the input is normalized
+    W=W-W.min()
     W = W / W.max()
+    X=X-X.min()
     X = X / X.max()
-
     # all ones matrix
     repMat = np.ones((M, N))
 
     # Spaceholder for errors
     err = np.zeros(iters)
 
+    #Partially fixed coefficients:
+    pf_alpha = R/(n_heads)
+    pf_beta = (R-n_heads)/R
+
     # KLDivergence for cost calculation
-    def KLDiv(x, y, LambHat):
-        return (x * np.log(LambHat) - x + y).sum()
+    def KLDiv(x, y):
+        return (x * np.log(x/y) - x + y).sum()
 
     # Itakura-Saito Divergence
-    def ISDiv(x):
+    def ISDiv(x,y):
+        return (x/y - np.log(x/y) - 1).sum()
+
+    # Itakura-Saito Divergence
+    # precomputed division, gives a little different results, only for the better
+    def ISDiv2(x):
         return (x - np.log(x) - 1).sum()
 
     # Lambda calculation
     def sumLambda(W, H):
-        Lambda = np.zeros((W.shape[0], H.shape[1]))
+        W_temp=W.copy()
+        if(partially_fixed):
+            W_temp[:,:n_heads,:]=pf_alpha*W_temp[:,:n_heads,:]
+            W_temp[:, n_heads:, :]=pf_beta*W_temp[:,n_heads:,:]
+        Lambda = np.zeros((W_temp.shape[0], H.shape[1]))
         shifter = np.zeros((R, N + T + 1))
         shifter[:, T:-1] = H
         for t in range(T):
-            Lambda += W[:, :, t] @ shifter[:, T - t: -(t + 1)]
-        return Lambda
+            Lambda += W_temp[:, :, t] @ shifter[:, T - t: -(t + 1)]
+        return Lambda/Lambda.max()
 
-    mu = .8  # sparsity constraint
+    mu =0.8 # sparsity constraint 0.8 in use mode
 
     for i in range(iters):
 
         # Stop processing and spit out result if True
         if REQUEST_RESULT:
-            return H
+            return H, W, err / err.max()
 
         # Initialize Lambda and Lambda^
-        if i == 0:
-            Lambda = eps + sumLambda(W, H)
-            LambHat = X * Lambda ** -1 + eps
+        if i==0:
+            Lambda = sumLambda(W, H)+eps
+            LambHat =X/Lambda + eps
 
         shifter = np.zeros((M, N + T))
         # Lambhat with T columns of zero padding
         shifter[:, :-T] = LambHat
-
         Hhat1 = np.zeros((R, N))
         Hhat2 = np.zeros((R, N))
+
         # the convolution calculation
         for t in range(T):
             Wt = W[:, :, t].T
@@ -1391,37 +1450,50 @@ def NMFD(X, iters=500, Wpre=[], include_priors=False):
             Hhat1 += Wt @ shifter[:, t: t + N]
             # Denominator calc
             Hhat2 += Wt @ repMat + eps
-        # NMF step eith precalc Hhats
+
         H = H * Hhat1 / (Hhat2 + mu)
 
         # precompute for error and next round
-        Lambda = eps + sumLambda(W, H)
-        LambHat = X * (Lambda ** -1) + eps
+        Lambda = sumLambda(W, H)+eps
+        LambHat = X/Lambda + eps
 
         # 2*eps to ensure the eps don't cancel out each other in the division.
-        # err[i] = KLDiv(X + eps, Lambda + 2 * (eps), LambHat + eps)
+        #err[i] = KLDiv(X + eps, Lambda + eps)
+        #err[i] = ISDiv(X+eps,Lambda+eps)
+        err[i]=ISDiv2(LambHat+eps)#+np.linalg.norm(H,ord=np.inf)*mu
 
-        err[i] = ISDiv(LambHat + eps)
         # Stopping criteria check
         if (i >= 1):
-            errDiff = (abs(err[i] - err[i - 1]) / (err[0] - err[i] + eps))
-            # print(errDiff)
-            if errDiff < 0.0003 or err[i] > err[i - 1]:
-                break
+            errDiff = (abs(err[i] - err[i - 1]) / (err[0] - err[i] +eps))
 
-        # Adaptive W - no considerable improvement
-        if (False):
-            What1 = np.zeros((M, R, T))
-            What2 = np.zeros((M, R, T))
+            #print(errDiff)
+            if errDiff < 0.0005 or err[i] > err[i - 1]:
+                if hand_break:
+                    break
+                pass
+
+        # Adaptive W - no considerable improvement double running time
+        if semi_adaptive or partially_fixed or fully_adaptive:
+            #adapt everything
+            split = 0
+            #fully adaptive alpha
+            alpha = 0
+            if (semi_adaptive):
+                alpha = (1 - i / iters) ** beta
+            if (partially_fixed):
+                split=n_heads
             shifter = np.zeros((N + T, R))
             shifter[:-T, :] = H.T[:, :]
+
             for t in range(T):
-                W[:, :, t] = W[:, :, t] * (
-                            LambHat @ shifter[t:-(T - t), :] / (repMat @ shifter[t:-(T - t), :] + eps + (mu / T)))
-            # dittmar &al. alpha
-            # fix Wpre: alpha=1, adapt freely: alpha=0
-            alpha = 0.5
-            W = Wpre * alpha + (1 - alpha) * W
+                W[:, split:, t] = W[:, split:, t] * (
+                        LambHat @ shifter[t:-(T - t), split:] / (repMat @ shifter[t:-(T - t), split:] + eps + (mu / T)))
+
+            if partially_fixed:
+                W = Wpre * (1-alpha) + (alpha) * W
+            else:
+                W = Wpre * alpha + (1 - alpha) * W
+
             W = W / W.max()
 
     return H, W, err / err.max()
@@ -1440,22 +1512,22 @@ def showEnvelope(env, legend=None, labels=None):
     :return: None
     """
     if 0 > 1:
-
         f, axarr = plt.subplots(len(env), 1, sharex=True, sharey=True)
-        for i in range(len(env)):
-            axarr[i].plot(env[i][0], label='Onset envelope')
-            axarr[i].vlines(env[i][1], 0, 1, color='r', alpha=0.9, linestyle='--', label='Onsets')
-            axarr[i].get_xaxis().set_visible(False)
-            axarr[i].get_yaxis().set_ticks([])
-        f.subplots_adjust(hspace=0.1)
-        axarr[0].set(ylabel='Kick, superflux')
-        axarr[1].set(ylabel='Kick, activations H')
-        # axarr[2].set(ylabel='Closed Hi-Hat')
+        #for i in range(len(env)):
+        #    axarr[i].plot(env[i][0], label='NMF')
+        #    axarr[i].vlines(env[i][1], 0, 1, color='r', alpha=0.9, linestyle='--', label='Onsets')
+        #    axarr[i].get_xaxis().set_visible(False)
+        #    axarr[i].get_yaxis().set_ticks([])
+        #f.subplots_adjust(hspace=0.1)
+        axarr[0].set(ylabel='precision')
+        axarr[1].set(ylabel='recall')
+        axarr[2].set(ylabel='f-score')
         axarr[len(env) - 1].get_xaxis().set_visible(True)
-        plt.savefig("Onset_env_peaks_alg1.png")
+        plt.savefig("NMFD_test_iterations.png")
         plt.tight_layout()
     else:
         plt.figure(figsize=(10, 6))
+
         # plt.ylim(ymax=1)
         plt.plot(env)
         # plt.plot(env[0], label='Onset envelope')
@@ -1465,22 +1537,25 @@ def showEnvelope(env, legend=None, labels=None):
         # plt.hlines(env[3], 0, 500, color='k', alpha=0.8, label='highest optimal threshold', linestyles='--')
         # plt.hlines(env[1], 0, 500, color='g', alpha=0.8, label='lowest optimal threshold', linestyles=':')
         #
-        # plt.gca().legend(('signal','final threshold','highest optimal threshold','lowest optimal threshold'), loc='right')
+        #plt.xticks(np.geomspace(1, 50, 5).astype(int), np.geomspace(1, 50, 5).astype(int),1)
+        plt.gca().legend(('precision','recall','f-score'), loc='right')
+        plt.xlabel(labels[0], fontsize=12)
+        plt.ylabel(labels[1], fontsize=12)
         plt.show()
-        # ax = plt.subplot(111)
-        if legend != None:
-            box = ax.get_position()
-            ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
-            plt.gca().legend(legend, loc='center left', bbox_to_anchor=(1, 0.5))
-            # plt.gca().legend(legend, loc='right')
-        if labels != None:
-            # my_xticks=[str(x)[:4] for x in np.linspace(0.2,0.4,int(env.shape[0]/2))]
-            # my_xticks = np.arange(0, env.shape[0], .01)
-            # plt.xticks(np.arange(1, env.shape[0], 1), range(1,20))
-
-            plt.xlabel(labels[0], fontsize=12)
-            plt.ylabel(labels[1], fontsize=12)
-
+        #ax = plt.subplot(111)
+        #if legend != None:
+        #    box = ax.get_position()
+        #    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+        #    plt.gca().legend(legend, loc='center left', bbox_to_anchor=(1, 0.5))
+        #    plt.gca().legend(legend, loc='right')
+        #if labels != None:
+        #    # my_xticks=[str(x)[:4] for x in np.linspace(0.2,0.4,int(env.shape[0]/2))]
+        #    # my_xticks = np.arange(0, env.shape[0], .01)
+        #    # plt.xticks(np.arange(1, env.shape[0], 1), range(1,20))
+#
+        #    plt.xlabel(labels[0], fontsize=12)
+        #    plt.ylabel(labels[1], fontsize=12)
+#
         # plt.savefig("nadam_lr.png")
         # plt.tight_layout()
 
@@ -1634,7 +1709,7 @@ def mergerowsandencode(a):
             break
         # The actual hit information
         value = int(a[i][1])
-        # Encode the hit into a charachter array, place 1 on the index of the drum #
+        # Encode the hit into a character array, place 1 on the index of the drum #
         if acceptHit(value, frames[index]):
             try:
                 frames[index] = np.bitwise_or(frames[index], 2 ** value)
@@ -1707,11 +1782,17 @@ def dec_to_binary(f):
 #########################################################
 
 
-def semi_adaptive_NMFB(X, Wpre, iters=100):
+def semi_adaptive_NMFB(X, Wpre, iters=100,n_heads=1, semi_adaptive=False, beta=4,partially_fixed=False,add_h=0, div=1, hand_break=True):
     epsilon = 10 ** -18
     X = X + epsilon
+    #add noise priors
+    Wpre=Wpre[:,:n_heads,:]
+    if partially_fixed or add_h > 0:
+        W_z = np.random.rand(Wpre.shape[0], add_h, Wpre.shape[2])
+        Wpre = np.concatenate((Wpre, W_z), axis=1)
     # Use only the first frame of NMFD prior
-    W = Wpre[:, :, 0]
+    W =Wpre[:,:,0]
+    M,R=W.shape[0], W.shape[1]
     # Initial H, non negative, non zero. any non zero value works
     H = np.full((W.shape[1], X.shape[1]), .5)
     # normalize input
@@ -1719,24 +1800,72 @@ def semi_adaptive_NMFB(X, Wpre, iters=100):
     X = X / X.max()
     # error space
     err = np.zeros(iters)
-    Wt = W.T
 
+    def KLDiv(x, y):
+        return sum(sum(x * np.log(x / y+epsilon) + (y - x)))
     def ISDiv(x, y):
         return ((x / y + epsilon) - np.log(x / y + epsilon) - 1).sum()
 
-    WH = epsilon + np.dot(W, H)
-    mu = 0.38
+    mu = 0.8
     for i in range(iters):
-        Hu = (Wt @ (X * WH ** (- 2)))
-        Hd = (epsilon + (Wt @ WH ** (- 1)))
-        H = H * Hu / (Hd + mu)
-        WH = epsilon + np.dot(W, H)
-        err[i] = ISDiv(X + epsilon, WH + epsilon)  # + (sparsity * normH)
+        if partially_fixed:
+            pf_alpha = R / (n_heads)
+            pf_beta = (R - n_heads) / R
+            Wt_alpha = W[:, :n_heads].T
+            Wt_beta = W[:, n_heads:].T
+            WH_alpha = pf_alpha * W[:, :n_heads] @ H[:n_heads, :]
+            WH_beta = pf_beta * W[:, n_heads:] @ H[n_heads:, :]
+        else:
+            Wt = W.T
+            WH = epsilon + np.dot(W, H)
+        if partially_fixed:
+            H_alpha= (Wt_alpha @ (X * (WH_alpha+WH_beta) ** (div- 2)))/(epsilon + (Wt_alpha @ (WH_alpha+WH_beta) ** (div- 1)))
+            H_beta= (Wt_beta @ (X * (WH_alpha+WH_beta) ** (div- 2)))/(epsilon + (Wt_beta @ (WH_alpha+WH_beta) ** (div- 1)))
+            H[:n_heads,:]   =  H[:n_heads,:]   * H_alpha+ mu
+            H[n_heads:,:]  =  H[n_heads:,:]  * H_beta+ mu
+
+        else:
+            H= H*((Wt @ (X * WH ** (div- 2)))/(epsilon + (Wt @ WH ** (div- 1)))+ mu)
+
+        if partially_fixed:
+            WH_alpha=pf_alpha*W[:,:n_heads]@H[:n_heads,:]
+            WH_beta=pf_beta*W[:,n_heads:]@H[n_heads:,:]
+        else:
+            WH = epsilon + np.dot(W, H)
+        if partially_fixed:
+            if div==1:
+                err[i] = KLDiv(X + epsilon, (WH_alpha+WH_beta) + epsilon)
+            else:
+                err[i] = ISDiv(X + epsilon, (WH_alpha+WH_beta) + epsilon)
+        else :
+            if div==1:
+                err[i] = KLDiv(X + epsilon, WH + epsilon)  # + (sparsity * normH)
+            else:
+                err[i] = ISDiv(X + epsilon, WH + epsilon)
         if (i >= 1):
             errDiff = (abs(err[i] - err[i - 1]) / (err[1] - err[i] + epsilon))
-            if errDiff < 0.0003 or err[i] > err[i - 1]:
+            if errDiff < 0.003 or err[i] > err[i - 1]:
                 pass
-                break
+                if hand_break:
+                    break
+
+        if semi_adaptive or partially_fixed:
+            alpha=0
+            if (semi_adaptive):
+                alpha = (1 - i / iters) ** beta
+            if partially_fixed:
+                Ht=H[n_heads:,:].T
+                Wu = (X * WH_beta ** (div - 2)@Ht)
+                Wd= (WH_beta ** (div - 1))@Ht+epsilon
+                W[:, n_heads:]=(Wt_beta.T*(Wu/(Wd))+mu)
+            else:
+                Ht=H.T
+                Wu = (X * WH ** (div - 2)@Ht)
+                Wd=(WH ** (div - 1))@Ht+epsilon
+                W=W*(Wu/(Wd))+mu
+            if semi_adaptive:
+                W = Wpre[:,:,0] * alpha + (1 - alpha) * W
+
     return H, err / err.max()
 
 
@@ -2354,3 +2483,123 @@ def hann_poisson_window(N=8, alpha=0.2):
 
     return window
 
+def findDefBinsDBSCAN(frames, filteredSpec, ConvFrames, eps=0.5):
+    """
+    Calculate the prior vectors for W to use in NMF
+    :param frames: Numpy array of hit locations (frame numbers)
+    :param filteredSpec: Spectrogram, the spectrogram where the vectors are extracted from
+    :param ConvFrames: int, number of frames the priors contain
+    :return: tuple of Numpy arrays, prior vectors Wpre,heads for actual hits and tails for decay part of the sound
+    """
+    from sklearn.cluster import DBSCAN
+    global total_priors
+    eps=eps
+    gaps = np.zeros((frames.shape[0], max_n_frames))
+    # gaps = np.zeros((frames.shape[0], ConvFrames))
+    for i in range(frames.shape[0]):
+        for j in range(ConvFrames):
+            gaps[i, j] = frames[i] + j
+
+    a = np.reshape(filteredSpec[gaps.astype(int)], (nrOfPeaks, -1))
+    dbs = DBSCAN(eps=eps, min_samples=4).fit(a)
+    K1,unique_labels=np.unique(dbs.labels_,return_inverse=True)
+    indices=np.unique(unique_labels)
+    heads = np.zeros((proc.shape[1], max_n_frames, K1.shape[0]))
+    for i in indices:
+        heads[:, :, i] = np.reshape(np.mean(a[unique_labels==i, :],axis=0), (proc.shape[1], max_n_frames), order='F')
+    eps=eps
+    tailgaps = np.zeros((frames.shape[0], max_n_frames))
+    for i in range(frames.shape[0]):
+        for j in range(tailgaps.shape[1]):
+            tailgaps[i, j] = frames[i] + j + ConvFrames
+    a2 = np.reshape(filteredSpec[tailgaps.astype(int)], (nrOfPeaks, -1))
+    dbs = DBSCAN(eps=eps, min_samples=4).fit(a2)
+    K2, unique_labels = np.unique(dbs.labels_, return_inverse=True)
+    indices = np.unique(unique_labels)
+    tails = np.zeros((proc.shape[1], max_n_frames, K2.shape[0]))
+    for i in indices:
+        tails[:, :, i] = np.reshape(np.mean(a2[unique_labels == i, :], axis=0), (proc.shape[1], max_n_frames),
+                                    order='F')
+    total_priors += K1.shape[0] + K2.shape[0]
+    print(K1.shape[0]+K2.shape[0])
+    return (heads, tails, K1, K2)
+
+def findDefBinsOPTICS(frames=None, filteredSpec=None, ConvFrames=None, matrices=None):
+    """
+    Calculate the prior vectors for W to use in NMF
+    :param frames: Numpy array of hit locations (frame numbers)
+    :param filteredSpec: Spectrogram, the spectrogram where the vectors are extracted from
+    :param ConvFrames: int, number of frames the priors contain
+    :return: tuple of Numpy arrays, prior vectors Wpre,heads for actual hits and tails for decay part of the sound
+    """
+    #from sklearn.cluster import DBSCAN
+    from python import OPTICS
+    global total_priors
+    if matrices is None:
+        gaps = np.zeros((frames.shape[0], max_n_frames))
+        # gaps = np.zeros((frames.shape[0], ConvFrames))
+        for i in range(frames.shape[0]):
+            for j in range(ConvFrames):
+                gaps[i, j] = frames[i] + j
+        a = np.reshape(filteredSpec[gaps.astype(int)], (nrOfPeaks, -1))
+        print(a.shape)
+    else:
+        a=np.array(matrices[0])
+        #a=np.reshape(a,(a.shape[0], -1))
+        #print(a.shape)
+
+    opts=OPTICS.OPTICS(min_samples=5, max_eps=np.inf, metric='l2',maxima_ratio=0.5, rejection_ratio=2,leaf_size=32).fit(a)
+    K1,unique_labels=np.unique(opts.labels_,return_inverse=True)
+    indices=np.unique(unique_labels)
+    heads = np.zeros((proc.shape[1], max_n_frames, K1.shape[0]))
+    for i in indices:
+        heads[:, :, i] = np.reshape(np.mean(a[unique_labels==i, :],axis=0), (proc.shape[1], max_n_frames), order='F')
+    if matrices is None:
+        tailgaps = np.zeros((frames.shape[0], max_n_frames))
+        for i in range(frames.shape[0]):
+            for j in range(tailgaps.shape[1]):
+                tailgaps[i, j] = frames[i] + j + ConvFrames
+        a2 = np.reshape(filteredSpec[tailgaps.astype(int)], (nrOfPeaks, -1))
+    else:
+        a2 = np.array(matrices[1])
+        #a2 = np.reshape(a2, (a2.shape[0], -1))
+        #print(a2.shape)
+    opts = OPTICS.OPTICS(min_samples=5, max_eps=np.inf, metric='l2',maxima_ratio=0.5, rejection_ratio=2,leaf_size=32).fit(a2)
+    K2, unique_labels = np.unique(opts.labels_, return_inverse=True)
+    indices = np.unique(unique_labels)
+    tails = np.zeros((proc.shape[1], max_n_frames, K2.shape[0]))
+    for i in indices:
+        tails[:, :, i] = np.reshape(np.mean(a2[unique_labels == i, :], axis=0), (proc.shape[1], max_n_frames),
+                                    order='F')
+    total_priors += K1.shape[0] + K2.shape[0]
+    print(K1.shape[0]+K2.shape[0])
+    return (heads, tails, K1, K2)
+
+def findDefBins(frames=None, filteredSpec=None, ConvFrames=None, matrices=None):
+    """
+    Calculate the prior vectors for W to use in NMF by averaging the sample locations
+    :param frames: Numpy array of hit locations (frame numbers)
+    :param filteredSpec: Spectrogram, the spectrogram where the vectors are extracted from
+    :return: tuple of Numpy arrays, prior vectors Wpre,heads for actual hits and tails for decay part of the sound
+     """
+    global total_priors
+    if matrices is None:
+        gaps = np.zeros((frames.shape[0], ConvFrames))
+        for i in range(frames.shape[0]):
+            for j in range(gaps.shape[1]):
+                gaps[i, j] = frames[i] + j
+        a = np.reshape(filteredSpec[gaps.astype(int)], (nrOfPeaks, -1))
+    else:
+        a = np.array(matrices[0])
+    heads= np.reshape(np.mean(a, axis=0), (proc.shape[1],max_n_frames, 1), order='F')
+    if matrices is None:
+        tailgaps = np.zeros((frames.shape[0], ConvFrames))
+        for i in range(frames.shape[0]):
+            for j in range(gaps.shape[1]):
+                tailgaps[i, j] = frames[i] + j + ConvFrames
+        a2 = np.reshape(filteredSpec[tailgaps.astype(int)], (nrOfPeaks, -1))
+    else:
+        a2=np.array(matrices[1])
+    tails = np.reshape(np.mean(a2, axis=0), (proc.shape[1], max_n_frames, 1), order='F')
+    total_priors += 2
+    return (heads, tails, 1,1)
