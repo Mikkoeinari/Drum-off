@@ -505,7 +505,7 @@ def liveTake():
     """
     global _ImRunning
     _ImRunning = True
-    buffer = np.zeros(shape=(44100 * 10 + 18000))  # max take length, must make user definable
+    buffer = np.zeros(shape=(44100 * 15 + 18000))  # max take length, must make user definable
 
     j = 0
     time.sleep(0.1)
@@ -1048,6 +1048,7 @@ def extract_tempo(onsets=None, win_len_s=3, smooth_win_scalar=2, constant_tempo=
     sff_mean = np.mean(sff, axis=1, keepdims=True)
 
     #frequency to bpm bins
+    print(max_bpm)
     bpms = 60 * fps / np.array(range(0,max_bpm))
 
     #gaussian weighing

@@ -1,13 +1,13 @@
 import os
 import re
 import threading
-#from time import time
+from time import time
 
 import pandas as pd
 
 from utils import *
 
-#t0 = time.time()
+t0 = time.time()
 import pickle
 
 # live audio
@@ -128,7 +128,7 @@ def playLive(drumkit_path, thresholdAdj=0.0, saveAll=False):
     df['vel'] = pd.Series(np.full((len(times)), 127, np.int64))
     bindf = pd.DataFrame(bintimes, columns=['inst'])
     if saveAll:
-        fileName='{}/takes/testbeat{}.csv'.format(drumkit_path, time())
+        fileName='{}/takes/testbeat{}.csv'.format(drumkit_path, time.time())
     else:
         fileName='{}/takes/lastTake.csv'.format(drumkit_path)
     bindf.to_csv(fileName, index=True, header=False, sep="\t")

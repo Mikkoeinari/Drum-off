@@ -115,7 +115,7 @@ def createWav(filePath, outName=None, addCountInAndCountOut=True, deltaTempo=1.0
     wauva.setparams((bd.getnchannels(), bd.getsampwidth(), bd.getframerate(),0, 'NONE', 'not compressed'))
     wauva.writeframes(outfile)
     wauva.close()
-
+    print('file ready...')
     return outName
 
 def playWav(filePath):

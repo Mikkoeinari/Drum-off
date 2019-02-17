@@ -179,6 +179,34 @@ MyScreenManager:
             size_hint:(.01, .01)
             pos_hint: {"x": 0.95, 'y':0.56}
 
+        CCheckBox:
+            id:lrChk
+            text:'fixed'
+            #on_release: #root.toggleSlider()
+            size_hint:(0.1,0.01)
+            pos_hint:{'x':0.47,'y':0.41}
+        Label:
+            text: 'Adjust learning rate'
+            size_hint:(.01, .01)
+            pos_hint: {"x": 0.61, 'y':0.41}
+        Label:
+            text: 'Learning Rate:'
+            size_hint:(.01, .01)
+            pos_hint: {"x": 0.8, 'y':0.44}
+        Slider:
+            id: lr
+            step: 0.0001
+            max:0.01
+            min:0.000
+            value:0.003
+            size_hint:(.3, .05)
+            pos_hint: {"x": 0.7, 'y':0.39}
+            on_value:root.setLr(0,0.003) if not lrChk.active else root.setLr(*args)
+        Label:
+            text: '0.003' if not lrChk.active else str(lr.value)[:8]
+            size_hint:(.01, .01)
+            pos_hint: {"x": 0.95, 'y':0.44}
+
         Button:
             text: 'Back to menu!'
             size_hint:(.5, .2)
@@ -622,8 +650,70 @@ MyScreenManager:
             size_hint:(.05, .05)
             pos_hint: {"x": .5, 'y':0.55}
             on_release:root.playSoundCheck(11,root.crTake) if self.isActive else root.stopSoundCheck()
-
-
+        Label:
+            text: 'Model type'
+            size_hint:(.01, .01)
+            pos_hint: {"x": 0.70, 'y':0.40}
+        CCheckBox:
+            id: modelRadio1
+            text:'single_mgu'
+            size_hint:(0.1,0.01)
+            pos_hint:{'x':0.47,'y':0.35}
+            active:False
+            group:'models'
+            on_release:root.set_model_type(self.text)
+        Label:
+            text: 'Single layer MGU'
+            size_hint:(.01, .01)
+            pos_hint: {"x": 0.61, 'y':0.35}
+        CCheckBox:
+            id: modelRadio2
+            text:'single_gru'
+            size_hint:(0.1,0.01)
+            pos_hint:{'x':0.47,'y':0.30}
+            active:False
+            group:'models'
+            on_release:root.set_model_type(self.text)
+        Label:
+            text: 'Single layer GRU'
+            size_hint:(.01, .01)
+            pos_hint: {"x": 0.61, 'y':0.30}
+        CCheckBox:
+            id: modelRadio3
+            text:'stacked_mgu'
+            size_hint:(0.1,0.01)
+            pos_hint:{'x':0.47,'y':0.25}
+            active:False
+            group:'models'
+            on_release:root.set_model_type(self.text)
+        Label:
+            text: 'Stacked MGU (elu)'
+            size_hint:(.01, .01)
+            pos_hint: {"x": 0.61, 'y':0.25}
+        CCheckBox:
+            id: modelRadio4
+            text:'time_dist_conv_mgu'
+            size_hint:(0.1,0.01)
+            pos_hint:{'x':0.47,'y':0.20}
+            active:False
+            group:'models'
+            on_release:root.set_model_type(self.text)
+        Label:
+            text: 'TCN MGU'
+            size_hint:(.01, .01)
+            pos_hint: {"x": 0.61, 'y':0.20}
+        CCheckBox:
+            id: modelRadio5
+            text:'single_mgu_tanh'
+            size_hint:(0.1,0.01)
+            pos_hint:{'x':0.47,'y':0.15}
+            active:True
+            group:'models'
+            on_release:root.set_model_type(self.text)
+        Label:
+            text: 'Stacked MGU(tanh)'
+            size_hint:(.01, .01)
+            pos_hint: {"x": 0.61, 'y':0.15}
 #        StopButton:
 #            source: './StopBtnDeactivated.png'
 #            size_hint:(.05, .05)

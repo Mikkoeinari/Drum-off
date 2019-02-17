@@ -17,7 +17,7 @@ import utils
 from os import mkdir, listdir
 import threading
 from os.path import join, isdir
-
+import pickle
 import drumsynth
 import GRU as mgu
 import numpy as np
@@ -99,6 +99,7 @@ drumNames = {'kick': 0,  # only one allowed
 countInPath='./countIn.csv'
 countInWavPath='click.wav'
 countInLength=2
+model_type='time_dist_conv_mgu'
 class StartScreen(Screen):
     def getStatus(self):
         app = App.get_running_app()
@@ -148,7 +149,7 @@ class SoundCheckScreen(Screen):
         self.nrMessage = '1'
         self.finishMessage = 'Load Soundchecked Kit and Exit'
         self.finishStatus = 'Soundcheck not complete'
-        self.model_type = 'parallel_mgu'
+        self.model_type = model_type
         self.kdTake = 0
         self.snTake = 0
         self.hhTake = 0
@@ -182,6 +183,8 @@ class SoundCheckScreen(Screen):
         app = App.get_running_app()
         return app.NrOfDrums[nr]
     # @mainthread
+    def set_model_type(self, model_type):
+        self.model_type=model_type
     def saveKitTemplate(self, instance):
         app = App.get_running_app()
         app.KitName = self.ids.drumkit_name.text
@@ -260,13 +263,16 @@ class SoundCheckScreen(Screen):
          #   self.nrMessage = str(0)
 
     def finishSoundCheck(self):
+        global model_type
         app = App.get_running_app()
         fullPath = './Kits/{}'.format(app.KitName)
         try:
             print(int(sum(app.NrOfDrums)))
             drumoff.initKitBG(fullPath, int(sum(app.NrOfDrums)))
+            pickle.dump(self.model_type,open(fullPath+'/model_type.cfg','wb'))
+            model_type=self.model_type
             mgu.buildVocabulary(hits=utils.get_possible_notes([i.get_name()[0] for i in drumoff.drums]))
-            mgu.initModel(kitPath=fullPath,destroy_old=True, model_type=self.model_type)
+            mgu.initModel(kitPath=fullPath+'/',destroy_old=True, model_type=model_type)
             app.KitInit = 'Initialized'
             app.root.current = 'MainMenu'
         except Exception as e:
@@ -378,13 +384,13 @@ class PlayScreen(Screen):
     lastPlayerPart = StringProperty()
     playBackMessage = StringProperty()
     trSize=NumericProperty()
-    model_type=StringProperty()
     temperature = NumericProperty()
     threshold = NumericProperty()
     deltaTempo = NumericProperty()
     modify = BooleanProperty()
     step = BooleanProperty()
     halt = BooleanProperty()
+    lr=NumericProperty()
     def __init__(self, **kwargs):
         super(PlayScreen, self).__init__(**kwargs)
         self.performMessage = 'Press play to start'
@@ -394,7 +400,6 @@ class PlayScreen(Screen):
         self.lastPlayerPart = ''
         self.lastGenPart = ''
         self.playBackMessage = ''
-        self.model_type='parallel_mgu'
         self.trSize=1.33
         self.temperature=0.8
         self.threshold = 0.0
@@ -402,6 +407,7 @@ class PlayScreen(Screen):
         self.modify=True
         self.step = True
         self.halt=True
+        self.lr=0.003
 
 
     def setTrSize(self, *args):
@@ -415,6 +421,10 @@ class PlayScreen(Screen):
 
     def setModify(self, *args):
         self.modify = args[0]
+    def setLr(self,*args):
+        self.lr=args[1]
+
+
 
     def toggleStep(self):
         """
@@ -510,10 +520,16 @@ class PlayScreen(Screen):
         fullPath = self.lastPlayerPart
         print(fullPath)
         def callback():
-            try:##INIT MODEL!!
+            #try:##INIT MODEL!!
+                if mgu.getLr!=self.lr:
+                    try:
+                        mgu.setLr(self.lr)
+                    except Exception as e:
+                        print(e)
                 self.lastGenPart = mgu.generatePart(
                         mgu.train(fullPath, sampleMul=self.trSize,
-                                  forceGen=False, updateModel=self.modify, model_type=self.model_type), temp=self.temperature, model_type=self.model_type)
+                                  forceGen=False, updateModel=self.modify, model_type=model_type),
+                    partLength=200, temp=self.temperature, model_type=model_type)
                 self.createLast(self.lastGenPart,outFile='./generated.wav',addCountInAndCountOut=(not self.step))
                 #Remove hack!!
                 while self.lastMessage!='./generated.wav':
@@ -523,10 +539,10 @@ class PlayScreen(Screen):
                     return
                 else:
                     self.playBackLast()
-            except Exception as e:
-                print('virhe! computer turn: ',e)
-                self.halt = True
-                self.pBtnMessage = 'Play'
+            #except Exception as e:
+            #    print('virhe! computer turn: ',e)
+            #    self.halt = True
+            #    self.pBtnMessage = 'Play'
         t = threading.Thread(target=callback)
         t.start()
 
@@ -567,7 +583,7 @@ class PlayScreen(Screen):
         def callback():
             try:
                 print('recording turn')
-                self.lastPlayerPart, self.deltaTempo=drumoff.playLive(fullPath, self.threshold, saveAll=False)
+                self.lastPlayerPart, self.deltaTempo=drumoff.playLive(fullPath, self.threshold, saveAll=True)
                 if self.lastPlayerPart==False:
                     return
                 self.createLast(self.lastPlayerPart,outFile='./player_performance.wav',addCountInAndCountOut=(not self.step))
@@ -594,10 +610,13 @@ class LoadScreen(Screen):
         return 'eka\ntoka\nkolmas\njne...'
 
     def loadKit(self, filename):
+        global model_type
         try:
+            print(filename[0]+'/')
             drumoff.loadKit(filename[0])
+            model_type=pickle.load(open(filename[0]+'/model_type.cfg','rb'))
             mgu.buildVocabulary(hits=utils.get_possible_notes([i.get_name()[0] for i in drumoff.drums]))
-            mgu.initModel(kitPath=filename[0]+'/', destroy_old=False)
+            mgu.initModel(kitPath=filename[0]+'/', destroy_old=False, model_type=model_type)
             app = App.get_running_app()
             app.KitName = (filename[0].split('/')[-1])
             app.KitInit = 'Initialized'
