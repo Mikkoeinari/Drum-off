@@ -5,23 +5,24 @@ from utils import *
 from sklearn import linear_model
 
 def plot():
-    logs12=pickle.load(open("{}/logs_full_folder_complete_MGU_lasts_64.log".format('.'),'rb'))
 
-    logs34=pickle.load(open("{}/logs_full_folder_complete_MGU_lasts_64_patch.log".format('.'),'rb'))
+    logs12=pickle.load(open("{}/logs_full_folder_complete_MGU_lasts_16.log".format('.'),'rb'))
+    537.41
+    logs34=pickle.load(open("{}/logs_full_folder_complete_MGU_lasts_64_tcn.log".format('.'),'rb'))
     logs34 = np.array([np.array(xi) for xi in logs34])
     logs34 = np.array(logs34)
     logs34 = np.reshape(logs34, (1, -1, 2, 5))
-    print(logs34.shape)
+    #print(logs34.shape)
     logs12 = np.array([np.array(xi) for xi in logs12])
     #logs3 = np.array([np.array(xi) for xi in logs3])
     #logs5 = np.array([np.array(xi) for xi in logs5])
     logs12=np.array(logs12)
     #logs3 = np.array(logs3)
     #logs5 = np.array(logs5)
-    #print(logs12.shape)
-    logs12=np.reshape(logs12, (10,-1,2,5))
+    print(logs12.shape)
+    logs12=np.reshape(logs12, (8,-1,2,5))
     #print(logs12[4][0])
-    logs12[3]=logs34[0]
+    logs12=np.concatenate((logs12,logs34))
     print(logs12.shape)
     #print(logs12[4][0])
     #print(logs12.shape)
@@ -31,8 +32,8 @@ def plot():
     linr=linear_model.LinearRegression()
     #print(len(logs12))
     lines=[]
-    colors=['r:','g:','b--', 'k--','m','c','g', 'r','b','y']
-    for i in range(len(logs12)-2):
+    colors=['r:','g:','b--', 'k--','m','c','g', 'r','k','y']
+    for i in range(len(logs12)):
         print(
               '%0i' % sum((logs12[i][:, 1, 4]) - (logs12[i][:, 0, 4])),
               '%0.4f' %np.mean(logs12[i][:, 1, 0]),
@@ -43,9 +44,8 @@ def plot():
               )
         print(
               )
-        n=2
+        n=1
         for j in range(n):
-
             start=int(len(logs12[i][:,1,2])/n*j)
             stop = int((len(logs12[i][:, 1, 2]) / n)* (j+1))
             X_train=range(start,stop)
@@ -60,29 +60,30 @@ def plot():
                 lines.append(list(linr.predict(X_train)))
             else:
                 lines[-1].extend(list(linr.predict(X_train)))
-        plt.plot(lines[-1],colors[i])
+            #plt.plot(lines[-1],colors[i])#
 
 
     # plt.ylim(ymax=1)
     #print(np.argmax(logs12[0][:,2]))
     n=1
-    w=15
-    #plt.plot(movingAverage(logs12[0][:,n,2],w), 'r:', )
-    #####plt.vlines(np.argmin(logs12[0][:,2]),0,  np.min(logs12[0][:,2]),colors='g', linestyles='-')
-    #plt.plot(movingAverage(logs12[1][:,n,2],w),'g:')
-    ####plt.vlines(np.argmin(logs12[1][:, 2]), 0, np.min(logs12[1][:,2]), colors='b', linestyles='-')
-#
-    #plt.plot(movingAverage(logs12[2][:,n,2],w),'b--')
-    ####plt.vlines(np.argmin(logs12[2][:, 2]), 0, np.min(logs12[2][:, 2]), colors='r', linestyles='-')
-    #plt.plot(movingAverage(logs12[3][:,n,2],w),'k--')
-    ####plt.vlines(np.argmin(logs12[3][:, 2]), 0, np.min(logs12[3][:, 2]), colors='y', linestyles='-')
-#
-    ##plt.plot(movingAverage(logs12[5][:, 2], w), 'c')
-    #plt.plot(movingAverage(logs12[5][:,n, 2], w), 'c')
-    #plt.plot(movingAverage(logs12[4][:, n, 2], w), 'm')
-    #plt.plot(movingAverage(logs12[6][:,n, 2], w), 'g')
-#
-    #plt.plot(movingAverage(logs12[7][:,n, 2], w), 'r')
+    w=2
+    plt.plot(movingAverage(logs12[0][:,n,2],w), 'r:', )
+    ####plt.vlines(np.argmin(logs12[0][:,2]),0,  np.min(logs12[0][:,2]),colors='g', linestyles='-')
+    plt.plot(movingAverage(logs12[1][:,n,2],w),'g:')
+    ###plt.vlines(np.argmin(logs12[1][:, 2]), 0, np.min(logs12[1][:,2]), colors='b', linestyles='-')
+
+    plt.plot(movingAverage(logs12[2][:,n,2],w),'b--')
+    ###plt.vlines(np.argmin(logs12[2][:, 2]), 0, np.min(logs12[2][:, 2]), colors='r', linestyles='-')
+    plt.plot(movingAverage(logs12[3][:,n,2],w),'k--')
+    ###plt.vlines(np.argmin(logs12[3][:, 2]), 0, np.min(logs12[3][:, 2]), colors='y', linestyles='-')
+
+    #plt.plot(movingAverage(logs12[5][:, 2], w), 'c')
+    plt.plot(movingAverage(logs12[5][:,n, 2], w), 'c')
+    plt.plot(movingAverage(logs12[4][:, n, 2], w), 'm')
+    plt.plot(movingAverage(logs12[6][:,n, 2], w), 'g')
+
+    plt.plot(movingAverage(logs12[7][:,n, 2], w), 'r')
+    plt.plot(movingAverage(logs12[8][:, n, 2], w), 'k')
 
 
     #plt.plot(movingAverage(logs12[8][:, n, 2], w), 'b')
@@ -101,7 +102,6 @@ def plot():
                       'Stacked MGU',
                       'Single MGU',
                       'Conv MGU',
-
                       'Single GRU',
                       'Single LSTM',
                       ),loc='upper right')

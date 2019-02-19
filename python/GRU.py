@@ -22,6 +22,7 @@ from keras.utils import Sequence,to_categorical
 from keras import regularizers
 from keras.optimizers import *#nadam
 from collections import Counter
+import tcn
 from keras import metrics
 import keras.backend as K
 #import ISRLU
@@ -30,7 +31,7 @@ seed(1)
 from tensorflow import set_random_seed
 set_random_seed(2)
 
-seqLen=64
+seqLen=16
 dvs=[2,4,8,16]
 numDiffHits = 0
 partLength = 0
@@ -152,6 +153,7 @@ def get_sequences(filename, seqLen=64, sampleMul=1., forceGen=False):
     y = np.array(outchar)
     samples = np.max([int(len(words) * sampleMul), 33])
     print('sanoja',len(words))
+
     X, y = resample(np.array(X), np.array(y),n_samples=samples, replace=True, random_state=2)
     return X, y, numDiffHits
 def setLr(new_lr):
@@ -342,10 +344,10 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='parallel_mg
             model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
             model.add(MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
                           # kernel_initializer='lecun_normal',
-                          return_sequences=True, dropout=0.5, recurrent_dropout=0.5, implementation=1))
+                          return_sequences=True, dropout=0.4, recurrent_dropout=0.4, implementation=1))
             model.add(MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
                           # kernel_initializer='lecun_normal',
-                          return_sequences=True, dropout=0.5, recurrent_dropout=0.5, implementation=1))
+                          return_sequences=True, dropout=0.4, recurrent_dropout=0.4, implementation=1))
             model.add(MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
                           # kernel_initializer='lecun_normal',
                           return_sequences=False, dropout=0.0, recurrent_dropout=0.0, implementation=1))
@@ -385,7 +387,18 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='parallel_mg
                           return_sequences=False, dropout=0.75, recurrent_dropout=0.75, implementation=1))
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
 
-
+        elif model_type=='tcn':
+            model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
+            model.add(tcn.compiled_tcn(return_sequences=False,
+                                 num_feat=numDiffHits,
+                                 num_classes=numDiffHits,
+                                 nb_filters=64,#64/16 result from 64
+                                 kernel_size=4,#64/16 result from 8
+                                 dilations=[2 ** i for i in range(3)],#64/16 result from 3
+                                 nb_stacks=2,#64/16 result from 2
+                                 max_len=256,#64/16 result from 128
+                                 use_skip_connections=True,
+                                       dropout_rate=0.75))#64/16 result from 0.75
         print(model.summary())
         optr = nadam(lr=0.002)
         model.compile(loss='sparse_categorical_crossentropy',metrics=['accuracy'], optimizer=optr)
@@ -531,7 +544,8 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
             model.save('{}Kits/model_{}.hdf5'.format(CurrentKitPath,model_type))
         if updateModel==True:
             #model.load_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath,model_type))
-            model.fit(X_train_comp, y_train, batch_size=int(max([y_train.shape[0]/50,25])), epochs=2000000000,
+            #
+            model.fit(X_train_comp, y_train,batch_size=int(max([y_train.shape[0]/50,25])), epochs=2000000000,
                   callbacks=[modelsaver,earlystopper,  history],# learninratescheduler],earlystopper,
                   validation_split=0.33,
                   verbose=2, initial_epoch=initial_epoch, class_weight=class_weights, shuffle=False)
@@ -582,6 +596,10 @@ def generatePart(data,partLength=123, temp=None, include_seed=False, model_type=
         a=a ** (1 / temperature)
         a_sum=a.sum()
         a=a/a_sum
+        #The other way from Sutton, R. S. and Barto A. G. Reinforcement Learning: An Introduction.
+        #likes lower temperatures :)
+        #a = np.log(a)/temperature
+        #a = np.exp(a) / np.sum(np.exp(a))
         return np.argmax(np.random.multinomial(1, a, 1))
 
         #same from keras examples:
@@ -599,23 +617,18 @@ def generatePart(data,partLength=123, temp=None, include_seed=False, model_type=
     print(data.shape)
     for i in range(partLength):
         data = data.reshape(1, seqLen)
-        #data = data.reshape(1, seqLen, numDiffHits)
         if model_type=='parallel_mgu' or model_type=='TDC_parallel_mgu':
             datas=[data, data[:,-int(seqLen/dvs[0]):],data[:,-int(seqLen/dvs[1]):],data[:,-int(seqLen/dvs[2]):],data[:,-int(seqLen/dvs[3]):]]
         else :
             datas=[data]
         with graph.as_default():
-            pred = model.predict(datas, verbose=0, batch_size=1)
-        next_index = sample(pred[0],fuzz)
+            pred = model.predict(datas, verbose=0)
 
-        #next_index = np.argmax(pred)
+        next_index = sample(pred[0],fuzz)
         next_char = Ichar.get(next_index,0)
         generated.append(next_char)
         data=np.concatenate((data[:,1:], [[next_index]]), axis=-1)
-        #next = np.zeros((numDiffHits,), dtype=bool)
-        #next[next_index] = True
-        #next = next.reshape(1, 1, next.shape[0])
-        #data = np.concatenate((data[:, 1:, :], next), axis=1)
+
 
 
 
@@ -644,6 +657,21 @@ def generatePart(data,partLength=123, temp=None, include_seed=False, model_type=
 #Testing from here on end
 #make midi from source file
 def debug():
+
+    #d=pd.read_csv('../../midi_data_set/mididata8.csv', header=None, sep="\t").values
+    #generated=list(d[:, 1])
+    #generated = splitrowsanddecode(generated)
+    #gen = pd.DataFrame(generated, columns=['time', 'inst'])
+    ## Cut over 30s.
+    ## maxFrames=300/(1/SAMPLE_RATE*Q_HOP)
+    ## gen = gen[gen['time'] < maxFrames]
+    #gen['time'] = frame_to_time(gen['time'], hop_length=HOP_SIZE)
+    #gen['inst'] = to_midinote(gen['inst'])
+    #gen['duration'] = pd.Series(np.full((len(generated)), 0, np.int64))
+    #gen['vel'] = pd.Series(np.full((len(generated)), 127, np.int64))
+#
+    #madmom.io.midi.write_midi(gen.values, 'generated_{}.mid'.format(8))
+    #return
     if False:
         generated=pd.read_csv('./midi_data_set/mididata9.csv', header=None, sep="\t", usecols=[1])
         print(generated.head())
@@ -682,13 +710,14 @@ def debug():
     ##vectorizeCSV('./Kits/Default/takes/testbeat1535385910.271116.csv')
     #
     ##print(takes)
-    seqLen=64
+    seqLen=16
     if True:
         logs=[]
         times=[]
-        #model_type=[ 'time_dist_conv_mgu','single_gru' ]
+        #
         model_type=['TDC_parallel_mgu', 'time_dist_conv_mgu','parallel_mgu','stacked_mgu_tanh','single_mgu','conv_mgu',
                     'single_gru', 'single_lstm']
+        model_type = ['tcn']
         buildVocabulary(hits=get_possible_notes([0, 1, 2, 3, 5, 8, 9, 10, 11, 12, 13]))
         for j in model_type:
             log=[]
@@ -704,9 +733,12 @@ def debug():
             t0=time()
             for i in takes2:
                 print(i)
+                t1 = time()
                 seed, history=train(i,seqLen=seqLen,sampleMul=1,model_type=j,updateModel=True, return_history=True)
+
                 file = generatePart(seed, partLength=333, temp=1., include_seed=False, model_type=j)
-                drumsynth.createWav(file, 'gen_temp{}.wav'.format(model_type), addCountInAndCountOut=False,
+                print('roundtrip time:%0.4f' % (time() - t1))
+                drumsynth.createWav(file, 'gen_temp_{}.wav'.format(j), addCountInAndCountOut=False,
                                     deltaTempo=1,
                                     countTempo=1)
                 log.extend(history[:][0])
@@ -716,7 +748,7 @@ def debug():
                 print(i)
                 seed, history=train(i,seqLen=seqLen,sampleMul=1,model_type=j,updateModel=True, return_history=True)
                 file = generatePart(seed, partLength=333, temp=1., include_seed=False, model_type=j)
-                drumsynth.createWav(file, 'gen_temp{}.wav'.format(model_type), addCountInAndCountOut=False,
+                drumsynth.createWav(file, 'gen_temp_{}.wav'.format(j), addCountInAndCountOut=False,
                                     deltaTempo=1,
                                     countTempo=1)
                 log.extend(history[:][0])
@@ -726,7 +758,7 @@ def debug():
             times.append(time() - t0)
             print('training a model from scratch:%0.2f' % (time() - t0))
 
-    pickle.dump(logs, open("{}/logs_full_folder_complete_MGU_lasts_64_patch.log".format('.'), 'wb'))
+    pickle.dump(logs, open("{}/logs_full_folder_complete_MGU_lasts_64_tcn.log".format('.'), 'wb'))
     print('times')
     print(times)
     return

@@ -63,7 +63,7 @@ for path, subdirs, files in os.walk('../midis'):
 def quadBar(pattern):
     """
     makes one bar of pattern four bars
-    :param pattern: list pattern to multiply
+    :param pattern: list, pattern to multiply
     :return: np.array four bars of pattern
     """
     newpat=np.zeros_like((pattern*4))
@@ -79,6 +79,7 @@ def extend_midi(old, new):
     for i in range(len(new)):
         new[i][0]=new[i][0]+maxtime
     return old+new
+
 def format_data(data):
     #data = data[data['time'] <= 10000000]
 
@@ -129,11 +130,9 @@ for file in midis:
     if len(masterfile) > 100000:
         masterfile=np.array(masterfile)
         data=pd.DataFrame(masterfile,columns=['time', 'pitch', 'velocity'])
-
         data=format_data(data)
         print(data.head())
         data.to_csv('midi_data_set/mididata{}.csv'.format(filenro), index=True, header=None, sep='\t')
-        #data.to_csv('dataklimp{}.csv'.format(filenro), index=True, header=None, sep='\t')
         filenro+=1
         lap=10000
         masterfile=[]
@@ -144,7 +143,7 @@ for file in midis:
     try:
         midi =read_midifile(file)
     except Exception as e:
-        print(file, 'tuotti virheen', e)
+        print(file, 'produced', e)
     midi.make_ticks_abs()
     tracks = [track for track in midi]
     eventCount = 0
