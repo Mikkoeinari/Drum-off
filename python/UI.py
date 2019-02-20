@@ -19,7 +19,7 @@ import threading
 from os.path import join, isdir
 import pickle
 import drumsynth
-import GRU as mgu
+import learner as mgu
 import numpy as np
 
 
