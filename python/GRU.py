@@ -393,11 +393,11 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='parallel_mg
                                  num_feat=numDiffHits,
                                  num_classes=numDiffHits,
                                  nb_filters=64,#64/16 result from 64
-                                 kernel_size=4,#64/16 result from 8
+                                 kernel_size=8,#64/16 result from 8
                                  dilations=[2 ** i for i in range(3)],#64/16 result from 3
                                  nb_stacks=2,#64/16 result from 2
-                                 max_len=256,#64/16 result from 128
-                                 use_skip_connections=True,
+                                 max_len=None,#64/16 result from 128
+                                 use_skip_connections=False,
                                        dropout_rate=0.75))#64/16 result from 0.75
         print(model.summary())
         optr = nadam(lr=0.002)

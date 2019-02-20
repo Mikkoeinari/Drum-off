@@ -66,7 +66,7 @@ def plot():
     # plt.ylim(ymax=1)
     #print(np.argmax(logs12[0][:,2]))
     n=1
-    w=2
+    w=1
     plt.plot(movingAverage(logs12[0][:,n,2],w), 'r:', )
     ####plt.vlines(np.argmin(logs12[0][:,2]),0,  np.min(logs12[0][:,2]),colors='g', linestyles='-')
     plt.plot(movingAverage(logs12[1][:,n,2],w),'g:')
