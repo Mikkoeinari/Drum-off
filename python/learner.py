@@ -2,18 +2,10 @@ from utils import *
 from time import time
 from random import randint
 import pickle
-t0 = time()
-# import os
-# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-# os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 import os
-import sys
-import tensorflow as tf
 import pandas as pd
 import drumsynth
-sys.setrecursionlimit(10000000)
-from sklearn.utils import resample
-import numpy as np
+from sklearn.utils import resample, class_weight
 from MGU import MGU
 from keras.callbacks import EarlyStopping, ModelCheckpoint, LearningRateScheduler,Callback
 from keras.models import Model, Sequential,load_model
@@ -23,14 +15,23 @@ from keras import regularizers
 from keras.optimizers import *#nadam
 from collections import Counter
 import tcn
-from keras import metrics
-import keras.backend as K
-#import ISRLU
+#import numpy as np
+#import sys
+#import tensorflow as tf
+#Fix seed, comment for random operation
 from numpy.random import seed
-seed(1)
 from tensorflow import set_random_seed
+seed(1)
 set_random_seed(2)
-
+#from keras import metrics
+#import keras.backend as K
+#import ISRLU
+#Force cpu processing
+# import os
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+# os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+#sys.setrecursionlimit(10000)
+t0 = time()
 seqLen=16
 dvs=[2,4,8,16]
 numDiffHits = 0
@@ -41,6 +42,12 @@ CurrentKitPath='./Kits/'
 Ichar = {}
 charI = {}
 def buildVocabulary(filename=None, hits=None):
+    """
+    Create a forvard and backward transformation keys for available vocabulary
+    :param filename: String, .csv file where vocabulary is extracted from
+    :param hits: list, list of possible hits on a drumkit
+    :return: None, we use global variables for now (change this later!)
+    """
     global numDiffHits, charI, Ichar, partLength
     data = []
     if filename is not None:
@@ -140,22 +147,17 @@ def get_sequences(filename, seqLen=64, sampleMul=1., forceGen=False):
             dataI.append(charI[data[i]])
         except:
             pass
-    #data = [charI[i] for i in data]
-    #print(data)
     words = []
     outchar = []
-    #print('corpus length:', len(data))
     for i in range(0, len(dataI) - seqLen, 1):
      words.append(dataI[i: i + seqLen])
      outchar.append(dataI[i + seqLen])
-    #print('nb sequences:', len(words))
     X = np.array(words)
     y = np.array(outchar)
     samples = np.max([int(len(words) * sampleMul), 33])
-    print('sanoja',len(words))
-
     X, y = resample(np.array(X), np.array(y),n_samples=samples, replace=True, random_state=2)
     return X, y, numDiffHits
+
 def setLr(new_lr):
     global lr
     print('new learning rate:',new_lr)
@@ -182,15 +184,16 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='parallel_mg
     except Exception as e:
         print('Making new model')
         model = Sequential()
+
         if model_type=='conv_mgu':
             #Conv1D before MGU
             model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
-
             model.add(Conv1D(64,16, activation='elu', input_shape=(seqLen, numDiffHits)))
             model.add(Dropout(0.45))
             model.add(MGU(layerSize, activation='tanh', return_sequences=False, dropout=0.45, recurrent_dropout=0.45,
                           implementation=1))
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
+
         elif model_type=='TDC_parallel_mgu':
             drop=0.7
             cdrop=0.7
@@ -526,15 +529,10 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
         initial_epoch=0
 
     with graph.as_default():
-    #if True:
-        #model=getModel()
-        from sklearn.utils import class_weight
+        #Compute weigths
         class_weights = class_weight.compute_class_weight('balanced',
                                                       np.unique(y_train),
                                                       y_train)
-        #weights=Counter(y_train)
-        #for key in weights:
-        #    weights[key] = float(weights[key]/y_train.shape[0])
 
         if updateModel=='generator':
             #model.save_weights("./Kits/weights_testivedot_ext.hdf5")
@@ -596,10 +594,12 @@ def generatePart(data,partLength=123, temp=None, include_seed=False, model_type=
         a=a ** (1 / temperature)
         a_sum=a.sum()
         a=a/a_sum
+
         #The other way from Sutton, R. S. and Barto A. G. Reinforcement Learning: An Introduction.
         #likes lower temperatures :)
         #a = np.log(a)/temperature
         #a = np.exp(a) / np.sum(np.exp(a))
+
         return np.argmax(np.random.multinomial(1, a, 1))
 
         #same from keras examples:
@@ -614,7 +614,7 @@ def generatePart(data,partLength=123, temp=None, include_seed=False, model_type=
     else:
         fuzz = temp
     print('fuzz factor:',fuzz)
-    print(data.shape)
+    #print(data.shape)
     for i in range(partLength):
         data = data.reshape(1, seqLen)
         if model_type=='parallel_mgu' or model_type=='TDC_parallel_mgu':
@@ -629,14 +629,12 @@ def generatePart(data,partLength=123, temp=None, include_seed=False, model_type=
         generated.append(next_char)
         data=np.concatenate((data[:,1:], [[next_index]]), axis=-1)
 
-
-
-
     gen = pd.DataFrame(generated, columns=['inst'])
     filename = 'generated.csv'
-    #filename='generated.csv'
     gen.to_csv(filename, index=True, header=None, sep='\t')
     print('valmis')
+    #return here, remove for testing
+    return filename
 
     # change to time and midinotes
     generated = splitrowsanddecode(generated)
@@ -648,9 +646,8 @@ def generatePart(data,partLength=123, temp=None, include_seed=False, model_type=
     gen['inst'] = to_midinote(gen['inst'])
     gen['duration'] = pd.Series(np.full((len(generated)), 0, np.int64))
     gen['vel'] = pd.Series(np.full((len(generated)), 127, np.int64))
-
     madmom.io.midi.write_midi(gen.values, 'generated_{}.mid'.format(model_type))
-    return filename
+
 
 
 #####################################
