@@ -1,4 +1,9 @@
-from utils import *
+'''
+This module contains sequence learning and generating related functionality
+'''
+
+import utils
+import constants
 from time import time
 from random import randint
 import pickle
@@ -15,17 +20,11 @@ from keras import regularizers
 from keras.optimizers import *#nadam
 from collections import Counter
 import tcn
-#import numpy as np
-#import sys
-#import tensorflow as tf
 #Fix seed, comment for random operation
 from numpy.random import seed
 from tensorflow import set_random_seed
 seed(1)
 set_random_seed(2)
-#from keras import metrics
-#import keras.backend as K
-#import ISRLU
 #Force cpu processing
 # import os
 # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -33,6 +32,7 @@ set_random_seed(2)
 #sys.setrecursionlimit(10000)
 t0 = time()
 seqLen=16
+#parallel MGU divisors
 dvs=[2,4,8,16]
 numDiffHits = 0
 partLength = 0
@@ -41,6 +41,7 @@ lr=.002
 CurrentKitPath='./Kits/'
 Ichar = {}
 charI = {}
+
 def buildVocabulary(filename=None, hits=None):
     """
     Create a forvard and backward transformation keys for available vocabulary
@@ -73,67 +74,7 @@ def getVocabulary():
     global numDiffHits, charI, Ichar, partLength
     return Ichar, charI
 
-#print(Ichar)
 global model, graph
-BigX=[]
-BigY=[]
-# try:
-#     BigX= pickle.load(open("./bigx.big", 'rb'))
-#     BigY = pickle.load(open("./bigy.big", 'rb'))
-# except:
-#     print('bigs not found')
-def vectorizeCSV(filename, seqLen=32, sampleMul=1., forceGen=False, bigFile=None, generator=False):
-    global numDiffHits, charI, Ichar, partLength
-    if filename is not None:
-        #Init with pauses before drumming starts
-        data = list(np.full(seqLen,-32))
-        d = pd.read_csv(filename, header=None, sep="\t").values
-        if bigFile is 'extreme':
-            target =randint(0, d[-1,0]-200)
-            data.extend(list(d[target:target + 200, 1]))
-        else:
-            data.extend(list(d[:, 1]))
-
-    if forceGen:
-        data=data[-180:]
-        #return
-    words = []
-    outchar = []
-    if generator:
-        for i in range(generator):
-            loc=np.random.randint(0, len(data) - seqLen)
-            words.append(data[loc: loc + seqLen])
-            outchar.append(data[loc + seqLen])
-    else:
-        for i in range(0, len(data) - seqLen, 1):
-            words.append(data[i: i + seqLen])
-            outchar.append(data[i + seqLen])
-
-    if len(words)<1:
-        return None, None, None
-
-    X = np.zeros((len(words), seqLen, numDiffHits), dtype=np.bool)
-    y = np.zeros((len(words), numDiffHits), dtype=np.bool)
-
-    for i, word in enumerate(words):
-        for t, char in enumerate(word):
-            # If we find a hit not in vocabulary of #numDiffHits we simply omit that
-            # Pitääkö järjestää??
-            try:
-                X[i, t, charI[char]] = 1
-            except:
-                #print(char)
-                pass
-        try:
-            y[i, charI[outchar[i]]] = 1
-        except:
-            pass
-    if generator:
-        return np.array(X), np.array(y), numDiffHits
-
-    samples=np.max([int(len(words)*sampleMul),33])
-    X, y = resample(np.array(X), np.array(y), n_samples=samples, replace=True, random_state=2)
-    return X, y, numDiffHits
 
 def get_sequences(filename, seqLen=64, sampleMul=1., forceGen=False):
     #If you use this you must use Embedding layer and sparse_categorical_crossentropy
@@ -483,20 +424,11 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
         if X_train is None:
             return None
 
-    elif bigFile is not None and updateModel is not 'generator':
-        #X_train, y_train, numDiffHits = vectorizeCSV(filename, seqLen, sampleMul, forceGen=forceGen, bigFile=bigFile)
-        X_train,y_train=resample(np.array(bigFile[0]), np.array(bigFile[1]), n_samples=bigFile[1].shape[0]*sampleMul, replace=True)
-        if X_train is None:
-            return None
-    elif updateModel is not 'generator':
-        #print(len(BigX))
-        X_train, y_train=resample(np.array(BigX), np.array(BigY), n_samples=len(BigX), replace=True)
-
     if updateModel is 'generator':
         def myGenerator():
             while True:
                 name=np.random.randint(0,len(filename)-1)
-                x, y,_ = vectorizeCSV(filename=filename[name+1], seqLen=seqLen, sampleMul=1, generator=20)
+                x, y,_ = get_sequences(filename=filename[name+1], seqLen=seqLen, sampleMul=1, generator=20)
                 if model_type=='parallel_mgu':
                     X_train2 = x[:, -int(seqLen / dvs[0]):]
                     X_train3 = x[:, -int(seqLen / dvs[1]):]
@@ -506,7 +438,7 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
                 else:
                     yield (x, y)
 
-        X_test, y_test,_ = vectorizeCSV(filename=filename[0], seqLen=seqLen, sampleMul=.1)
+        X_test, y_test,_ = get_sequences(filename=filename[0], seqLen=seqLen, sampleMul=.1)
         X_train=X_test
         tr_gen = myGenerator()
 
@@ -637,12 +569,12 @@ def generatePart(data,partLength=123, temp=None, include_seed=False, model_type=
     return filename
 
     # change to time and midinotes
-    generated = splitrowsanddecode(generated)
+    generated = utils.splitrowsanddecode(generated)
     gen = pd.DataFrame(generated, columns=['time', 'inst'])
     #Cut over 30s.
     #maxFrames=300/(1/SAMPLE_RATE*Q_HOP)
     #gen = gen[gen['time'] < maxFrames]
-    gen['time'] = frame_to_time(gen['time'], hop_length=Q_HOP)
+    gen['time'] = frame_to_time(gen['time'], hop_length=constants.Q_HOP)
     gen['inst'] = to_midinote(gen['inst'])
     gen['duration'] = pd.Series(np.full((len(generated)), 0, np.int64))
     gen['vel'] = pd.Series(np.full((len(generated)), 127, np.int64))
@@ -651,7 +583,7 @@ def generatePart(data,partLength=123, temp=None, include_seed=False, model_type=
 
 
 #####################################
-#Testing from here on end
+#Testing from here on end do not use unless absolutely necessary.
 #make midi from source file
 def debug():
 
@@ -672,12 +604,12 @@ def debug():
     if False:
         generated=pd.read_csv('./midi_data_set/mididata9.csv', header=None, sep="\t", usecols=[1])
         print(generated.head())
-        generated = splitrowsanddecode(generated[1])
+        generated = utils.splitrowsanddecode(generated[1])
         gen = pd.DataFrame(generated, columns=['time', 'inst'])
 
-        gen['time'] = frame_to_time(gen['time'], hop_length=Q_HOP)
+        gen['time'] = utils.frame_to_time(gen['time'], hop_length=utils.Q_HOP)
 
-        gen['inst'] = to_midinote(gen['inst'])
+        gen['inst'] = utils.to_midinote(gen['inst'])
         gen['duration'] = pd.Series(np.full((len(generated)), 0, np.int64))
         gen['vel'] = pd.Series(np.full((len(generated)), 127, np.int64))
 
@@ -963,5 +895,58 @@ def debug():
     #     y = np.array(outchar)
     #     X, y = resample(np.array(X), np.array(y), n_samples=len(words)*sampleMul, replace=True)
     #     return X, y, numDiffHits
+# def vectorizeCSV(filename, seqLen=32, sampleMul=1., forceGen=False, bigFile=None, generator=False):
+#     global numDiffHits, charI, Ichar, partLength
+#     if filename is not None:
+#         #Init with pauses before drumming starts
+#         data = list(np.full(seqLen,-32))
+#         d = pd.read_csv(filename, header=None, sep="\t").values
+#         if bigFile is 'extreme':
+#             target =randint(0, d[-1,0]-200)
+#             data.extend(list(d[target:target + 200, 1]))
+#         else:
+#             data.extend(list(d[:, 1]))
+#
+#     if forceGen:
+#         data=data[-180:]
+#         #return
+#     words = []
+#     outchar = []
+#     if generator:
+#         for i in range(generator):
+#             loc=np.random.randint(0, len(data) - seqLen)
+#             words.append(data[loc: loc + seqLen])
+#             outchar.append(data[loc + seqLen])
+#     else:
+#         for i in range(0, len(data) - seqLen, 1):
+#             words.append(data[i: i + seqLen])
+#             outchar.append(data[i + seqLen])
+#
+#     if len(words)<1:
+#         return None, None, None
+#
+#     X = np.zeros((len(words), seqLen, numDiffHits), dtype=np.bool)
+#     y = np.zeros((len(words), numDiffHits), dtype=np.bool)
+#
+#     for i, word in enumerate(words):
+#         for t, char in enumerate(word):
+#             # If we find a hit not in vocabulary of #numDiffHits we simply omit that
+#             # Pitääkö järjestää??
+#             try:
+#                 X[i, t, charI[char]] = 1
+#             except:
+#                 #print(char)
+#                 pass
+#         try:
+#             y[i, charI[outchar[i]]] = 1
+#         except:
+#             pass
+#     if generator:
+#         return np.array(X), np.array(y), numDiffHits
+#
+#     samples=np.max([int(len(words)*sampleMul),33])
+#     X, y = resample(np.array(X), np.array(y), n_samples=samples, replace=True, random_state=2)
+#     return X, y, numDiffHits
+
 if __name__ == "__main__":
     debug()

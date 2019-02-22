@@ -1,18 +1,19 @@
-import kivy
+'''
+This module provides the User Interface
+'''
 
-kivy.require('1.10.1')
+import kivy
 from kivy.app import App
 from kivy.uix.checkbox import CheckBox
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.lang import Builder
 from kivy.factory import Factory
 from kivy.properties import StringProperty, NumericProperty, BooleanProperty
-from kivy.clock import Clock, mainthread
+from kivy.clock import  mainthread
 from kivy.config import Config
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.image import Image
-Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
-import drumoff
+import game
 import utils
 from os import mkdir, listdir
 import threading
@@ -21,14 +22,16 @@ import pickle
 import drumsynth
 import learner as mgu
 import numpy as np
-
+kivy.require('1.10.1')
+Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
 
 
 class CCheckBox(CheckBox):
     pass
-class PicCheckBox(CheckBox):
 
+class PicCheckBox(CheckBox):
     pass
+
 class RecButton(ButtonBehavior, Image):
     isActive=False
     def on_press(self):
@@ -100,6 +103,7 @@ countInPath='./countIn.csv'
 countInWavPath='click.wav'
 countInLength=2
 model_type='time_dist_conv_mgu'
+
 class StartScreen(Screen):
     def getStatus(self):
         app = App.get_running_app()
@@ -249,7 +253,7 @@ class SoundCheckScreen(Screen):
         def callback():
             try:
                 #fullPath init??
-                drumoff.soundcheckDrum(fullPath, nr)
+                game.soundcheckDrum(fullPath, nr)
             except Exception as e:
                 print('souncheck ui:', e)
 
@@ -268,10 +272,10 @@ class SoundCheckScreen(Screen):
         fullPath = './Kits/{}'.format(app.KitName)
         try:
             print(int(sum(app.NrOfDrums)))
-            drumoff.initKitBG(fullPath, int(sum(app.NrOfDrums)))
+            game.initKitBG(fullPath, int(sum(app.NrOfDrums)))
             pickle.dump(self.model_type,open(fullPath+'/model_type.cfg','wb'))
             model_type=self.model_type
-            mgu.buildVocabulary(hits=utils.get_possible_notes([i.get_name()[0] for i in drumoff.drums]))
+            mgu.buildVocabulary(hits=utils.get_possible_notes([i.get_name()[0] for i in game.drumkit]))
             mgu.initModel(kitPath=fullPath+'/',destroy_old=True, model_type=model_type)
             app.KitInit = 'Initialized'
             app.root.current = 'MainMenu'
@@ -346,7 +350,7 @@ class SoundCheckPerformScreen(Screen):
 
         def callback():
             try:
-                drumoff.soundcheckDrum(fullPath, self.getDrumNro()-1)
+                game.soundcheckDrum(fullPath, self.getDrumNro()-1)
             except Exception as e:
                 print('sounckech ui:',e)
 
@@ -363,7 +367,7 @@ class SoundCheckPerformScreen(Screen):
         app = App.get_running_app()
         fullPath = './Kits/{}'.format(app.KitName)
         try:
-            drumoff.initKitBG(fullPath, sum(app.NrOfDrums))
+            game.initKitBG(fullPath, sum(app.NrOfDrums))
             app.KitInit = 'Initialized'
             app.root.current = 'MainMenu'
         except Exception as e:
@@ -583,7 +587,7 @@ class PlayScreen(Screen):
         def callback():
             try:
                 print('recording turn')
-                self.lastPlayerPart, self.deltaTempo=drumoff.playLive(fullPath, self.threshold, saveAll=True)
+                self.lastPlayerPart, self.deltaTempo=game.playLive(fullPath, self.threshold, saveAll=True)
                 if self.lastPlayerPart==False:
                     return
                 self.createLast(self.lastPlayerPart,outFile='./player_performance.wav',addCountInAndCountOut=(not self.step))
@@ -613,18 +617,18 @@ class LoadScreen(Screen):
         global model_type
         try:
             print(filename[0]+'/')
-            drumoff.loadKit(filename[0])
+            game.loadKit(filename[0])
             model_type=pickle.load(open(filename[0]+'/model_type.cfg','rb'))
-            mgu.buildVocabulary(hits=utils.get_possible_notes([i.get_name()[0] for i in drumoff.drums]))
+            mgu.buildVocabulary(hits=utils.get_possible_notes([i.get_name()[0] for i in game.drumkit]))
             mgu.initModel(kitPath=filename[0]+'/', destroy_old=False, model_type=model_type)
             app = App.get_running_app()
             app.KitName = (filename[0].split('/')[-1])
             app.KitInit = 'Initialized'
             app.Model='Loaded'
-            #app.NrOfDrums = [0] * len(drumoff.drums)
+            #app.NrOfDrums = [0] * len(game.drums)
             #No need for this unless initialization parameters changed
-            #drumoff.initKitBG(filename[0],len(drumoff.drums))
-            for i in drumoff.drums:
+            #game.initKitBG(filename[0],len(game.drums))
+            for i in game.drumkit:
                 drum = i.get_name()[0]
 
                 # make hihats one drum?? nope

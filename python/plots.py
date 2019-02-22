@@ -1,3 +1,5 @@
+
+import matplotlib.cm as cmaps
 import matplotlib.pyplot as plt
 import pickle
 import numpy as np
@@ -109,6 +111,115 @@ def plot():
     'single_gru', 'single_lstm', 'single_mgu_relu', 'single_mgu_elu'
 
     plt.show()
+#
+#
+
+
+##TO USE NEXT TWO FUNCTIONS UNCOMMENT matplotlib IMPORTS; CONFLICTS WITH KIVY
+def showEnvelope(env, legend=None, labels=None):
+    """
+    Plots an envelope
+    i.e. an onset envelope or some other 2d data
+    :param env: the data to plot
+    :return: None
+    """
+    if 0 > 1:
+        f, axarr = plt.subplots(len(env), 1, sharex=True, sharey=True)
+        #for i in range(len(env)):
+        #    axarr[i].plot(env[i][0], label='NMF')
+        #    axarr[i].vlines(env[i][1], 0, 1, color='r', alpha=0.9, linestyle='--', label='Onsets')
+        #    axarr[i].get_xaxis().set_visible(False)
+        #    axarr[i].get_yaxis().set_ticks([])
+        #f.subplots_adjust(hspace=0.1)
+        axarr[0].set(ylabel='precision')
+        axarr[1].set(ylabel='recall')
+        axarr[2].set(ylabel='f-score')
+        axarr[len(env) - 1].get_xaxis().set_visible(True)
+        plt.savefig("NMFD_test_iterations.png")
+        plt.tight_layout()
+    else:
+        plt.figure(figsize=(10, 6))
+
+        # plt.ylim(ymax=1)
+        plt.plot(env)
+        # plt.plot(env[0], label='Onset envelope')
+        #
+        # #plt.hlines(env[2],0,8000, color='r', linestyle=':')
+        # plt.hlines(env[2], 0,500, color='r', alpha=0.8, label='threshold', linestyles='-')
+        # plt.hlines(env[3], 0, 500, color='k', alpha=0.8, label='highest optimal threshold', linestyles='--')
+        # plt.hlines(env[1], 0, 500, color='g', alpha=0.8, label='lowest optimal threshold', linestyles=':')
+        #
+        #plt.xticks(np.geomspace(1, 50, 5).astype(int), np.geomspace(1, 50, 5).astype(int),1)
+        plt.gca().legend(('precision','recall','f-score'), loc='right')
+        plt.xlabel(labels[0], fontsize=12)
+        plt.ylabel(labels[1], fontsize=12)
+        plt.show()
+        #ax = plt.subplot(111)
+        #if legend != None:
+        #    box = ax.get_position()
+        #    ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+        #    plt.gca().legend(legend, loc='center left', bbox_to_anchor=(1, 0.5))
+        #    plt.gca().legend(legend, loc='right')
+        #if labels != None:
+        #    # my_xticks=[str(x)[:4] for x in np.linspace(0.2,0.4,int(env.shape[0]/2))]
+        #    # my_xticks = np.arange(0, env.shape[0], .01)
+        #    # plt.xticks(np.arange(1, env.shape[0], 1), range(1,20))
+#
+        #    plt.xlabel(labels[0], fontsize=12)
+        #    plt.ylabel(labels[1], fontsize=12)
+#
+        # plt.savefig("nadam_lr.png")
+        # plt.tight_layout()
+
+
+def showFFT(env, ticks=None, stft=False):
+    """
+    Plots a spectrogram
+
+    :param env: the data to plot
+    :return: None
+    """
+    if 0 > 1:
+
+        f, axarr = plt.subplots(1, len(env), sharex=True, sharey=True)
+
+        for i in range(len(env)):
+            axarr[i].imshow(env[i], aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
+
+            # axarr[i].get_xaxis().set_visible(False)
+        # axarr[1].imshow(env[1], aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
+        # axarr[1].set(xlabel='Snare frames')
+        # axarr[2].imshow(env[2], aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
+        # axarr[2].set(xlabel='Closed Hi-Hat frames')
+        f.subplots_adjust(wspace=0.03)
+        axarr[0].set(ylabel='STFT bin')
+        f.text(0.5, 0.02, 'k', ha='center', va='center')
+
+        plt.savefig("Templates3.png")
+
+    if ticks != None:
+        top = len(ticks)
+        plt.imshow(np.flipud(env), aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
+        my_yticks = ticks
+        plt.xlabel('frame', fontsize=12)
+        plt.ylabel('tempo', fontsize=12)
+        plt.yticks(np.arange(0, top, 10), np.rint(np.fliplr([ticks[0:top:10], ]))[0])
+
+    else:
+        plt.figure(figsize=(10, 3))
+
+        plt.imshow(env, aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
+        plt.show()
+    # plt.xlabel('frame', fontsize=12)
+    # plt.ylabel('stft bin', fontsize=12)
+    # # f, axarr = plt.subplots(3, sharex=True, sharey=True)
+    # plt.subplot(131, sharex=True, sharey=True)
+    # plt.imshow(env[0], aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
+    # plt.subplot(132)
+    # plt.imshow(env[1], aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
+    # plt.subplot(133)
+
+
 
 if __name__ == "__main__":
     plot()

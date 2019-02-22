@@ -56,6 +56,7 @@ def prepare_data(filename):
         data=np.reshape(np.array(data),(-1,1))
         print(data)
     return data
+
 def train_model(model, X, lengths=None, use_new_model=True):
     if not use_new_model:
         try:

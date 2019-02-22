@@ -1,14 +1,16 @@
-#import pygame, sys
-#from pygame.locals import *
+'''
+This module contains audio output related functionality
+'''
 import pandas as pd
 import numpy as np
 import utils
-
 import pyaudio
 import wave
 from scipy.io import wavfile
 
+#global variable to stop all playback
 _ImRunning = False
+#we store an arbitrary sample and use it's properties to init player
 bd=None
 
 def open_and_merge(filename):
@@ -22,6 +24,7 @@ def open_and_merge(filename):
     bd=x
     x = x.readframes(x.getnframes())
     return x
+
 #Read samples and store to sounds list
 bdBytes = open_and_merge('./Sounds/bigkit/mono/bd.wav')
 sdBytes = open_and_merge('./Sounds/bigkit/mono/sn.wav')
@@ -38,13 +41,10 @@ crBytes = open_and_merge('./Sounds/bigkit/mono/cr1.wav')
 cr2Bytes = open_and_merge('./Sounds/bigkit/mono/cr2.wav')
 cr3Bytes = open_and_merge('./Sounds/bigkit/mono/cr3.wav')
 
+#Small kit sounds
 #sounds = [bdBytes, sdBytes, chhBytes, ohhBytes, ttBytes, ftBytes, rdBytes, crBytes, shhBytes]
 #Allow more drums as per midinotes:[36, 38, 42, 46, 44, 50, 48, 47, 43, 41, 51, 49, 57, 55]
 sounds = [bdBytes, sdBytes, chhBytes, ohhBytes, shhBytes, ttBytes, tt2Bytes, tt3Bytes, ftBytes, ft2Bytes, rdBytes, crBytes, cr2Bytes, cr3Bytes]
-
-#CHUNK = 2048
-#buffer = np.zeros(2048)
-
 
 def frame_to_time(frames, sr=bd.getframerate()):
     """
@@ -188,7 +188,7 @@ def playFile(filePath, *args):
     """
     Create wav file and play it back.
     :param filePath: String, the source file
-    :return: None
+    :return: an instance of playFile
     """
 
     wavFile=createWav(filePath, *args)
