@@ -203,9 +203,9 @@ class SoundCheckScreen(Screen):
 
     def stopSoundCheck(self):
 
-        if(utils._ImRunning):
+        if(drumsynth._ImRecording):
             #self.ids[name].changeStatus(1)
-            utils._ImRunning = False
+            drumsynth._ImRecording = False
         elif(drumsynth._ImRunning):
             #self.ids[name].changeStatus(1)
             drumsynth._ImRunning=False
@@ -559,6 +559,7 @@ class PlayScreen(Screen):
         if self.pBtnMessage == 'Stop':
             self.halt = True
             utils._ImRunning = False
+            drumsynth._ImRecording=False
             drumsynth._ImRunning =False
             self.pBtnMessage = 'Play'
             return None

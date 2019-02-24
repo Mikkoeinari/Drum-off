@@ -14,7 +14,6 @@ def extract_tempo(onsets=None, win_len_s=3, smooth_win_scalar=2, constant_tempo=
     :param constant_tempo: boolean, if True one tempo is used for all frames.
     :return: numpy array, a list of tempi
     """
-    print('called')
     #Window in samples
     fps=SAMPLE_RATE/h
     N = int(fps * win_len_s)

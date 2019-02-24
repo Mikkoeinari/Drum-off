@@ -7,8 +7,9 @@ import threading
 from time import time
 import pandas as pd
 from utils import *
+import drumsynth
 from quantize import two_fold_quantize
-
+from scipy.io import wavfile
 t0 = time.time()
 import pickle
 
@@ -21,11 +22,11 @@ def soundcheckDrum(drumkit_path, drumId):
     :param drumId: int, Name of the drum
     :return: None
     """
-    buffer = getStompTemplate()
-    buffer = madmom.audio.signal.rescale(buffer)
+    buffer = drumsynth.record_part(100)
+    #buffer = madmom.audio.signal.rescale(buffer)
     print(buffer.shape, buffer.min(), buffer.max())
-
-    madmom.io.audio.write_wave_file(buffer, '{}/drum{}.wav'.format(drumkit_path, drumId), sample_rate=SAMPLE_RATE)
+    wavfile.write('{}/drum{}.wav'.format(drumkit_path, drumId),rate=SAMPLE_RATE, data=buffer)
+    #madmom.io.audio.write_wave_file(buffer, '{}/drum{}.wav'.format(drumkit_path, drumId), sample_rate=SAMPLE_RATE)
 
 
 def initKitBG(drumkit_path, K=1, L=10, drumwise=False, method='NMFD'):
@@ -51,10 +52,11 @@ def initKitBG(drumkit_path, K=1, L=10, drumwise=False, method='NMFD'):
         # HACK!!! remove when you have the time!!!
         if (kit[i][:4] != 'drum' or len(kit[i]) > 10): continue
         #set buffer
-        buffer = madmom.audio.Signal("{}/{}".format(drumkit_path, kit[i]), frame_size=FRAME_SIZE,
-                                     hop_size=HOP_SIZE)
+        #buffer = madmom.audio.Signal("{}/{}".format(drumkit_path, kit[i]), frame_size=FRAME_SIZE,
+        #                             hop_size=HOP_SIZE)
+        sr,buffer = wavfile.read("{}/{}".format(drumkit_path, kit[i]), mmap=True)
         #preprocess
-        filt_spec = get_preprocessed_spectrogram(buffer, sm_win=4)
+        filt_spec = stft(buffer)
         #find onsets
         peaks = getPeaksFromBuffer(filt_spec, N_PEAKS)
 
@@ -116,7 +118,7 @@ def playLive(drumkit_path, thresholdAdj=0.0, saveAll=False, createMidi=False):
 
     # Record a take
     try:
-        buffer = liveTake()
+        buffer = drumsynth.record_part(10)
     except Exception as e:
         print('liveplay:', e)
     # transcribe the take
@@ -138,6 +140,7 @@ def playLive(drumkit_path, thresholdAdj=0.0, saveAll=False, createMidi=False):
         times.extend(inst)
         bintimes.extend(bininst)
     if not len(times):
+        print('no hits found from audio!')
         return False
     times.sort()
     bintimes.sort()
@@ -183,13 +186,13 @@ def processLiveAudio(liveBuffer=None, drumkit=None, quant_factor=1.0, iters=0, m
     """
 
     onset_alg = 2
-    filt_spec = get_preprocessed_spectrogram(liveBuffer, sm_win=4)
+    filt_spec = stft(liveBuffer)
     stacks = 1
     total_priors = 0
     for i in range(len(drumkit)):
         total_priors += drumkit[i].get_heads().shape[2]
         total_priors += drumkit[i].get_tails().shape[2]
-    Wpre = np.zeros((FILTERBANK.shape[1], total_priors, max_n_frames))
+    Wpre = np.zeros((FILTERBANK_SHAPE, total_priors, max_n_frames))
     total_heads = 0
 
     for i in range(len(drumkit)):
@@ -248,7 +251,8 @@ def processLiveAudio(liveBuffer=None, drumkit=None, quant_factor=1.0, iters=0, m
         elif onset_alg == 1:
             for k in range(K1):
                 index = ind + k
-                HN = get_preprocessed_spectrogram(A=sum(Wpre.T[0, index, :]), B=H[index], test=True)[:, 0]
+                #TODO: this needs to be added to stft method..
+                HN = stft(A=sum(Wpre.T[0, index, :]), B=H[index], test=True)[:, 0]
                 if k == 0:
                     H0 = HN
                 else:
@@ -274,20 +278,6 @@ def processLiveAudio(liveBuffer=None, drumkit=None, quant_factor=1.0, iters=0, m
         # remove extrahits used to level peak picking algorithm:
         peaks = peaks[np.where(peaks < filt_spec.shape[0] - 1)]
         drumkit[i].set_hits(peaks)
-
-    # sanity check
-    if False:
-        allPeaks.extend(peaks)
-        # detect peaks in the full spectrogram, compare to detection results for a sanity check
-        sanityspec = get_preprocessed_spectrogram(liveBuffer, sm_win=8, test=True)
-        H0 = onset_detection.superflux(spec_x=filt_spec.T, win_size=8)
-        HS = sanityspec[:, 0]
-        HS = HS / HS[3:].max()
-        sanitypeaks = onset_detection.pick_onsets(H0, delta=0.02)
-        print(sanitypeaks.shape, len(allPeaks))
-        for i in sanitypeaks:
-            if np.argwhere(allPeaks == i) is None:
-                print('NMFD missed an onset at:', i)
 
     # duplicate cleaning, proved useless
     if False:
@@ -355,43 +345,43 @@ def processLiveAudio(liveBuffer=None, drumkit=None, quant_factor=1.0, iters=0, m
 #     yield 'done'
 
 
-def initKit(drumkit_path, nrOfDrums, K=1, bs_len=32):
-    K = K
-    L = 10
-    global drumkit, fpr
-    # print(nrOfDrums)
-    fpr = np.zeros((FILTERBANK.shape[1], nrOfDrums * 2 * K, L))
-    drumkit = []
-    filt_spec_all = 0
-    shifts = []
-    for i in range(nrOfDrums):
-
-        buffer = madmom.audio.Signal("{}/drum{}.wav".format(drumkit_path, i), frame_size=FRAME_SIZE,
-                                     hop_size=HOP_SIZE)
-        # CC1, freqtemps, threshold = getPeaksFromBuffer(buffer, 1, nrOfPeaks, k, K)
-        filt_spec = get_preprocessed_spectrogram(buffer, sm_win=4)
-        peaks = getPeaksFromBuffer(filt_spec, 10, N_PEAKS, L, K)
-        freqtemps = findDefBins(peaks, filt_spec, L, K)
-        # for j in range(K):
-        #    ind = i * K
-        #    fpr[:, ind + j, :] = freqtemps[0][:, :, j]
-        #    fpr[:, ind + j + nrOfDrums * K, :] = freqtemps[1][:, :, j]
-        if i == 0:
-            filt_spec_all = filt_spec
-            shifts = [0]
-        else:
-            shift = filt_spec_all.shape[0]
-            filt_spec_all = np.vstack((filt_spec_all, filt_spec))
-            shifts.append(shift)
-
-        drumkit.append(
-            Drum(name=[i], highEmph=0, peaks=peaks, heads=freqtemps[0], tails=freqtemps[1],
-                 threshold=.15,
-                 midinote=MIDINOTES[i], probability_threshold=1))
-    recalculate_thresholds(filt_spec_all, shifts, drumkit, drumwise=True)
-    # Pickle the important data
-    pickle.dump(drumkit, open("{}/pickledDrumkit.drm".format(drumkit_path), 'wb'))
-    pickle.dump(fpr, open("{}/pickledFpr.drm".format(drumkit_path), 'wb'))
+# def initKit(drumkit_path, nrOfDrums, K=1, bs_len=32):
+#     K = K
+#     L = 10
+#     global drumkit, fpr
+#     # print(nrOfDrums)
+#     fpr = np.zeros((FILTERBANK.shape[1], nrOfDrums * 2 * K, L))
+#     drumkit = []
+#     filt_spec_all = 0
+#     shifts = []
+#     for i in range(nrOfDrums):
+#
+#         buffer = madmom.audio.Signal("{}/drum{}.wav".format(drumkit_path, i), frame_size=FRAME_SIZE,
+#                                      hop_size=HOP_SIZE)
+#         # CC1, freqtemps, threshold = getPeaksFromBuffer(buffer, 1, nrOfPeaks, k, K)
+#         filt_spec = get_preprocessed_spectrogram(buffer, sm_win=4)
+#         peaks = getPeaksFromBuffer(filt_spec, 10, N_PEAKS, L, K)
+#         freqtemps = findDefBins(peaks, filt_spec, L, K)
+#         # for j in range(K):
+#         #    ind = i * K
+#         #    fpr[:, ind + j, :] = freqtemps[0][:, :, j]
+#         #    fpr[:, ind + j + nrOfDrums * K, :] = freqtemps[1][:, :, j]
+#         if i == 0:
+#             filt_spec_all = filt_spec
+#             shifts = [0]
+#         else:
+#             shift = filt_spec_all.shape[0]
+#             filt_spec_all = np.vstack((filt_spec_all, filt_spec))
+#             shifts.append(shift)
+#
+#         drumkit.append(
+#             Drum(name=[i], highEmph=0, peaks=peaks, heads=freqtemps[0], tails=freqtemps[1],
+#                  threshold=.15,
+#                  midinote=MIDINOTES[i], probability_threshold=1))
+#     recalculate_thresholds(filt_spec_all, shifts, drumkit, drumwise=True)
+#     # Pickle the important data
+#     pickle.dump(drumkit, open("{}/pickledDrumkit.drm".format(drumkit_path), 'wb'))
+#     pickle.dump(fpr, open("{}/pickledFpr.drm".format(drumkit_path), 'wb'))
 
 
 def extract_training_material(audio_folder, annotation_folder, train_audio_takes, train_annotation):
@@ -411,11 +401,10 @@ def extract_training_material(audio_folder, annotation_folder, train_audio_takes
 
     for f in train_annotation:
         print('.', end='', flush=True)
-        buffer = madmom.audio.Signal(audio_folder + f.split('.')[0] + '.wav', frame_size=FRAME_SIZE,
-                                     hop_size=HOP_SIZE)
+        buffer = wavfile.read(audio_folder + f.split('.')[0] + '.wav')
         if len(buffer.shape) > 1:
             buffer = buffer[:, 0] + buffer[:, 1]
-        filt_spec = get_preprocessed_spectrogram(buffer, sm_win=4)
+        filt_spec = stft(buffer)
         hits = pd.read_csv(annotation_folder + f, sep="\t", header=None)
         hits[0] = time_to_frame(hits[0], sr=44100, hop_length=HOP_SIZE)
 
@@ -534,8 +523,9 @@ def test_run(file_path=None, annotated=False, files=[None, None], method='NMF'):
     # print(audio_file_path)
     print('.', end='', flush=True)
     try:
-        buffer = madmom.audio.Signal(audio_file_path, frame_size=FRAME_SIZE,
-                                     hop_size=HOP_SIZE)
+        #buffer = madmom.audio.Signal(audio_file_path, frame_size=FRAME_SIZE,
+        #                             hop_size=HOP_SIZE)
+        sr, buffer = wavfile.read(audio_file_path, mmap=True)
         # print(buffer.shape)
         if len(buffer.shape) > 1:
             buffer = buffer[:, 0] + buffer[:, 1]
@@ -563,7 +553,7 @@ def test_run(file_path=None, annotated=False, files=[None, None], method='NMF'):
                 for i in plst:
                     predHits = frame_to_time(i.get_hits())
                     # NMF need this coefficient to correct estimates
-                    b = 0  # .02615#02625#02625#025#01615#SMT
+                    b = 0#-.02615#02625#02625#025#01615#SMT
                     actHits = hits[hits[1] == i.get_name()[0]]
                     actHits = actHits.iloc[:, 0]
                     trueHits = k_in_n(actHits.values + b, predHits, window=0.025)
@@ -748,13 +738,13 @@ def debug():
     # debug
     # initKitBG('Kits/mcd2/',8,K)
     # K=1
-    file = '../oikeetSamplet/'
+    file = '../DXSamplet/'
     method = 'NMFD'
-    initKitBG(file, 9, K=K, drumwise=True, method=method)
+    initKitBG(file,K=K, drumwise=True, method=method)
     # print('Kit init processing time:%0.2f' % (time.time() - t0))
     loadKit(file)
 
-    print(test_run(file_path=file, annotated=False, method=method))
+    print(test_run(file_path=file, annotated=True, method=method))
     return
     prec_tot = 0
     rec_tot = 0

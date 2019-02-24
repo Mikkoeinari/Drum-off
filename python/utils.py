@@ -3,17 +3,15 @@ This module is the original scratchbook and handles a lot of general functionali
 '''
 import nmfd
 import onset_detection
-import time
 from constants import *
 from sklearn.mixture import BayesianGaussianMixture
 import numpy as np
-import scipy
 from scipy.ndimage.filters import median_filter
 
 #globals
 max_n_frames = 10
 total_priors = 0
-_ImRunning = False
+
 
 class Drum(object):
     """
@@ -149,10 +147,10 @@ def findDefBinsBG(frames, filteredSpec, ConvFrames, K):
         init_params="random", max_iter=100, random_state=2).fit(a2)
     K1 = np.unique(bgMeans.predict(a2))
 
-    heads = np.zeros((FILTERBANK.shape[1], max_n_frames, K1.shape[0]))
+    heads = np.zeros((FILTERBANK_SHAPE, max_n_frames, K1.shape[0]))
 
     for i in range(K1.shape[0]):
-        heads[:, :, i] = np.reshape(bgMeans.means_[K1[i], :], (FILTERBANK.shape[1], max_n_frames), order='F')
+        heads[:, :, i] = np.reshape(bgMeans.means_[K1[i], :], (FILTERBANK_SHAPE, max_n_frames), order='F')
 
     tailgaps = np.zeros((frames.shape[0], max_n_frames))
 
@@ -170,10 +168,10 @@ def findDefBinsBG(frames, filteredSpec, ConvFrames, K):
         mean_precision_prior=0.8,  # covariance_prior=np.eye(FILTERBANK.shape[1]*ConvFrames),
         init_params="random", max_iter=100, random_state=2).fit(a2)
     K2 = np.unique(bgMeans.predict(a2))
-    tails = np.zeros((FILTERBANK.shape[1], max_n_frames, K2.shape[0]))
+    tails = np.zeros((FILTERBANK_SHAPE, max_n_frames, K2.shape[0]))
 
     for i in range(K2.shape[0]):
-        tails[:, :, i] = np.reshape(bgMeans.means_[K2[i], :], (FILTERBANK.shape[1], max_n_frames), order='F')
+        tails[:, :, i] = np.reshape(bgMeans.means_[K2[i], :], (FILTERBANK_SHAPE, max_n_frames), order='F')
 
     total_priors += K1.shape[0] + K2.shape[0]
 
@@ -201,9 +199,9 @@ def findDefBinsDBSCAN(frames, filteredSpec, ConvFrames, eps=0.5):
     dbs = DBSCAN(eps=eps, min_samples=4).fit(a)
     K1,unique_labels=np.unique(dbs.labels_,return_inverse=True)
     indices=np.unique(unique_labels)
-    heads = np.zeros((FILTERBANK.shape[1], max_n_frames, K1.shape[0]))
+    heads = np.zeros((FILTERBANK_SHAPE, max_n_frames, K1.shape[0]))
     for i in indices:
-        heads[:, :, i] = np.reshape(np.mean(a[unique_labels==i, :],axis=0), (FILTERBANK.shape[1], max_n_frames), order='F')
+        heads[:, :, i] = np.reshape(np.mean(a[unique_labels==i, :],axis=0), (FILTERBANK_SHAPE, max_n_frames), order='F')
     eps=eps
     tailgaps = np.zeros((frames.shape[0], max_n_frames))
     for i in range(frames.shape[0]):
@@ -213,9 +211,9 @@ def findDefBinsDBSCAN(frames, filteredSpec, ConvFrames, eps=0.5):
     dbs = DBSCAN(eps=eps, min_samples=4).fit(a2)
     K2, unique_labels = np.unique(dbs.labels_, return_inverse=True)
     indices = np.unique(unique_labels)
-    tails = np.zeros((FILTERBANK.shape[1], max_n_frames, K2.shape[0]))
+    tails = np.zeros((FILTERBANK_SHAPE, max_n_frames, K2.shape[0]))
     for i in indices:
-        tails[:, :, i] = np.reshape(np.mean(a2[unique_labels == i, :], axis=0), (FILTERBANK.shape[1], max_n_frames),
+        tails[:, :, i] = np.reshape(np.mean(a2[unique_labels == i, :], axis=0), (FILTERBANK_SHAPE, max_n_frames),
                                     order='F')
     total_priors += K1.shape[0] + K2.shape[0]
     print(K1.shape[0]+K2.shape[0])
@@ -248,9 +246,9 @@ def findDefBinsOPTICS(frames=None, filteredSpec=None, ConvFrames=None, matrices=
     opts=OPTICS.OPTICS(min_samples=5, max_eps=np.inf, metric='l2',maxima_ratio=0.5, rejection_ratio=2,leaf_size=32).fit(a)
     K1,unique_labels=np.unique(opts.labels_,return_inverse=True)
     indices=np.unique(unique_labels)
-    heads = np.zeros((FILTERBANK.shape[1], max_n_frames, K1.shape[0]))
+    heads = np.zeros((FILTERBANK_SHAPE, max_n_frames, K1.shape[0]))
     for i in indices:
-        heads[:, :, i] = np.reshape(np.mean(a[unique_labels==i, :],axis=0), (FILTERBANK.shape[1], max_n_frames), order='F')
+        heads[:, :, i] = np.reshape(np.mean(a[unique_labels==i, :],axis=0), (FILTERBANK_SHAPE, max_n_frames), order='F')
     if matrices is None:
         tailgaps = np.zeros((frames.shape[0], max_n_frames))
         for i in range(frames.shape[0]):
@@ -264,9 +262,9 @@ def findDefBinsOPTICS(frames=None, filteredSpec=None, ConvFrames=None, matrices=
     opts = OPTICS.OPTICS(min_samples=5, max_eps=np.inf, metric='l2',maxima_ratio=0.5, rejection_ratio=2,leaf_size=32).fit(a2)
     K2, unique_labels = np.unique(opts.labels_, return_inverse=True)
     indices = np.unique(unique_labels)
-    tails = np.zeros((FILTERBANK.shape[1], max_n_frames, K2.shape[0]))
+    tails = np.zeros((FILTERBANK_SHAPE, max_n_frames, K2.shape[0]))
     for i in indices:
-        tails[:, :, i] = np.reshape(np.mean(a2[unique_labels == i, :], axis=0), (FILTERBANK.shape[1], max_n_frames),
+        tails[:, :, i] = np.reshape(np.mean(a2[unique_labels == i, :], axis=0), (FILTERBANK_SHAPE, max_n_frames),
                                     order='F')
     total_priors += K1.shape[0] + K2.shape[0]
     print(K1.shape[0]+K2.shape[0])
@@ -288,7 +286,7 @@ def findDefBins(frames=None, filteredSpec=None, ConvFrames=None, matrices=None):
         a = np.reshape(filteredSpec[gaps.astype(int)], (N_PEAKS, -1))
     else:
         a = np.array(matrices[0])
-    heads= np.reshape(np.mean(a, axis=0), (FILTERBANK.shape[1],max_n_frames, 1), order='F')
+    heads= np.reshape(np.mean(a, axis=0), (FILTERBANK_SHAPE,max_n_frames, 1), order='F')
     if matrices is None:
         tailgaps = np.zeros((frames.shape[0], ConvFrames))
         for i in range(frames.shape[0]):
@@ -297,31 +295,10 @@ def findDefBins(frames=None, filteredSpec=None, ConvFrames=None, matrices=None):
         a2 = np.reshape(filteredSpec[tailgaps.astype(int)], (N_PEAKS, -1))
     else:
         a2=np.array(matrices[1])
-    tails = np.reshape(np.mean(a2, axis=0), (FILTERBANK.shape[1], max_n_frames, 1), order='F')
+    tails = np.reshape(np.mean(a2, axis=0), (FILTERBANK_SHAPE, max_n_frames, 1), order='F')
     total_priors += 2
     return (heads, tails, 1,1)
 
-def getStompTemplate():
-    """
-    records sound check takes
-    :return: numpy array, the recorded audio
-    """
-    global _ImRunning
-
-    _ImRunning = True
-
-    buffer = np.zeros(shape=(2646000))
-    j = 0
-    time.sleep(0.1)
-    strm = madmom.audio.signal.Stream(sample_rate=SAMPLE_RATE, num_channels=1, frame_size=FRAME_SIZE, hop_size=HOP_SIZE)
-    for i in strm:
-
-        buffer[j:j + HOP_SIZE] = i[:HOP_SIZE]
-        j += HOP_SIZE
-        if j >= 2646000 or (not _ImRunning):
-            buffer[j:j + 6000] = np.zeros(6000)
-            strm.close()
-            return buffer[:j + 6000]
 
 def get_possible_notes(drum_kit=None):
     """
@@ -414,7 +391,7 @@ def recalculate_thresholds(filt_spec, shifts, drumkit, drumwise=False, method='N
     """
     onset_alg = 2
     total_heads = 0
-    Wpre = np.zeros((FILTERBANK.shape[1], total_priors, max_n_frames))
+    Wpre = np.zeros((FILTERBANK_SHAPE, total_priors, max_n_frames))
     for i in range(len(drumkit)):
         heads = drumkit[i].get_heads()
         K1 = heads.shape[2]
@@ -454,7 +431,7 @@ def recalculate_thresholds(filt_spec, shifts, drumkit, drumwise=False, method='N
         elif onset_alg == 1:
             for k in range(K1):
                 index = ind + k
-                HN = get_preprocessed_spectrogram(A=sum(Wpre.T[0, index, :]), B=H[index], test=True)[:, 0]
+                HN = stft(A=sum(Wpre.T[0, index, :]), B=H[index], test=True)[:, 0]
                 if k == 0:
                     H0 = HN
                 else:
@@ -559,7 +536,7 @@ def recalculate_thresholds(filt_spec, shifts, drumkit, drumwise=False, method='N
 
         # arbitrary minimum threshold check
         threshold = max((threshold, 0.15))
-        # print('delta:', threshold, f_zero)
+        print('delta:', threshold, f_zero)
         for i in range(len(drumkit)):
             drumkit[i].set_threshold(threshold)
 
@@ -576,237 +553,83 @@ def recalculate_thresholds(filt_spec, shifts, drumkit, drumwise=False, method='N
     #    drums[i].set_threshold(mean)
 
 
-def liveTake():
-    """
-    records a drum take
-    :return:
-    """
-    global _ImRunning
-    _ImRunning = True
-    buffer = np.zeros(shape=(44100 * 15 + 18000))  # max take length, must make user definable
-
-    j = 0
-    time.sleep(0.1)
-    strm = madmom.audio.signal.Stream(sample_rate=SAMPLE_RATE, num_channels=1, frame_size=FRAME_SIZE, hop_size=HOP_SIZE)
-    for i in strm:
-        buffer[j:j + HOP_SIZE] = i[:HOP_SIZE]
-        j += HOP_SIZE
-        if j >= buffer.shape[0] - 18000 or (not _ImRunning):
-            buffer[j:j + 6000] = np.zeros(6000)
-            strm.close()
-            # Should this yield instead of returning? To record as long as the drummer wants...
-            return buffer[:j + 6000]
-
-
-def processLiveAudio(liveBuffer=None, drumkit=None, quant_factor=1.0, iters=0, method='NMFD', thresholdAdj=0.):
-    """
-    main logic for source separation, onset detection and tempo extraction and quantization
-    :param liveBuffer: numpy array, the source audio
-    :param drumkit: list of drums
-    :param quant_factor: float, amount of quantization (change to boolean)
-    :param iters: int, number of runs of nmfd for bagging separation
-    :param method: The source separation method, 'NMF' or 'NMFD
-    :param thresholdAdj: float, adjust the onset detection thresholds, one value for all drums.
-    :return: list of drums containing onset locations in hits field and mean tempo of the take
-    """
-
-    onset_alg = 2
-    filt_spec = get_preprocessed_spectrogram(liveBuffer, sm_win=4)
-    stacks = 1
-    total_priors = 0
-    for i in range(len(drumkit)):
-        total_priors += drumkit[i].get_heads().shape[2]
-        total_priors += drumkit[i].get_tails().shape[2]
-    Wpre = np.zeros((FILTERBANK.shape[1], total_priors, max_n_frames))
-    total_heads = 0
-
-    for i in range(len(drumkit)):
-        heads = drumkit[i].get_heads()
-        K1 = heads.shape[2]
-        ind = total_heads
-        for j in range(K1):
-            Wpre[:, ind + j, :] = heads[:, :, j]
-            total_heads += 1
-    total_tails = 0
-
-    for i in range(len(drumkit)):
-        tails = drumkit[i].get_tails()
-        K2 = tails.shape[2]
-        ind = total_heads + total_tails
-        for j in range(K2):
-            Wpre[:, ind + j, :] = tails[:, :, j]
-            total_tails += 1
-    for i in range(int(stacks)):
-        if method == 'NMFD' or method == 'ALL':
-            H, Wpre, err1 = nmfd.NMFD(filt_spec.T, iters=iters, Wpre=Wpre, include_priors=True, n_heads=total_heads, hand_break=True)
-        if method == 'NMF' or method == 'ALL':
-            H, err2 = nmfd.semi_adaptive_NMFB(filt_spec.T, Wpre=Wpre, iters=iters, n_heads=total_heads, hand_break=True)
-        if method == 'ALL':
-            errors = np.zeros((err1.size, 2))
-            errors[:, 0] = err1
-            errors[:, 1] = err2
-
-            # showEnvelope(errors, ('NMFD Error', 'NMF Error'), ('iterations', 'error'))
-        if i == 0:
-            WTot, HTot = Wpre, H
-        else:
-            WTot += Wpre
-            HTot += H
-    Wpre = (WTot) / stacks
-    H = (HTot) / stacks
-
-    onsets = np.zeros(H[0].shape[0])
-    total_heads = 0
-    picContent = []
-    allPeaks = []
-    # showEnvelope(superflux(A=sum(Wpre.T[:, 2, :]), B=H[2],win_size=2)[:500])
-    # showEnvelope(energyDifference(H[2], win_size=2)[:500])
-    # showEnvelope([(H[1]/H[1].max())[100:600], 0.09090909090909091,0.2318181818181818, 0.4040404040404041])
-    times = 0
-    for i in range(len(drumkit)):
-        # if i<=9:
-        #    showEnvelope(H[i][:1500])
-        heads = drumkit[i].get_heads()
-        K1 = heads.shape[2]
-        ind = total_heads
-
-        if onset_alg == 0:
-            for k in range(K1):
-                index = ind + k
-                HN = onset_detection.superflux(A=sum(Wpre.T[0, index, :]), B=H[index],win_size=3)
-                #HN = energyDifference(H[index], win_size=6)
-                # HN = HN / HN.max()
-                if k == 0:
-                    H0 = HN
-                else:
-                    H0 = np.maximum(H0, HN)
-                total_heads += 1
-        elif onset_alg == 1:
-            for k in range(K1):
-                index = ind + k
-                HN = get_preprocessed_spectrogram(A=sum(Wpre.T[0, index, :]), B=H[index], test=True)[:, 0]
-                if k == 0:
-                    H0 = HN
-                else:
-                    H0 = np.maximum(H0, HN)
-                total_heads += 1
-                H0 = H0 / H0.max()
-        else:
-            kernel = np.hanning(6)
-            for k in range(K1):
-                index = ind + k
-                HN = H[index]
-                # HN = np.convolve(HN, kernel, 'same')
-                HN = HN / HN.max()
-                if k == 0:
-                    H0 = HN
-                else:
-                    # H0 = np.maximum(H0, HN)
-                    H0 += HN
-                total_heads += 1
-        if i == 0:
-            onsets = H0
-        else:
-            onsets = onsets + H0
-        # times+=time()-t0
-        # H0 = H0[:-(rm_win-1)] - running_mean(H0, rm_win)
-        # H0 = np.array([0 if i < 0 else i for i in H0])
-        # H0=H0/H0.max()
-        peaks = onset_detection.pick_onsets(H0, threshold=drumkit[i].get_threshold() + thresholdAdj)
-        # remove extrahits used to level peak picking algorithm:
-        peaks = peaks[np.where(peaks < filt_spec.shape[0] - 1)]
-        drumkit[i].set_hits(peaks)
-        # peaks = madmom.features.onsets.peak_picking(H0, drums[i].get_threshold()+thresholdAdj)
-        # if i in [0,1,2]:
-        #     picContent.append([H0[:], pick_onsets(H0[:], threshold=drums[i].get_threshold())])
-        #     kernel = np.hanning(8)
-
-        # showEnvelope((H0, peaks, drums[i].get_threshold()))
-
-        # showFFT(np.outer(Wpre.T[0, i, :],H0))
-
-        # onsets[peaks] = 1
-        # quant_factor > 0:
-        #    TEMPO = DEFAULT_TEMPO
-        #   qPeaks = timequantize(peaks, avgTempo, TEMPO)
-        # qPeaks = quantize(peaks, tempomask, strength=quant_factor, tempo=TEMPO, conform=False)
-        # qPeaks=qPeaks*changeFactor
-        # else:
-
-    # sanity check
-    if False:
-        allPeaks.extend(peaks)
-        # detect peaks in the full spectrogram, compare to detection results for a sanity check
-        sanityspec = get_preprocessed_spectrogram(liveBuffer, sm_win=8, test=True)
-        H0 = onset_detection.superflux(spec_x=filt_spec.T, win_size=8)
-        HS = sanityspec[:, 0]
-        HS = HS / HS[3:].max()
-        sanitypeaks = onset_detection.pick_onsets(H0, delta=0.02)
-        print(sanitypeaks.shape, len(allPeaks))
-        for i in sanitypeaks:
-            if np.argwhere(allPeaks == i) is None:
-                print('NMFD missed an onset at:', i)
-
-    # duplicate cleaning
-    if False:
-        duplicateResolution = 0.05
-        for i in drumkit:
-            precHits = frame_to_time(i.get_hits())
-            i.set_hits(time_to_frame(cleanDoubleStrokes(precHits, resolution=duplicateResolution)))
-
-    if quant_factor > 0:
-        drumkit, deltaTempo=quantize.two_fold_quantize(onsets, drumkit)
-        return drumkit, np.mean(deltaTempo)
-    else:
-        return drumkit, 1.0
 
 
 
-def get_preprocessed_spectrogram(buffer=None, A=None, B=None, sm_win=4, test=False, Print=False):
-    """
-    Preprocess source audio data and return a processed stft
+def stft(audio_signal, A=None, B=None, test=False):
+    #Battenberg OD etc.
+    if A is not None and B is not None:
+        spec= np.outer(A, B).T
+        if test:
 
-    :param buffer: numpy array, None, source audio
-    :param A: numpy array, None, frequency vector of separated data
-    :param B: numpy array, None, activations of separated data
-    :param sm_win: int, smoothing window size
-    :param test: boolean, if true E.Battenberg preprocessing is performed.
+             mu = 10 ** 8
+             for i in range(spec.shape[1]):
+                 spec[:, i] = np.log(1 + mu * np.abs(spec[:, i])) / np.log(1 + mu)
+                 # spec[:, i] = ((np.sign(spec[:, i]) * np.log(1 + mu * np.abs(spec[:, i])))) / (1 + np.log(mu))
 
-    :return: numpy array, preprocessed stft of the source data
-    """
-    if buffer is not None:
-        spec = madmom.audio.spectrogram.FilteredSpectrogram(buffer, filterbank=FILTERBANK, sample_rate=SAMPLE_RATE,
-                                                            frame_size=FRAME_SIZE, hop_size=HOP_SIZE, fmin=20,
-                                                            fmax=17000, window=np.kaiser(FRAME_SIZE, np.pi ** 2))
+             kernel = np.hanning(4)
+             for i in range(spec.shape[1]):
+                 spec[:, i] = np.convolve(spec[:, i], kernel, 'same')
 
-        # if Print:
-        #    showEnvelope((buffer[600000:1100000]))
-        #    pass
+             if test:
+                 spec = np.gradient(spec, axis=0)
+                 spec = np.clip(spec, 0, None, out=spec)
+                 # spec = (spec + np.abs(spec)) / 2
+                 for i in range(spec.shape[0]):
+                     spec[i, :] = np.mean(spec[i, :])
+        return spec
 
-    if A is not None:
-        spec = np.outer(A, B).T
-    # kernel=np.kaiser(6,5)
-    if test:
-        mu = 10 ** 8
-        for i in range(spec.shape[1]):
-            spec[:, i] = np.log(1 + mu * np.abs(spec[:, i])) / np.log(1 + mu)
-            # spec[:, i] = ((np.sign(spec[:, i]) * np.log(1 + mu * np.abs(spec[:, i])))) / (1 + np.log(mu))
+    def rect_bark_filter_bank():
+        stft_bins = np.arange(FRAME_SIZE >> 1) / (FRAME_SIZE * 1. / SAMPLE_RATE)
 
-    kernel = np.hanning(sm_win)
-    for i in range(spec.shape[1]):
-        spec[:, i] = np.convolve(spec[:, i], kernel, 'same')
+        # hack for more bark freq, 57 is the max, otherwise inc. the denominator
+        #bark_freq = np.array((600 * np.sinh((np.arange(0, 49)) / 12)))
+        #bark_freq[0] = 20
 
-    if test:
-        spec = np.gradient(spec, axis=0)
-        spec = np.clip(spec, 0, None, out=spec)
-        # spec = (spec + np.abs(spec)) / 2
-        for i in range(spec.shape[0]):
-            spec[i, :] = np.mean(spec[i, :])
-        # spec[1:]=spec[1:]-spec[:-1]
-        # spec=(spec+np.abs(spec))/2
-        # spec=spec/spec.max()
+        #Bark double frequencies from Madmom
+        bark_freq = np.array([20, 50, 100, 150, 200, 250, 300, 350, 400, 450,
+                                510, 570, 630, 700, 770, 840, 920, 1000, 1080,
+                                1170, 1270, 1370, 1480, 1600, 1720, 1850, 2000,
+                                2150, 2320, 2500, 2700, 2900, 3150, 3400, 3700,
+                                4000, 4400, 4800, 5300, 5800, 6400, 7000, 7700,
+                                8500, 9500, 10500, 12000, 13500, 15500])
+        # filter frequencies
+        bark_freq = bark_freq[bark_freq>20]
+        filt_bank = np.zeros((len(stft_bins), len(bark_freq)))
+        stft_bins = stft_bins[stft_bins >= bark_freq[0]]
+        index=0
+        for i in range(0, len(bark_freq)-1):
+            while stft_bins[index] > bark_freq[i] and stft_bins[index] < bark_freq[i+1] and index <= len(stft_bins):
+                filt_bank[index][i] += 1.
+                index += 1
+        return np.array(filt_bank)
 
-    return spec
+    from scipy.fftpack import fft
+    #nr. frequency bins = Half of FRAME_SIZE
+    n_frames=int(FRAME_SIZE/2)
+    #HOP_LENGTH spaced index
+    frames_index= np.arange(0,len(audio_signal) ,HOP_SIZE)
+    #+2 frames to correct NMF systematic errors...
+    data=np.zeros((len(frames_index)+2, n_frames), dtype=np.complex64)
+    #Window
+    win=np.kaiser(FRAME_SIZE, np.pi ** 2)
+    #STFT
+    for frame in range(len(frames_index)):
+        #Get one frame length audio clip
+        one_frame =audio_signal[frames_index[frame]:frames_index[frame]+FRAME_SIZE]
+        #Pad last frame if needed
+        if one_frame.shape[0]<FRAME_SIZE:
+            one_frame=np.pad(one_frame,(0,FRAME_SIZE-one_frame.shape[0]), 'constant', constant_values=(0))
+        #apply window
+        fft_frame=np.multiply(one_frame, win)
+        #FFT
+        data[frame+2] = fft(fft_frame, FRAME_SIZE, axis=0)[:n_frames]
+    #mag spectrogram
+    data = np.abs(data)
+    #filter data
+    data = data@rect_bark_filter_bank()
+    return data
+
 
 def frame_to_time(frames, sr=SAMPLE_RATE, hop_length=HOP_SIZE):
     """
@@ -954,6 +777,8 @@ def truncZeros(frames):
     return frames
 
 
+
+
 def mergerowsandencode(a):
     """
         Merges hits occuring at the same frame.
@@ -999,13 +824,13 @@ def mergerowsandencode(a):
         # The actual hit information
         value = int(a[i][1])
         # Encode the hit into a character array, place 1 on the index of the drum #
-        #if acceptHit(value, frames[index]):
-        try:
+        if acceptHit(value, frames[index]):
+        #try:
             new_hit = np.bitwise_or(frames[index], 2 ** value)
-            if new_hit in possible_hits:
-                frames[index]=new_hit
-        except:
-            print(frames[index], value)
+            #if new_hit in possible_hits:
+            frames[index]=new_hit
+        #except:
+            #print(frames[index], value)
 
 
     # return array of merged hits starting from the first occurring hit event
@@ -1760,3 +1585,263 @@ def dec_to_binary(f):
 #
 #
 #
+# def get_preprocessed_spectrogram(buffer=None, A=None, B=None, sm_win=4, test=False, Print=False):
+#     """
+#     Preprocess source audio data and return a processed stft
+#
+#     :param buffer: numpy array, None, source audio
+#     :param A: numpy array, None, frequency vector of separated data
+#     :param B: numpy array, None, activations of separated data
+#     :param sm_win: int, smoothing window size
+#     :param test: boolean, if true E.Battenberg preprocessing is performed.
+#
+#     :return: numpy array, preprocessed stft of the source data
+#     """
+#     if buffer is not None:
+#         spec = madmom.audio.spectrogram.FilteredSpectrogram(buffer, filterbank=FILTERBANK, sample_rate=SAMPLE_RATE,
+#                                                             frame_size=FRAME_SIZE, hop_size=HOP_SIZE, fmin=20,
+#                                                             fmax=17000, window=np.kaiser(FRAME_SIZE, np.pi ** 2))
+#
+#         # if Print:
+#         #    showEnvelope((buffer[600000:1100000]))
+#         #    pass
+#
+#     if A is not None:
+#         spec = np.outer(A, B).T
+#     # kernel=np.kaiser(6,5)
+#     if test:
+#         mu = 10 ** 8
+#         for i in range(spec.shape[1]):
+#             spec[:, i] = np.log(1 + mu * np.abs(spec[:, i])) / np.log(1 + mu)
+#             # spec[:, i] = ((np.sign(spec[:, i]) * np.log(1 + mu * np.abs(spec[:, i])))) / (1 + np.log(mu))
+#
+#     kernel = np.hanning(sm_win)
+#     for i in range(spec.shape[1]):
+#         spec[:, i] = np.convolve(spec[:, i], kernel, 'same')
+#
+#     if test:
+#         spec = np.gradient(spec, axis=0)
+#         spec = np.clip(spec, 0, None, out=spec)
+#         # spec = (spec + np.abs(spec)) / 2
+#         for i in range(spec.shape[0]):
+#             spec[i, :] = np.mean(spec[i, :])
+#         # spec[1:]=spec[1:]-spec[:-1]
+#         # spec=(spec+np.abs(spec))/2
+#         # spec=spec/spec.max()
+#
+#     return spec
+#def getStompTemplate():
+#    """
+#    records sound check takes
+#    :return: numpy array, the recorded audio
+#    """
+#    global _ImRunning
+#
+#    _ImRunning = True
+#
+#    buffer = np.zeros(shape=(2646000))
+#    j = 0
+#    time.sleep(0.1)
+#    strm = madmom.audio.signal.Stream(sample_rate=SAMPLE_RATE, num_channels=1, frame_size=FRAME_SIZE, hop_size=HOP_SIZE)
+#    for i in strm:
+#
+#        buffer[j:j + HOP_SIZE] = i[:HOP_SIZE]
+#        j += HOP_SIZE
+#        if j >= 2646000 or (not _ImRunning):
+#            buffer[j:j + 6000] = np.zeros(6000)
+#            strm.close()
+#            return buffer[:j + 6000]
+#
+#def liveTake():
+#    """
+#    records a drum take
+#    :return:
+#    """
+#    global _ImRunning
+#    _ImRunning = True
+#    buffer = np.zeros(shape=(44100 * 15 + 18000))  # max take length, must make user definable
+#
+#    j = 0
+#    time.sleep(0.1)
+#    strm = madmom.audio.signal.Stream(sample_rate=SAMPLE_RATE, num_channels=1, frame_size=FRAME_SIZE, hop_size=HOP_SIZE)
+#    for i in strm:
+#        buffer[j:j + HOP_SIZE] = i[:HOP_SIZE]
+#        j += HOP_SIZE
+#        if j >= buffer.shape[0] - 18000 or (not _ImRunning):
+#            buffer[j:j + 6000] = np.zeros(6000)
+#            strm.close()
+#            # Should this yield instead of returning? To record as long as the drummer wants...
+#            return buffer[:j + 6000]
+#
+#def processLiveAudio_overwritten(liveBuffer=None, drumkit=None, quant_factor=1.0, iters=0, method='NMFD', thresholdAdj=0.):
+#    """
+#    main logic for source separation, onset detection and tempo extraction and quantization
+#    :param liveBuffer: numpy array, the source audio
+#    :param drumkit: list of drums
+#    :param quant_factor: float, amount of quantization (change to boolean)
+#    :param iters: int, number of runs of nmfd for bagging separation
+#    :param method: The source separation method, 'NMF' or 'NMFD
+#    :param thresholdAdj: float, adjust the onset detection thresholds, one value for all drums.
+#    :return: list of drums containing onset locations in hits field and mean tempo of the take
+#    """
+#
+#    onset_alg = 2
+#    filt_spec = get_preprocessed_spectrogram(liveBuffer, sm_win=4)
+#    stacks = 1
+#    total_priors = 0
+#    for i in range(len(drumkit)):
+#        total_priors += drumkit[i].get_heads().shape[2]
+#        total_priors += drumkit[i].get_tails().shape[2]
+#    Wpre = np.zeros((FILTERBANK_SHAPE, total_priors, max_n_frames))
+#    total_heads = 0
+#
+#    for i in range(len(drumkit)):
+#        heads = drumkit[i].get_heads()
+#        K1 = heads.shape[2]
+#        ind = total_heads
+#        for j in range(K1):
+#            Wpre[:, ind + j, :] = heads[:, :, j]
+#            total_heads += 1
+#    total_tails = 0
+#
+#    for i in range(len(drumkit)):
+#        tails = drumkit[i].get_tails()
+#        K2 = tails.shape[2]
+#        ind = total_heads + total_tails
+#        for j in range(K2):
+#            Wpre[:, ind + j, :] = tails[:, :, j]
+#            total_tails += 1
+#    for i in range(int(stacks)):
+#        if method == 'NMFD' or method == 'ALL':
+#            H, Wpre, err1 = nmfd.NMFD(filt_spec.T, iters=iters, Wpre=Wpre, include_priors=True, n_heads=total_heads, hand_break=True)
+#        if method == 'NMF' or method == 'ALL':
+#            H, err2 = nmfd.semi_adaptive_NMFB(filt_spec.T, Wpre=Wpre, iters=iters, n_heads=total_heads, hand_break=True)
+#        if method == 'ALL':
+#            errors = np.zeros((err1.size, 2))
+#            errors[:, 0] = err1
+#            errors[:, 1] = err2
+#
+#            # showEnvelope(errors, ('NMFD Error', 'NMF Error'), ('iterations', 'error'))
+#        if i == 0:
+#            WTot, HTot = Wpre, H
+#        else:
+#            WTot += Wpre
+#            HTot += H
+#    Wpre = (WTot) / stacks
+#    H = (HTot) / stacks
+#
+#    onsets = np.zeros(H[0].shape[0])
+#    total_heads = 0
+#    picContent = []
+#    allPeaks = []
+#    # showEnvelope(superflux(A=sum(Wpre.T[:, 2, :]), B=H[2],win_size=2)[:500])
+#    # showEnvelope(energyDifference(H[2], win_size=2)[:500])
+#    # showEnvelope([(H[1]/H[1].max())[100:600], 0.09090909090909091,0.2318181818181818, 0.4040404040404041])
+#    times = 0
+#    for i in range(len(drumkit)):
+#        # if i<=9:
+#        #    showEnvelope(H[i][:1500])
+#        heads = drumkit[i].get_heads()
+#        K1 = heads.shape[2]
+#        ind = total_heads
+#
+#        if onset_alg == 0:
+#            for k in range(K1):
+#                index = ind + k
+#                HN = onset_detection.superflux(A=sum(Wpre.T[0, index, :]), B=H[index],win_size=3)
+#                #HN = energyDifference(H[index], win_size=6)
+#                # HN = HN / HN.max()
+#                if k == 0:
+#                    H0 = HN
+#                else:
+#                    H0 = np.maximum(H0, HN)
+#                total_heads += 1
+#        elif onset_alg == 1:
+#            for k in range(K1):
+#                index = ind + k
+#                HN = get_preprocessed_spectrogram(A=sum(Wpre.T[0, index, :]), B=H[index], test=True)[:, 0]
+#                if k == 0:
+#                    H0 = HN
+#                else:
+#                    H0 = np.maximum(H0, HN)
+#                total_heads += 1
+#                H0 = H0 / H0.max()
+#        else:
+#            kernel = np.hanning(6)
+#            for k in range(K1):
+#                index = ind + k
+#                HN = H[index]
+#                # HN = np.convolve(HN, kernel, 'same')
+#                HN = HN / HN.max()
+#                if k == 0:
+#                    H0 = HN
+#                else:
+#                    # H0 = np.maximum(H0, HN)
+#                    H0 += HN
+#                total_heads += 1
+#        if i == 0:
+#            onsets = H0
+#        else:
+#            onsets = onsets + H0
+#        # times+=time()-t0
+#        # H0 = H0[:-(rm_win-1)] - running_mean(H0, rm_win)
+#        # H0 = np.array([0 if i < 0 else i for i in H0])
+#        # H0=H0/H0.max()
+#        peaks = onset_detection.pick_onsets(H0, threshold=drumkit[i].get_threshold() + thresholdAdj)
+#        # remove extrahits used to level peak picking algorithm:
+#        peaks = peaks[np.where(peaks < filt_spec.shape[0] - 1)]
+#        drumkit[i].set_hits(peaks)
+#        # peaks = madmom.features.onsets.peak_picking(H0, drums[i].get_threshold()+thresholdAdj)
+#        # if i in [0,1,2]:
+#        #     picContent.append([H0[:], pick_onsets(H0[:], threshold=drums[i].get_threshold())])
+#        #     kernel = np.hanning(8)
+#
+#        # showEnvelope((H0, peaks, drums[i].get_threshold()))
+#
+#        # showFFT(np.outer(Wpre.T[0, i, :],H0))
+#
+#        # onsets[peaks] = 1
+#        # quant_factor > 0:
+#        #    TEMPO = DEFAULT_TEMPO
+#        #   qPeaks = timequantize(peaks, avgTempo, TEMPO)
+#        # qPeaks = quantize(peaks, tempomask, strength=quant_factor, tempo=TEMPO, conform=False)
+#        # qPeaks=qPeaks*changeFactor
+#        # else:
+#
+#    # sanity check
+#    if False:
+#        allPeaks.extend(peaks)
+#        # detect peaks in the full spectrogram, compare to detection results for a sanity check
+#        sanityspec = get_preprocessed_spectrogram(liveBuffer, sm_win=8, test=True)
+#        H0 = onset_detection.superflux(spec_x=filt_spec.T, win_size=8)
+#        HS = sanityspec[:, 0]
+#        HS = HS / HS[3:].max()
+#        sanitypeaks = onset_detection.pick_onsets(H0, delta=0.02)
+#        print(sanitypeaks.shape, len(allPeaks))
+#        for i in sanitypeaks:
+#            if np.argwhere(allPeaks == i) is None:
+#                print('NMFD missed an onset at:', i)
+#
+#    # duplicate cleaning
+#    if False:
+#        duplicateResolution = 0.05
+#        for i in drumkit:
+#            precHits = frame_to_time(i.get_hits())
+#            i.set_hits(time_to_frame(cleanDoubleStrokes(precHits, resolution=duplicateResolution)))
+#
+#    if quant_factor > 0:
+#        drumkit, deltaTempo=quantize.two_fold_quantize(onsets, drumkit)
+#        return drumkit, np.mean(deltaTempo)
+#    else:
+#        return drumkit, 1.0
+#
+def debug():
+    from scipy.io import wavfile
+    filename = './generated.wav'
+    sr, audio = wavfile.read(filename, mmap=True)
+    audio=audio.astype(np.float32) / np.iinfo(audio.dtype).max
+    stft(audio)
+
+
+if __name__ == "__main__":
+    debug()
