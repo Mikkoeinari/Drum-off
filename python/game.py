@@ -4,13 +4,13 @@ This module handles the main logic of the game
 import os
 import re
 import threading
-from time import time
+import time
 import pandas as pd
 from utils import *
 import drumsynth
 from quantize import two_fold_quantize
 from scipy.io import wavfile
-t0 = time.time()
+
 import pickle
 
 
@@ -104,7 +104,7 @@ def loadKit(drumkit_path):
     drumkit = pickle.load(open("{}/pickledDrumkit.drm".format(drumkit_path), 'rb'))
 
 
-def playLive(drumkit_path, thresholdAdj=0.0, saveAll=False, createMidi=False):
+def playLive(drumkit_path, thresholdAdj=0.0, saveAll=False, createMidi=False, quantize=0.):
     """
     #Records one drum part of the player transcribes it and stores to a csv or also to a midi file
     The audio is not saved.
@@ -123,7 +123,7 @@ def playLive(drumkit_path, thresholdAdj=0.0, saveAll=False, createMidi=False):
         print('liveplay:', e)
     # transcribe the take
     plst, deltaTempo = processLiveAudio(liveBuffer=buffer, drumkit=drumkit,
-                                        quant_factor=1.0, iters=256, method='NMFD', thresholdAdj=thresholdAdj)
+                                        quant_factor=quantize, iters=256, method='NMFD', thresholdAdj=thresholdAdj)
     # Make an annotation of the separate drums hit times
     times = []
     bintimes = []
@@ -291,7 +291,7 @@ def processLiveAudio(liveBuffer=None, drumkit=None, quant_factor=1.0, iters=0, m
         drumkit, deltaTempo=two_fold_quantize(onsets, drumkit)
         return drumkit, np.mean(deltaTempo)
     else:
-        return drumkit, 1.0
+        return drumkit, Q_HOP/HOP_SIZE
 
 
 #

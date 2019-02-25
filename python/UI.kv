@@ -208,6 +208,18 @@ MyScreenManager:
             size_hint:(.01, .01)
             pos_hint: {"x": 0.95, 'y':0.44}
 
+        CCheckBox:
+            id:quantizeChk
+            text:'fixed'
+            on_release: root.setQuantize(quantizeChk.active)
+            active:True
+            size_hint:(0.1,0.01)
+            pos_hint:{'x':0.47,'y':0.35}
+        Label:
+            text: 'Use Quantization'
+            size_hint:(.01, .01)
+            pos_hint: {"x": 0.61, 'y':0.35}
+
         Button:
             text: 'Back to menu!'
             size_hint:(.5, .2)
@@ -660,7 +672,7 @@ MyScreenManager:
             text:'single_mgu'
             size_hint:(0.1,0.01)
             pos_hint:{'x':0.47,'y':0.35}
-            active:False
+            active:True
             group:'models'
             on_release:root.set_model_type(self.text)
         Label:
@@ -681,14 +693,14 @@ MyScreenManager:
             pos_hint: {"x": 0.61, 'y':0.30}
         CCheckBox:
             id: modelRadio3
-            text:'stacked_mgu'
+            text:'stacked_mgu_tanh'
             size_hint:(0.1,0.01)
             pos_hint:{'x':0.47,'y':0.25}
             active:False
             group:'models'
             on_release:root.set_model_type(self.text)
         Label:
-            text: 'Stacked MGU (elu)'
+            text: 'Stacked MGU'
             size_hint:(.01, .01)
             pos_hint: {"x": 0.61, 'y':0.25}
         CCheckBox:
@@ -700,26 +712,51 @@ MyScreenManager:
             group:'models'
             on_release:root.set_model_type(self.text)
         Label:
-            text: 'TCN MGU'
+            text: 'TDC MGU'
             size_hint:(.01, .01)
             pos_hint: {"x": 0.61, 'y':0.20}
         CCheckBox:
             id: modelRadio5
-            text:'single_mgu_tanh'
+            text:'stacked_mgu_tanh'
             size_hint:(0.1,0.01)
             pos_hint:{'x':0.47,'y':0.15}
-            active:True
+            active:False
             group:'models'
             on_release:root.set_model_type(self.text)
         Label:
-            text: 'Stacked MGU(tanh)'
+            text: 'Stacked MGU'
             size_hint:(.01, .01)
             pos_hint: {"x": 0.61, 'y':0.15}
+        CCheckBox:
+            id: modelRadio6
+            text:'parallel_mgu'
+            size_hint:(0.1,0.01)
+            pos_hint:{'x':0.47,'y':0.10}
+            active:False
+            group:'models'
+            on_release:root.set_model_type(self.text)
+        Label:
+            text: 'Parallel MGU'
+            size_hint:(.01, .01)
+            pos_hint: {"x": 0.61, 'y':0.10}
+        CCheckBox:
+            id: modelRadio7
+            text:'tcn'
+            size_hint:(0.1,0.01)
+            pos_hint:{'x':0.47,'y':0.05}
+            active:False
+            group:'models'
+            on_release:root.set_model_type(self.text)
+        Label:
+            text: 'tcn'
+            size_hint:(.01, .01)
+            pos_hint: {"x": 0.61, 'y':0.05}
 #        StopButton:
 #            source: './StopBtnDeactivated.png'
 #            size_hint:(.05, .05)
 #            pos_hint: {"x": .55, 'y':0.55}
 #            on_press:root.stopSoundCheck()
+
 
         Button:
             text:   'Finish soundcheck'

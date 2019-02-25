@@ -395,6 +395,7 @@ class PlayScreen(Screen):
     step = BooleanProperty()
     halt = BooleanProperty()
     lr=NumericProperty()
+    quantize=BooleanProperty()
     def __init__(self, **kwargs):
         super(PlayScreen, self).__init__(**kwargs)
         self.performMessage = 'Press play to start'
@@ -412,6 +413,7 @@ class PlayScreen(Screen):
         self.step = True
         self.halt=True
         self.lr=0.003
+        self.quantize=True
 
 
     def setTrSize(self, *args):
@@ -427,6 +429,9 @@ class PlayScreen(Screen):
         self.modify = args[0]
     def setLr(self,*args):
         self.lr=args[1]
+
+    def setQuantize(self,*args):
+        self.quantize=args[0]
 
 
 
@@ -588,7 +593,7 @@ class PlayScreen(Screen):
         def callback():
             try:
                 print('recording turn')
-                self.lastPlayerPart, self.deltaTempo=game.playLive(fullPath, self.threshold, saveAll=True)
+                self.lastPlayerPart, self.deltaTempo=game.playLive(fullPath, self.threshold, saveAll=True, quantize=self.quantize)
                 if self.lastPlayerPart==False:
                     return
                 self.createLast(self.lastPlayerPart,outFile='./player_performance.wav',addCountInAndCountOut=(not self.step))
