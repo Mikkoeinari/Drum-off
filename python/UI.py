@@ -102,7 +102,7 @@ drumNames = {'kick': 0,  # only one allowed
 countInPath='./countIn.csv'
 countInWavPath='click.wav'
 countInLength=2
-model_type='time_dist_conv_mgu'
+model_type='single_mgu'
 
 class StartScreen(Screen):
     def getStatus(self):
@@ -538,7 +538,7 @@ class PlayScreen(Screen):
                 self.lastGenPart = mgu.generatePart(
                         mgu.train(fullPath, sampleMul=self.trSize,
                                   forceGen=False, updateModel=self.modify, model_type=model_type),
-                    partLength=200, temp=self.temperature, model_type=model_type)
+                    partLength=100, temp=self.temperature, model_type=model_type)
                 self.createLast(self.lastGenPart,outFile='./generated.wav',addCountInAndCountOut=(not self.step))
                 #Remove hack!!
                 while self.lastMessage!='./generated.wav':

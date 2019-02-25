@@ -106,7 +106,7 @@ def setLr(new_lr):
 def getLr():
     return lr
 
-def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='parallel_mgu'):
+def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'):
     global model, CurrentKitPath
     layerSize =numDiffHits #Layer size = number of categorical variables
     if kitPath is None:

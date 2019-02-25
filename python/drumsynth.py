@@ -189,7 +189,7 @@ def record_part(part_len_seconds=15):
     """
     global _ImRecording
     _ImRecording = True
-    CHUNK = 1048
+    CHUNK = 1024
     FORMAT = pyaudio.paInt16
     CHANNELS = 1
     RATE = 44100
@@ -207,7 +207,8 @@ def record_part(part_len_seconds=15):
             break
         data = stream.read(CHUNK)
         frames.extend(np.fromstring(data, np.int16))
-
+    #add a second to prevent tails from going over the frames length
+    frames.extend(np.zeros(44100, dtype=np.int16))
     print("* done recording")
 
     stream.stop_stream()

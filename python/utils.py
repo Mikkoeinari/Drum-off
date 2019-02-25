@@ -292,7 +292,9 @@ def findDefBins(frames=None, filteredSpec=None, ConvFrames=None, matrices=None):
         for i in range(frames.shape[0]):
             for j in range(gaps.shape[1]):
                 tailgaps[i, j] = frames[i] + j + ConvFrames
+
         a2 = np.reshape(filteredSpec[tailgaps.astype(int)], (N_PEAKS, -1))
+
     else:
         a2=np.array(matrices[1])
     tails = np.reshape(np.mean(a2, axis=0), (FILTERBANK_SHAPE, max_n_frames, 1), order='F')

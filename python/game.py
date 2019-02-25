@@ -59,7 +59,8 @@ def initKitBG(drumkit_path, K=1, L=10, drumwise=False, method='NMFD'):
         filt_spec = stft(buffer)
         #find onsets
         peaks = getPeaksFromBuffer(filt_spec, N_PEAKS)
-
+        if(peaks.shape[0]<N_PEAKS):
+            raise Exception('drum nr. {} does not have the correct number of peaks, please re check'.format(i))
         # mean of cluster center
         freqtemps = findDefBins(peaks, filt_spec, L)
 
@@ -118,7 +119,7 @@ def playLive(drumkit_path, thresholdAdj=0.0, saveAll=False, createMidi=False, qu
 
     # Record a take
     try:
-        buffer = drumsynth.record_part(10)
+        buffer = drumsynth.record_part(20)
     except Exception as e:
         print('liveplay:', e)
     # transcribe the take
@@ -738,12 +739,12 @@ def debug():
     # debug
     # initKitBG('Kits/mcd2/',8,K)
     # K=1
-    file = '../DXSamplet/'
+    file = './Kits/mcd_pad/'
     method = 'NMFD'
     initKitBG(file,K=K, drumwise=True, method=method)
     # print('Kit init processing time:%0.2f' % (time.time() - t0))
     loadKit(file)
-
+    return
     print(test_run(file_path=file, annotated=True, method=method))
     return
     prec_tot = 0
