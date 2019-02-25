@@ -1,3 +1,9 @@
+'''
+Modified from Keras GRU layer and GRU cell
+Chollet, François et. al. "Keras" 2015
+https://keras.io
+'''
+
 import keras.backend as K
 from keras import activations, regularizers, initializers, constraints
 from keras.layers import GRU, GRUCell
