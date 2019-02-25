@@ -510,7 +510,7 @@ class PlayScreen(Screen):
                     self.playBackMessage = ''
                 else:
                     self.playBackMessage = 'Play Back Last Performance'
-                if self.step==False or cue==True:
+                if (self.step==False or cue==True) and self.pBtnMessage == 'Stop':
                     self.doPlayerTurn()
             except Exception as e:
                 print('playback ui: ',e)
@@ -546,7 +546,7 @@ class PlayScreen(Screen):
                 if self.step:
                     self.playBackMessage == 'Play Back Computer Performance'
                     return
-                else:
+                elif self.pBtnMessage == 'Stop':
                     self.playBackLast()
             #except Exception as e:
             #    print('virhe! computer turn: ',e)
@@ -600,7 +600,7 @@ class PlayScreen(Screen):
                 if self.step:
                     self.playBackMessage = 'Play Back Last Performance'
                     self.pBtnMessage='Play'
-                else:
+                elif self.pBtnMessage == 'Stop':
                     self.doComputerTurn()
             except Exception as e:
                 print('player playback ui: ',e)
