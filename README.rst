@@ -12,4 +12,11 @@ Installing
 
 A package will be available when all code is finished and double checked, for now the code can be forked and run at own risk.
 
+Running the Game
+================
+
+Run the program::
+
+    python drumoff.py
+
 
