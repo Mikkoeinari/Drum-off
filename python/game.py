@@ -103,9 +103,10 @@ def loadKit(drumkit_path):
     """
     global drumkit
     drumkit = pickle.load(open("{}/pickledDrumkit.drm".format(drumkit_path), 'rb'))
+    return drumkit
 
 
-def playLive(drumkit_path, thresholdAdj=0.0, saveAll=False, createMidi=False, quantize=0.):
+def playLive(drumkit_path, thresholdAdj=0.0,part_length=20, saveAll=False, createMidi=False, quantize=0.):
     """
     #Records one drum part of the player transcribes it and stores to a csv or also to a midi file
     The audio is not saved.
@@ -119,7 +120,7 @@ def playLive(drumkit_path, thresholdAdj=0.0, saveAll=False, createMidi=False, qu
 
     # Record a take
     try:
-        buffer = drumsynth.record_part(20)
+        buffer = drumsynth.record_part(part_length)
     except Exception as e:
         print('liveplay:', e)
     # transcribe the take
@@ -212,6 +213,7 @@ def processLiveAudio(liveBuffer=None, drumkit=None, quant_factor=1.0, iters=0, m
         for j in range(K2):
             Wpre[:, ind + j, :] = tails[:, :, j]
             total_tails += 1
+
     for i in range(int(stacks)):
         if method == 'NMFD' or method == 'ALL':
             H, Wpre, err1 = nmfd.NMFD(filt_spec.T, iters=iters, Wpre=Wpre, include_priors=True, n_heads=total_heads, hand_break=True)

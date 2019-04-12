@@ -194,6 +194,10 @@ def semi_adaptive_NMFB(X, Wpre, iters=100,n_heads=1, semi_adaptive=False, beta=4
     '''
     epsilon = 10 ** -18
     X = X + epsilon
+    if True:
+        for i in range(int(Wpre.shape[1] / 2)):
+            pass
+            X = np.hstack((X, .28 * Wpre[:, i, :]))
     #add noise priors
     Wpre=Wpre[:,:n_heads,:]
     if partially_fixed or add_h > 0:

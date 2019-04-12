@@ -535,6 +535,7 @@ class PlayScreen(Screen):
                         mgu.setLr(self.lr)
                     except Exception as e:
                         print(e)
+                #TODO: make user adjustable length
                 self.lastGenPart = mgu.generatePart(
                         mgu.train(fullPath, sampleMul=self.trSize,
                                   forceGen=False, updateModel=self.modify, model_type=model_type),
@@ -593,7 +594,8 @@ class PlayScreen(Screen):
         def callback():
             try:
                 print('recording turn')
-                self.lastPlayerPart, self.deltaTempo=game.playLive(fullPath, self.threshold, saveAll=True, quantize=self.quantize)
+                #TODO:make user adjustable length
+                self.lastPlayerPart, self.deltaTempo=game.playLive(fullPath, thresholdAdj=self.threshold,part_length=20, saveAll=True, quantize=self.quantize)
                 if self.lastPlayerPart==False:
                     return
                 self.createLast(self.lastPlayerPart,outFile='./player_performance.wav',addCountInAndCountOut=(not self.step))

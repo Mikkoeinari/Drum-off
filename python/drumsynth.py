@@ -215,3 +215,31 @@ def record_part(part_len_seconds=15):
     stream.close()
     p.terminate()
     return  np.array(frames)
+
+def record_stream():
+    """
+    records a drum take
+    :return:
+    """
+    global _ImRecording
+    _ImRecording = True
+    CHUNK = 1024
+    FORMAT = pyaudio.paInt16
+    CHANNELS = 1
+    RATE = 44100
+    p = pyaudio.PyAudio()
+    stream = p.open(format=FORMAT,
+                    channels=CHANNELS,
+                    rate=RATE,
+                    input=True,
+                    frames_per_buffer=CHUNK)
+
+    print("* recording")
+    frames = []
+    while _ImRecording:
+        if not _ImRecording:
+            break
+        data = stream.read(CHUNK)
+        #yield data
+        yield np.fromstring(data, np.int16)
+

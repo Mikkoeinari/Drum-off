@@ -7,6 +7,7 @@ from constants import *
 from sklearn.mixture import BayesianGaussianMixture
 import numpy as np
 from scipy.ndimage.filters import median_filter
+from scipy.fftpack import fft
 
 #globals
 max_n_frames = 10
@@ -85,7 +86,7 @@ class Drum(object):
         return self.highEmph
 
     def set_peaks(self, peaks):
-        self.name = peaks
+        self.peaks = peaks
 
     def get_peaks(self):
         return self.peaks
@@ -554,11 +555,34 @@ def recalculate_thresholds(filt_spec, shifts, drumkit, drumwise=False, method='N
     # for i in range(len(drums)):
     #    drums[i].set_threshold(mean)
 
+def rect_bark_filter_bank():
+    stft_bins = np.arange(FRAME_SIZE >> 1) / (FRAME_SIZE * 1. / SAMPLE_RATE)
+
+    # hack for more bark freq, 57 is the max, otherwise inc. the denominator
+    #bark_freq = np.array((600 * np.sinh((np.arange(0, 49)) / 12)))
+    #bark_freq[0] = 20
+
+    #Bark double frequencies from Madmom
+    bark_freq = np.array([20, 50, 100, 150, 200, 250, 300, 350, 400, 450,
+                            510, 570, 630, 700, 770, 840, 920, 1000, 1080,
+                            1170, 1270, 1370, 1480, 1600, 1720, 1850, 2000,
+                            2150, 2320, 2500, 2700, 2900, 3150, 3400, 3700,
+                            4000, 4400, 4800, 5300, 5800, 6400, 7000, 7700,
+                            8500, 9500, 10500, 12000, 13500, 15500])
+    # filter frequencies
+    bark_freq = bark_freq[bark_freq>20]
+    filt_bank = np.zeros((len(stft_bins), len(bark_freq)))
+    stft_bins = stft_bins[stft_bins >= bark_freq[0]]
+    index=0
+    for i in range(0, len(bark_freq)-1):
+        while stft_bins[index] > bark_freq[i] and stft_bins[index] < bark_freq[i+1] and index <= len(stft_bins):
+            filt_bank[index][i] += 1.
+            index += 1
+    return np.array(filt_bank)
 
 
 
-
-def stft(audio_signal, A=None, B=None, test=False):
+def stft(audio_signal, A=None, B=None, test=False, streaming=False, filterbank=rect_bark_filter_bank(), hs=HOP_SIZE, fs=FRAME_SIZE, sr=SAMPLE_RATE):
     #Battenberg OD etc.
     if A is not None and B is not None:
         spec= np.outer(A, B).T
@@ -580,56 +604,61 @@ def stft(audio_signal, A=None, B=None, test=False):
                  for i in range(spec.shape[0]):
                      spec[i, :] = np.mean(spec[i, :])
         return spec
+    # Moved outside the function
+    # def rect_bark_filter_bank():
+    #     stft_bins = np.arange(fs >> 1) / (fs * 1. / sr)
+    #
+    #     # hack for more bark freq, 57 is the max, otherwise inc. the denominator
+    #     #bark_freq = np.array((600 * np.sinh((np.arange(0, 49)) / 12)))
+    #     #bark_freq[0] = 20
+    #
+    #     #Bark double frequencies from Madmom
+    #     bark_freq = np.array([20, 50, 100, 150, 200, 250, 300, 350, 400, 450,
+    #                             510, 570, 630, 700, 770, 840, 920, 1000, 1080,
+    #                             1170, 1270, 1370, 1480, 1600, 1720, 1850, 2000,
+    #                             2150, 2320, 2500, 2700, 2900, 3150, 3400, 3700,
+    #                             4000, 4400, 4800, 5300, 5800, 6400, 7000, 7700,
+    #                             8500, 9500, 10500, 12000, 13500, 15500])
+    #     # filter frequencies
+    #     bark_freq = bark_freq[bark_freq>20]
+    #     filt_bank = np.zeros((len(stft_bins), len(bark_freq)))
+    #     stft_bins = stft_bins[stft_bins >= bark_freq[0]]
+    #     index=0
+    #     for i in range(0, len(bark_freq)-1):
+    #         while stft_bins[index] > bark_freq[i] and stft_bins[index] < bark_freq[i+1] and index <= len(stft_bins):
+    #             filt_bank[index][i] += 1.
+    #             index += 1
+    #     return np.array(filt_bank)
 
-    def rect_bark_filter_bank():
-        stft_bins = np.arange(FRAME_SIZE >> 1) / (FRAME_SIZE * 1. / SAMPLE_RATE)
 
-        # hack for more bark freq, 57 is the max, otherwise inc. the denominator
-        #bark_freq = np.array((600 * np.sinh((np.arange(0, 49)) / 12)))
-        #bark_freq[0] = 20
-
-        #Bark double frequencies from Madmom
-        bark_freq = np.array([20, 50, 100, 150, 200, 250, 300, 350, 400, 450,
-                                510, 570, 630, 700, 770, 840, 920, 1000, 1080,
-                                1170, 1270, 1370, 1480, 1600, 1720, 1850, 2000,
-                                2150, 2320, 2500, 2700, 2900, 3150, 3400, 3700,
-                                4000, 4400, 4800, 5300, 5800, 6400, 7000, 7700,
-                                8500, 9500, 10500, 12000, 13500, 15500])
-        # filter frequencies
-        bark_freq = bark_freq[bark_freq>20]
-        filt_bank = np.zeros((len(stft_bins), len(bark_freq)))
-        stft_bins = stft_bins[stft_bins >= bark_freq[0]]
-        index=0
-        for i in range(0, len(bark_freq)-1):
-            while stft_bins[index] > bark_freq[i] and stft_bins[index] < bark_freq[i+1] and index <= len(stft_bins):
-                filt_bank[index][i] += 1.
-                index += 1
-        return np.array(filt_bank)
-
-    from scipy.fftpack import fft
     #nr. frequency bins = Half of FRAME_SIZE
-    n_frames=int(FRAME_SIZE/2)
+    n_frames=int(fs/2)
     #HOP_LENGTH spaced index
-    frames_index= np.arange(0,len(audio_signal) ,HOP_SIZE)
+    frames_index= np.arange(0,len(audio_signal) ,hs)
     #+2 frames to correct NMF systematic errors...
-    data=np.zeros((len(frames_index)+2, n_frames), dtype=np.complex64)
+    err_corr=2
+    if streaming:
+        err_corr=0
+    data=np.zeros((len(frames_index)+err_corr, n_frames), dtype=np.complex64)
     #Window
-    win=np.kaiser(FRAME_SIZE, np.pi ** 2)
+    win=np.kaiser(fs, np.pi ** 2)
     #STFT
     for frame in range(len(frames_index)):
         #Get one frame length audio clip
-        one_frame =audio_signal[frames_index[frame]:frames_index[frame]+FRAME_SIZE]
+        one_frame =audio_signal[frames_index[frame]:frames_index[frame]+hs]
         #Pad last frame if needed
-        if one_frame.shape[0]<FRAME_SIZE:
-            one_frame=np.pad(one_frame,(0,FRAME_SIZE-one_frame.shape[0]), 'constant', constant_values=(0))
+        if one_frame.shape[0]<fs:
+            one_frame=np.pad(one_frame,(0,fs-one_frame.shape[0]), 'constant', constant_values=(0))
         #apply window
         fft_frame=np.multiply(one_frame, win)
         #FFT
-        data[frame+2] = fft(fft_frame, FRAME_SIZE, axis=0)[:n_frames]
+        data[frame+err_corr] = fft(fft_frame, fs, axis=0)[:n_frames]
     #mag spectrogram
     data = np.abs(data)
     #filter data
-    data = data@rect_bark_filter_bank()
+    data = data@filterbank
+    #for streaming we have to remove sys.error compesation.
+
     return data
 
 

@@ -17,6 +17,7 @@ from keras.models import Model, Sequential,load_model
 from keras.layers import *#,Dense,Conv1D,Flatten,TimeDistributed,Input,  MaxPooling1D,GlobalAveragePooling1D,GRU, BatchNormalization, GRUCell, Dropout, TimeDistributed, Reshape, LSTM, Activation
 from keras.utils import Sequence,to_categorical
 from keras import regularizers
+from keras.constraints import max_norm
 from keras.optimizers import *#nadam
 from collections import Counter
 import tcn
@@ -33,8 +34,7 @@ set_random_seed(2)
 t0 = time()
 seqLen=16
 #parallel MGU divisors
-dvs=[2,4,8,16]
-numDiffHits = 0
+dvs=[1,4,16,64]
 partLength = 0
 lastLoss=0
 lr=.002
@@ -136,132 +136,82 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
 
         elif model_type=='TDC_parallel_mgu':
-            drop=0.7
-            cdrop=0.7
+            drop=0.
+            cdrop=0.85
+            sdrop=0.85
+            layerSize=int(layerSize/2)
+            n_kernels=64
             unroll=False
             use_bias=False
             ret_seq=False
-            regVal=0
-            regVal2=0
-            in1 = Input(shape=(seqLen,))
-            em1=Embedding(numDiffHits + 1, numDiffHits)(in1)
+            regVal=0.
+            regVal2=0.
+            def get_layer(seqLen, n_kernels, n_win):
+                in1 = Input(shape=(seqLen,))
+                em1=Embedding(numDiffHits + 1, numDiffHits)(in1)
+                reshape1=Reshape((1,seqLen, numDiffHits))(em1)
+                conv1=TimeDistributed(Conv1D(n_kernels,n_win, activation='elu',kernel_regularizer=regularizers.l2(regVal),
+                    activity_regularizer=regularizers.l1(regVal2)), input_shape=(1,)+(seqLen, numDiffHits))(reshape1)
 
-            reshape1=Reshape((1,seqLen, numDiffHits))(em1)
-            conv1=TimeDistributed(Conv1D(64,2, activation='elu',kernel_regularizer=regularizers.l1(regVal),
-                activity_regularizer=regularizers.l1(regVal2)), input_shape=(1,)+(seqLen, numDiffHits))(reshape1)
-            flat1=TimeDistributed(Flatten())(conv1)
-            drop1=TimeDistributed(Dropout(cdrop))(flat1)
-            mgu1=(MGU(layerSize, activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
-                          implementation=1, unroll=unroll, use_bias=use_bias))(drop1)
+                #bn1=TimeDistributed(BatchNormalization())(conv1)
+                sdrop1=TimeDistributed(SpatialDropout1D(sdrop))(conv1)
+                flat1=TimeDistributed(Flatten())(sdrop1)
+                drop1=TimeDistributed(Dropout(cdrop))(flat1)
+                mgu1=(MGU(layerSize, activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
+                              implementation=1, unroll=unroll, use_bias=use_bias))(drop1)
+                return [in1, mgu1]
 
-            #model2
-            in2=Input(shape=(int(seqLen/dvs[0]),))
-            em2 = Embedding(numDiffHits + 1, numDiffHits)(in2)
-            reshape2 = Reshape((1, int(seqLen/dvs[0]), numDiffHits))(em2)
-            conv2 = TimeDistributed(Conv1D(64, 2, activation='elu',kernel_regularizer=regularizers.l1(regVal),
-                activity_regularizer=regularizers.l1(regVal2)), input_shape=(1,) + (seqLen, numDiffHits))(reshape2)
-            flat2 = TimeDistributed(Flatten())(conv2)
-            drop2 = TimeDistributed(Dropout(cdrop))(flat2)
-            mgu2=(MGU(int(layerSize), activation='tanh',return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
-                     implementation=1, unroll=unroll, use_bias=use_bias))(drop2)
-
-            # model3
-            in3 = Input(shape=(int(seqLen/dvs[1]),))
-            em3 = Embedding(numDiffHits + 1, numDiffHits)(in3)
-            reshape3 = Reshape((1, int(seqLen / dvs[1]), numDiffHits))(em3)
-            conv3 = TimeDistributed(Conv1D(64, 2, activation='elu',kernel_regularizer=regularizers.l1(regVal),
-                activity_regularizer=regularizers.l1(regVal2)), input_shape=(1,) + (seqLen, numDiffHits))(reshape3)
-            flat3 = TimeDistributed(Flatten())(conv3)
-            drop3 = TimeDistributed(Dropout(cdrop))(flat3)
-            mgu3 = (MGU(int(layerSize), activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
-                       implementation=1, unroll=unroll, use_bias=use_bias))(drop3)
-
-            # model4
-            in4 = Input(shape=(int(seqLen/dvs[2]),))
-            em4 = Embedding(numDiffHits + 1, numDiffHits)(in4)
-            reshape4 = Reshape((1, int(seqLen / dvs[2]), numDiffHits))(em4)
-            conv4 = TimeDistributed(Conv1D(64, 2, activation='elu',kernel_regularizer=regularizers.l1(regVal),
-                activity_regularizer=regularizers.l1(regVal2)), input_shape=(1,) + (seqLen, numDiffHits))(reshape4)
-            flat4 = TimeDistributed(Flatten())(conv4)
-            drop4 = TimeDistributed(Dropout(cdrop))(flat4)
-            mgu4 = (MGU(int(layerSize), activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
-                       implementation=1, unroll=unroll, use_bias=use_bias))(drop4)
-
-            # model5
-            in5 = Input(shape=(int(seqLen/dvs[3]),))
-            em5 = Embedding(numDiffHits + 1, numDiffHits)(in5)
-            reshape5 = Reshape((1, int(seqLen /dvs[3]), numDiffHits))(em5)
-            conv5 = TimeDistributed(Conv1D(64, 1, activation='elu',kernel_regularizer=regularizers.l1(regVal),
-                activity_regularizer=regularizers.l1(regVal2)), input_shape=(1,) + (seqLen, numDiffHits))(reshape5)
-            flat5 = TimeDistributed(Flatten())(conv5)
-            drop5 = TimeDistributed(Dropout(cdrop))(flat5)
-            mgu5 = (MGU(int(layerSize), activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
-                       implementation=1, unroll=unroll, use_bias=use_bias))(drop5)
-
+            layers=[]
+            for i in dvs:
+                layers.append(get_layer(int(seqLen/i),n_kernels, min(2,int(seqLen/i))))
             #Merging
-            merged=Add()([mgu1,mgu2,mgu3,mgu4,mgu5])
+            layers=np.array(layers)
+
+            merged=Concatenate()(list(layers[:,1]))
             bn=BatchNormalization()(merged)
             out=Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal")(bn)
-            model = Model([in1, in2, in3, in4, in5], out)
+            model = Model(list(layers[:,0]), out)
 
         elif model_type == 'parallel_mgu':
-            drop = 0.55
+            drop = 0.9
             unroll = False
             use_bias = False
             ret_seq = False
 
-            # model1
-            in1 = Input(shape=(seqLen,))
-            em1 = Embedding(numDiffHits + 1, numDiffHits)(in1)
-            mgu1 = (MGU(layerSize, activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
-                        implementation=1, unroll=unroll, use_bias=use_bias))(em1)
-            # model2
-            in2 = Input(shape=(int(seqLen / dvs[0]),))
-            em2 = Embedding(numDiffHits + 1, numDiffHits)(in2)
-            mgu2 = (
-                MGU(int(layerSize), activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
-                    implementation=1, unroll=unroll, use_bias=use_bias))(em2)
-            # model3
-            in3 = Input(shape=(int(seqLen / dvs[1]), ))
-            em3 = Embedding(numDiffHits + 1, numDiffHits)(in3)
-            mgu3 = (
-                MGU(int(layerSize), activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
-                    implementation=1, unroll=unroll, use_bias=use_bias))(em3)
-            # model4
-            in4 = Input(shape=(int(seqLen / dvs[2]), ))
-            em4 = Embedding(numDiffHits + 1, numDiffHits)(in4)
-            mgu4 = (
-                MGU(int(layerSize), activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
-                    implementation=1, unroll=unroll, use_bias=use_bias))(em4)
-            # model5
-            in5 = Input(shape=(int(seqLen / dvs[3]),))
-            em5 = Embedding(numDiffHits + 1, numDiffHits)(in5)
-            mgu5 = (
-                MGU(int(layerSize), activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
-                    implementation=1, unroll=unroll, use_bias=use_bias))(em5)
+            def get_layer(seqLen):
+                in1 = Input(shape=(seqLen,))
+                em1 = Embedding(numDiffHits + 1, numDiffHits)(in1)
+                mgu1 = (MGU(layerSize, activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
+                            implementation=1, unroll=unroll, use_bias=use_bias))(em1)
+                return [in1, mgu1]
 
+            layers = []
+            for i in dvs:
+                layers.append(get_layer(int(seqLen / i)))
             # Merging
-            merged = Add()([mgu1, mgu2, mgu3, mgu4, mgu5])
-            #bn = BatchNormalization()(merged)
-            out = Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal")(merged)
-            model = Model([in1, in2, in3, in4, in5], out)
+            layers = np.array(layers)
+
+            merged = Add()(list(layers[:, 1]))
+            bn = BatchNormalization()(merged)
+            out = Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal")(bn)
+            model = Model(list(layers[:, 0]), out)
         elif model_type=='time_dist_conv_mgu':
             #TimeDistributed version
             model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
             model.add(Reshape((1,seqLen, numDiffHits), input_shape=(seqLen, numDiffHits)))
-            model.add(TimeDistributed(Conv1D(64,8, activation='relu'), input_shape=(1,)+(seqLen, numDiffHits)))
+            model.add(TimeDistributed(Conv1D(64,2, activation='elu'), input_shape=(1,)+(seqLen, numDiffHits)))
             #model.add(TimeDistributed(MaxPooling1D(3)))
             model.add(TimeDistributed(Flatten()))
-            model.add(TimeDistributed(Dropout(0.5)))
-            model.add(MGU(layerSize, activation='tanh', return_sequences=False, dropout=0.5, recurrent_dropout=0.5,
+            model.add(TimeDistributed(Dropout(0.9)))
+            model.add(MGU(layerSize, activation='tanh', return_sequences=False, dropout=0.9, recurrent_dropout=0.9,
                           implementation=1))
-            #model.add(BatchNormalization(momentum=0.5))
+            model.add(BatchNormalization())
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
         elif model_type == 'time_dist_mp_conv_mgu':
             # TimeDistributed version
             model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
             model.add(Reshape((1, seqLen, numDiffHits), input_shape=(seqLen, numDiffHits)))
-            model.add(TimeDistributed(Conv1D(64, 4, activation='elu'), input_shape=(1,) + (seqLen, numDiffHits)))
+            model.add(TimeDistributed(Conv1D(64, 2, activation='elu'), input_shape=(1,) + (seqLen, numDiffHits)))
             model.add(TimeDistributed(MaxPooling1D(3)))
             model.add(TimeDistributed(Flatten()))
             model.add(TimeDistributed(Dropout(0.4)))
@@ -272,7 +222,8 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
         elif model_type=='single_mgu':
             model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
             model.add(MGU(layerSize, activation='tanh',input_shape=(seqLen, numDiffHits),  # kernel_initializer='lecun_normal',
-                      return_sequences=False, dropout=0.55, recurrent_dropout=0.55,implementation=1))
+                      return_sequences=False, dropout=0.65, recurrent_dropout=0.65,implementation=1))
+            model.add(BatchNormalization())
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
         elif model_type=='single_mgu_relu':
             model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
@@ -334,17 +285,17 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
         elif model_type=='tcn':
             model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
             model.add(tcn.compiled_tcn(return_sequences=False,
-                                 num_feat=numDiffHits,
-                                 num_classes=numDiffHits,
-                                 nb_filters=64,#64/16 result from 64
-                                 kernel_size=8,#64/16 result from 8
-                                 dilations=[2 ** i for i in range(3)],#64/16 result from 3
-                                 nb_stacks=2,#64/16 result from 2
-                                 max_len=None,#64/16 result from 128
-                                 use_skip_connections=False,
-                                       dropout_rate=0.75))#64/16 result from 0.75
+                             num_feat=numDiffHits,
+                             num_classes=numDiffHits,
+                             nb_filters=64,#64/16 result from 64
+                             kernel_size=2,#64/16 result from 8
+                             dilations=[2 ** i for i in range(2)],#64/16 result from 3
+                             nb_stacks=1,#64/16 result from 2
+                             max_len=None,#64/16 result from 128
+                             use_skip_connections=True,
+                             dropout_rate=0.8))#64/16 result from 0.75
         print(model.summary())
-        optr = nadam(lr=0.002)
+        optr = adam(lr=0.001)
         model.compile(loss='sparse_categorical_crossentropy',metrics=['accuracy'], optimizer=optr)
         print('Saving new model....')
         model.save_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath, model_type))
@@ -443,11 +394,16 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
         tr_gen = myGenerator()
 
     if model_type=='parallel_mgu' or model_type=='TDC_parallel_mgu':
-        X_train2 = X_train[:, -int(seqLen / dvs[0]):]
-        X_train3 = X_train[:, -int(seqLen / dvs[1]):]
-        X_train4 = X_train[:, -int(seqLen / dvs[2]):]
-        X_train5 = X_train[:, -int(seqLen / dvs[3]):]
-        X_train_comp=[X_train,X_train2, X_train3,X_train4, X_train5]
+        X_train_comp =[]
+        for i in dvs:
+            X_train_comp.append(X_train[:, -int(seqLen / i):])
+        #X_train2 = X_train[:, -int(seqLen / dvs[1]):]
+        #X_train3 = X_train[:, -int(seqLen / dvs[2]):]
+        #X_train4 = X_train[:, -int(seqLen / dvs[3]):]
+        #X_train5 = X_train[:, -int(seqLen / dvs[4]):]
+        #X_train6 = X_train[:, -int(seqLen / dvs[5]):]
+        #X_train7 = X_train[:, -int(seqLen / dvs[6]):]
+        #X_train_comp=[X_train,X_train2, X_train3,X_train4, X_train5,X_train6, X_train7 ]
     else:
         X_train_comp=X_train
     if forceGen:
@@ -475,12 +431,12 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
         if updateModel==True:
             #model.load_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath,model_type))
             #
-            model.fit(X_train_comp, y_train,batch_size=int(max([y_train.shape[0]/50,25])), epochs=2000000000,
+            model.fit(X_train_comp, y_train,batch_size=int(max([y_train.shape[0]/50,32])), epochs=initial_epoch+40,
                   callbacks=[modelsaver,earlystopper,  history],# learninratescheduler],earlystopper,
                   validation_split=0.33,
                   verbose=2, initial_epoch=initial_epoch, class_weight=class_weights, shuffle=False)
             lastLoss = np.mean(history.losses[-10:])
-            pickle.dump(initial_epoch+100, open(CurrentKitPath+ '/initial_epoch.k', 'wb'))
+            pickle.dump(initial_epoch+40, open(CurrentKitPath+ '/initial_epoch.k', 'wb'))
             model.load_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath, model_type))
             model.save('{}model_{}.hdf5'.format(CurrentKitPath, model_type))
             #model.save_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath,model_type))
@@ -501,7 +457,7 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
     else:
         return X_train[0]#,history.hist
 
-def generatePart(data,partLength=123, temp=None, include_seed=False, model_type='parallel_mgu'):
+def generatePart(data,partLength=123,seqLen=16, temp=None, include_seed=False, model_type='parallel_mgu'):
 
     #print(data)
     seed = data
@@ -549,8 +505,11 @@ def generatePart(data,partLength=123, temp=None, include_seed=False, model_type=
     #print(data.shape)
     for i in range(partLength):
         data = data.reshape(1, seqLen)
+        datas=[]
         if model_type=='parallel_mgu' or model_type=='TDC_parallel_mgu':
-            datas=[data, data[:,-int(seqLen/dvs[0]):],data[:,-int(seqLen/dvs[1]):],data[:,-int(seqLen/dvs[2]):],data[:,-int(seqLen/dvs[3]):]]
+            for i in dvs:
+                datas.append(data[:,-int(seqLen/i):])
+            #datas=[data[:,-int(seqLen/dvs[0]):],data[:,-int(seqLen/dvs[1]):],data[:,-int(seqLen/dvs[2]):],data[:,-int(seqLen/dvs[3]):],data[:,-int(seqLen/dvs[4]):],data[:,-int(seqLen/dvs[5]):],data[:,-int(seqLen/dvs[6]):]]
         else :
             datas=[data]
         with graph.as_default():
@@ -639,18 +598,20 @@ def debug():
     ##vectorizeCSV('./Kits/Default/takes/testbeat1535385910.271116.csv')
     #
     ##print(takes)
-    seqLen=16
+    seqLen=64
+    from keras.utils import plot_model
     if True:
         logs=[]
         times=[]
         #
         model_type=['TDC_parallel_mgu', 'time_dist_conv_mgu','parallel_mgu','stacked_mgu_tanh','single_mgu','conv_mgu',
-                    'single_gru', 'single_lstm']
-        model_type = ['tcn']
-        buildVocabulary(hits=get_possible_notes([0, 1, 2, 3, 5, 8, 9, 10, 11, 12, 13]))
+                    'single_gru', 'single_lstm', 'tcn']
+        model_type = ['TDC_parallel_mgu']
+        buildVocabulary(hits=utils.get_possible_notes([0, 1, 2, 3, 5, 8, 9, 10, 11, 12, 13]))
         for j in model_type:
             log=[]
             model = initModel(seqLen=seqLen, destroy_old=True, model_type=j)
+
             takes = ['./Kits/MDC_Stack/takes/{}'.format(f) for f in os.listdir('./Kits/MDC_Stack/takes/') if not f.startswith('.')]
             takes.sort()
             takes2 = ['./Kits/timedist/takes/{}'.format(f) for f in os.listdir('./Kits/timedist/takes/') if not f.startswith('.')]
@@ -663,10 +624,13 @@ def debug():
             for i in takes2:
                 print(i)
                 t1 = time()
-                seed, history=train(i,seqLen=seqLen,sampleMul=1,model_type=j,updateModel=True, return_history=True)
+                seed, history=train(i,seqLen=seqLen,sampleMul=1.33,model_type=j,updateModel=True, return_history=True)
 
-                file = generatePart(seed, partLength=333, temp=1., include_seed=False, model_type=j)
+                file = generatePart(seed, partLength=333,seqLen=seqLen, temp=1., include_seed=False, model_type=j)
                 print('roundtrip time:%0.4f' % (time() - t1))
+                #drumsynth.createWav(i, 'orig_temp_{}.wav'.format(j), addCountInAndCountOut=False,
+                #                    deltaTempo=1,
+                #                    countTempo=1)
                 drumsynth.createWav(file, 'gen_temp_{}.wav'.format(j), addCountInAndCountOut=False,
                                     deltaTempo=1,
                                     countTempo=1)
@@ -676,7 +640,7 @@ def debug():
             for i in takes:
                 print(i)
                 seed, history=train(i,seqLen=seqLen,sampleMul=1,model_type=j,updateModel=True, return_history=True)
-                file = generatePart(seed, partLength=333, temp=1., include_seed=False, model_type=j)
+                file = generatePart(seed, partLength=333,seqLen=seqLen, temp=1., include_seed=False, model_type=j)
                 drumsynth.createWav(file, 'gen_temp_{}.wav'.format(j), addCountInAndCountOut=False,
                                     deltaTempo=1,
                                     countTempo=1)
