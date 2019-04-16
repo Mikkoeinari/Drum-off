@@ -34,7 +34,8 @@ set_random_seed(2)
 t0 = time()
 seqLen=16
 #parallel MGU divisors
-dvs=[1,4,16,64]
+dvs=[1,2,4,8,16,32,64]
+#dvs=[1,4,16,64]
 partLength = 0
 lastLoss=0
 lr=.002
@@ -108,7 +109,7 @@ def getLr():
 
 def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'):
     global model, CurrentKitPath
-    layerSize =numDiffHits #Layer size = number of categorical variables
+    layerSize =16#numDiffHits #Layer size = number of categorical variables
     if kitPath is None:
         filePath='./Kits/'
     else:
@@ -129,18 +130,19 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
         if model_type=='conv_mgu':
             #Conv1D before MGU
             model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
-            model.add(Conv1D(64,16, activation='elu', input_shape=(seqLen, numDiffHits)))
-            model.add(Dropout(0.45))
-            model.add(MGU(layerSize, activation='tanh', return_sequences=False, dropout=0.45, recurrent_dropout=0.45,
+            model.add(Conv1D(32,2, activation='elu', input_shape=(seqLen, numDiffHits)))
+            model.add(Dropout(0.5))
+            model.add(MGU(layerSize, activation='tanh', return_sequences=False, dropout=0.5, recurrent_dropout=0.5,
                           implementation=1))
+            model.add(BatchNormalization())
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
 
         elif model_type=='TDC_parallel_mgu':
-            drop=0.
-            cdrop=0.85
-            sdrop=0.85
-            layerSize=int(layerSize/2)
-            n_kernels=64
+            drop=0.55
+            cdrop=0.6
+            sdrop=0.6
+            layerSize=int(4)
+            n_kernels=4
             unroll=False
             use_bias=False
             ret_seq=False
@@ -156,14 +158,14 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
                 #bn1=TimeDistributed(BatchNormalization())(conv1)
                 sdrop1=TimeDistributed(SpatialDropout1D(sdrop))(conv1)
                 flat1=TimeDistributed(Flatten())(sdrop1)
-                drop1=TimeDistributed(Dropout(cdrop))(flat1)
+                #drop1=TimeDistributed(Dropout(cdrop))(flat1)
                 mgu1=(MGU(layerSize, activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
-                              implementation=1, unroll=unroll, use_bias=use_bias))(drop1)
+                              implementation=1, unroll=unroll, use_bias=use_bias))(flat1)
                 return [in1, mgu1]
 
             layers=[]
             for i in dvs:
-                layers.append(get_layer(int(seqLen/i),n_kernels, min(2,int(seqLen/i))))
+                layers.append(get_layer(int(seqLen/i),n_kernels, min(8,int(seqLen/i))))
             #Merging
             layers=np.array(layers)
 
@@ -173,11 +175,10 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
             model = Model(list(layers[:,0]), out)
 
         elif model_type == 'parallel_mgu':
-            drop = 0.9
+            drop = 0.7
             unroll = False
             use_bias = False
             ret_seq = False
-
             def get_layer(seqLen):
                 in1 = Input(shape=(seqLen,))
                 em1 = Embedding(numDiffHits + 1, numDiffHits)(in1)
@@ -199,11 +200,11 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
             #TimeDistributed version
             model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
             model.add(Reshape((1,seqLen, numDiffHits), input_shape=(seqLen, numDiffHits)))
-            model.add(TimeDistributed(Conv1D(64,2, activation='elu'), input_shape=(1,)+(seqLen, numDiffHits)))
+            model.add(TimeDistributed(Conv1D(32,2, activation='elu'), input_shape=(1,)+(seqLen, numDiffHits)))
             #model.add(TimeDistributed(MaxPooling1D(3)))
             model.add(TimeDistributed(Flatten()))
-            model.add(TimeDistributed(Dropout(0.9)))
-            model.add(MGU(layerSize, activation='tanh', return_sequences=False, dropout=0.9, recurrent_dropout=0.9,
+            model.add(TimeDistributed(Dropout(0.625)))
+            model.add(MGU(layerSize, activation='tanh', return_sequences=False, dropout=0.6, recurrent_dropout=0.6,
                           implementation=1))
             model.add(BatchNormalization())
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
@@ -222,64 +223,34 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
         elif model_type=='single_mgu':
             model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
             model.add(MGU(layerSize, activation='tanh',input_shape=(seqLen, numDiffHits),  # kernel_initializer='lecun_normal',
-                      return_sequences=False, dropout=0.65, recurrent_dropout=0.65,implementation=1))
+                      return_sequences=False, dropout=0.6, recurrent_dropout=0.6,implementation=1))
             model.add(BatchNormalization())
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
-        elif model_type=='single_mgu_relu':
-            model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
-            model.add(MGU(layerSize, activation='relu',input_shape=(seqLen, numDiffHits),  # kernel_initializer='lecun_normal',
-                      return_sequences=False, dropout=0.65, recurrent_dropout=0.65,implementation=1))
-            model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
-        elif model_type=='single_mgu_elu':
-            model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
-            model.add(MGU(layerSize, activation='elu',input_shape=(seqLen, numDiffHits),  # kernel_initializer='lecun_normal',
-                      return_sequences=False, dropout=0.65, recurrent_dropout=0.65,implementation=1))
-            model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
-        elif model_type == 'stacked_mgu_tanh':
+        elif model_type == 'stacked_mgu':
             model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
             model.add(MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
                           # kernel_initializer='lecun_normal',
-                          return_sequences=True, dropout=0.4, recurrent_dropout=0.4, implementation=1))
+                          return_sequences=True, dropout=0.0, recurrent_dropout=0.0, implementation=1))
             model.add(MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
                           # kernel_initializer='lecun_normal',
-                          return_sequences=True, dropout=0.4, recurrent_dropout=0.4, implementation=1))
+                          return_sequences=True, dropout=0.0, recurrent_dropout=0.0, implementation=1))
             model.add(MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
-                          # kernel_initializer='lecun_normal',
-                          return_sequences=False, dropout=0.0, recurrent_dropout=0.0, implementation=1))
-            model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
-        elif model_type == 'stacked_mgu_relu':
-            model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
-            model.add(MGU(layerSize, activation='relu', input_shape=(seqLen, numDiffHits),
-                          # kernel_initializer='lecun_normal',
-                          return_sequences=True, dropout=0.5, recurrent_dropout=0.5, implementation=1))
-            model.add(MGU(layerSize, activation='relu', input_shape=(seqLen, numDiffHits),
-                          # kernel_initializer='lecun_normal',
-                          return_sequences=True, dropout=0.5, recurrent_dropout=0.5, implementation=1))
-            model.add(MGU(layerSize, activation='relu', input_shape=(seqLen, numDiffHits),
-                          # kernel_initializer='lecun_normal',
-                          return_sequences=False, dropout=0.0, recurrent_dropout=0.0, implementation=1))
-            model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
-        elif model_type=='stacked_mgu':
-            model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
-            model.add(MGU(layerSize, activation='elu',input_shape=(seqLen, numDiffHits),  # kernel_initializer='lecun_normal',
-                      return_sequences=True, dropout=0.55, recurrent_dropout=0.55,implementation=1))
-            model.add(MGU(layerSize, activation='elu', input_shape=(seqLen, numDiffHits),
-                          # kernel_initializer='lecun_normal',
-                          return_sequences=True, dropout=0.55, recurrent_dropout=0.55, implementation=1))
-            model.add(MGU(layerSize, activation='elu', input_shape=(seqLen, numDiffHits),
                           # kernel_initializer='lecun_normal',
                           return_sequences=False, dropout=0., recurrent_dropout=0., implementation=1))
+            #model.add(BatchNormalization())
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
         elif model_type=='single_gru':
             model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
             model.add(GRU(layerSize, activation='tanh',input_shape=(seqLen, numDiffHits),  # kernel_initializer='lecun_normal',
                       return_sequences=False, dropout=0.65, recurrent_dropout=0.65,implementation=1))
+            model.add(BatchNormalization())
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
         elif model_type == 'single_lstm':
             model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
             model.add(LSTM(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
                           # kernel_initializer='lecun_normal',
-                          return_sequences=False, dropout=0.75, recurrent_dropout=0.75, implementation=1))
+                          return_sequences=False, dropout=0.7, recurrent_dropout=0.7, implementation=1))
+            model.add(BatchNormalization())
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
 
         elif model_type=='tcn':
@@ -287,13 +258,13 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
             model.add(tcn.compiled_tcn(return_sequences=False,
                              num_feat=numDiffHits,
                              num_classes=numDiffHits,
-                             nb_filters=64,#64/16 result from 64
+                             nb_filters=32,#64/16 result from 64
                              kernel_size=2,#64/16 result from 8
                              dilations=[2 ** i for i in range(2)],#64/16 result from 3
                              nb_stacks=1,#64/16 result from 2
                              max_len=None,#64/16 result from 128
                              use_skip_connections=True,
-                             dropout_rate=0.8))#64/16 result from 0.75
+                             dropout_rate=0.65))#64/16 result from 0.75
         print(model.summary())
         optr = adam(lr=0.001)
         model.compile(loss='sparse_categorical_crossentropy',metrics=['accuracy'], optimizer=optr)
@@ -431,12 +402,12 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
         if updateModel==True:
             #model.load_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath,model_type))
             #
-            model.fit(X_train_comp, y_train,batch_size=int(max([y_train.shape[0]/50,32])), epochs=initial_epoch+40,
+            model.fit(X_train_comp, y_train,batch_size=int(max([y_train.shape[0]/50,32])), epochs=initial_epoch+20,
                   callbacks=[modelsaver,earlystopper,  history],# learninratescheduler],earlystopper,
                   validation_split=0.33,
                   verbose=2, initial_epoch=initial_epoch, class_weight=class_weights, shuffle=False)
             lastLoss = np.mean(history.losses[-10:])
-            pickle.dump(initial_epoch+40, open(CurrentKitPath+ '/initial_epoch.k', 'wb'))
+            pickle.dump(initial_epoch+20, open(CurrentKitPath+ '/initial_epoch.k', 'wb'))
             model.load_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath, model_type))
             model.save('{}model_{}.hdf5'.format(CurrentKitPath, model_type))
             #model.save_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath,model_type))
@@ -604,9 +575,9 @@ def debug():
         logs=[]
         times=[]
         #
-        model_type=['TDC_parallel_mgu', 'time_dist_conv_mgu','parallel_mgu','stacked_mgu_tanh','single_mgu','conv_mgu',
+        model_type=['TDC_parallel_mgu', 'time_dist_conv_mgu','parallel_mgu','stacked_mgu','conv_mgu','single_mgu',
                     'single_gru', 'single_lstm', 'tcn']
-        model_type = ['TDC_parallel_mgu']
+        #model_type = ['stacked_mgu']
         buildVocabulary(hits=utils.get_possible_notes([0, 1, 2, 3, 5, 8, 9, 10, 11, 12, 13]))
         for j in model_type:
             log=[]
@@ -624,7 +595,7 @@ def debug():
             for i in takes2:
                 print(i)
                 t1 = time()
-                seed, history=train(i,seqLen=seqLen,sampleMul=1.33,model_type=j,updateModel=True, return_history=True)
+                seed, history=train(i,seqLen=seqLen,sampleMul=1,model_type=j,updateModel=True, return_history=True)
 
                 file = generatePart(seed, partLength=333,seqLen=seqLen, temp=1., include_seed=False, model_type=j)
                 print('roundtrip time:%0.4f' % (time() - t1))
@@ -651,7 +622,7 @@ def debug():
             times.append(time() - t0)
             print('training a model from scratch:%0.2f' % (time() - t0))
 
-    pickle.dump(logs, open("{}/logs_full_folder_complete_MGU_lasts_64_tcn.log".format('.'), 'wb'))
+    pickle.dump(logs, open("{}/logs_full_folder_complete_stacked.log".format('.'), 'wb'))
     print('times')
     print(times)
     return
