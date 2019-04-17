@@ -34,7 +34,7 @@ set_random_seed(2)
 t0 = time()
 seqLen=16
 #parallel MGU divisors
-dvs=[1,2,4,8,16,32,64]
+dvs=[1,2,4,8,16]
 #dvs=[1,4,16,64]
 partLength = 0
 lastLoss=0
@@ -569,7 +569,7 @@ def debug():
     ##vectorizeCSV('./Kits/Default/takes/testbeat1535385910.271116.csv')
     #
     ##print(takes)
-    seqLen=64
+    seqLen=16
     from keras.utils import plot_model
     if True:
         logs=[]
@@ -622,7 +622,7 @@ def debug():
             times.append(time() - t0)
             print('training a model from scratch:%0.2f' % (time() - t0))
 
-    pickle.dump(logs, open("{}/logs_full_folder_complete_stacked.log".format('.'), 'wb'))
+    pickle.dump(logs, open("{}/logs_full_folder_complete_all16.log".format('.'), 'wb'))
     print('times')
     print(times)
     return
@@ -677,66 +677,30 @@ def debug():
     sampleMul=1
     all=False
     logs=[]
-    #success: 'single_mgu','parallel_mgu''TDC_parallel_mgu','time_dist_conv_mgu','parallel_mgu','single_gru',
-    for i in ['time_dist_conv_mgu']:
-        model_type=i
+    model_type = ['TDC_parallel_mgu', 'time_dist_conv_mgu', 'parallel_mgu', 'stacked_mgu', 'conv_mgu', 'single_mgu',
+                  'single_gru', 'single_lstm', 'tcn']
+    for i in model_type:
         print('Starting: {}'.format(i))
-        model = initModel(seqLen, destroy_old=False, model_type=model_type)
-        optr=nadam(lr=0.001)
-        model.compile(loss='categorical_crossentropy',metrics=['accuracy'], optimizer=optr)
         t0 = time()
-        #train(files,seqLen=seqLen, sampleMul=1.,updateModel='generator', model_type=model_type, forceGen=False)
-        seed=train('./Kits/timedist/takes/lastTake.csv', seqLen, sampleMul=sampleMul, forceGen=False, updateModel=False,model_type=model_type)
-        file=generatePart(seed, partLength=333,temp=1., include_seed=False,model_type=model_type)
-        drumsynth.createWav(file,'gen_temp{}.wav'.format(model_type), addCountInAndCountOut=False, deltaTempo=1,
-                            countTempo=1)
-
-        #logs.append(log)
-        #print(log)
+        log = []
+        model = initModel(seqLen=seqLen, destroy_old=True, model_type=i)
         if all:
-            print('../../midi_data_set/mididata0.csv')
-            train('../../midi_data_set/mididata0.csv', seqLen, sampleMul=sampleMul, forceGen=False, updateModel=True,model_type=model_type)
-            print('../../midi_data_set/mididata1.csv')
-            train('../../midi_data_set/mididata1.csv', seqLen, sampleMul=sampleMul, forceGen=False, updateModel=True,model_type=model_type)
-            print('../../midi_data_set/mididata2.csv')
-            train('../../midi_data_set/mididata2.csv', seqLen, sampleMul=sampleMul, forceGen=False, updateModel=True,model_type=model_type)
-            print('../../midi_data_set/mididata3.csv')
-            train('../../midi_data_set/mididata3.csv', seqLen, sampleMul=sampleMul, forceGen=False, updateModel=True,model_type=model_type)
-            print('../../midi_data_set/mididata4.csv')
-            train('../../midi_data_set/mididata4.csv', seqLen, sampleMul=sampleMul, forceGen=False, updateModel=True,model_type=model_type)
-            print('../../midi_data_set/mididata5.csv')
-            train('../../midi_data_set/mididata5.csv', seqLen, sampleMul=sampleMul, forceGen=False, updateModel=True,model_type=model_type)
-            print('../../midi_data_set/mididata6.csv')
-            train('../../midi_data_set/mididata6.csv', seqLen, sampleMul=sampleMul, forceGen=False, updateModel=True,model_type=model_type)
-            print('../../midi_data_set/mididata7.csv')
-            train('../../midi_data_set/mididata7.csv', seqLen, sampleMul=sampleMul, forceGen=False, updateModel=True,model_type=model_type)
-            print('../../midi_data_set/mididata8.csv')
-            train('../../midi_data_set/mididata8.csv', seqLen, sampleMul=sampleMul, forceGen=False, updateModel=True,model_type=model_type)
-            print('../../midi_data_set/mididata9.csv')
-        #_,log=train('../../midi_data_set/mididata0.csv', seqLen, sampleMul=sampleMul, forceGen=False,
-        #                           updateModel=True, model_type=model_type)
-        #logs.append(log)
-        #print(log)
-        #seed =train('../../midi_data_set/mididata0.csv', seqLen, sampleMul=.1, forceGen=True,
-        #                   updateModel=True, model_type=model_type)
-        #generatePart(seed, partLength=666, temp=1., include_seed=True,model_type=model_type)
-        print('run:%0.2f' % (time() - t0))
-    #pickle.dump(logs, open("{}/logs_fulle.log".format('.'), 'wb'))
-    print(logs)
-    #print('run:%0.2f' % (time() - t0))
-    #print('gen:%0.2f' % (time() - t0))'../../midi_data_set/mididata0.csv'
-        #bigdata=pd.DataFrame(BigX, columns=['inst'])
-        #bigdata.to_csv('./big.csv', index=True, header=None, sep='\t')
-        #pickle.dump(BigX, open("./bigx.big", 'wb'))
-        #pickle.dump(BigY, open("./bigy.big", 'wb'))
-    #t0=time()
-    #see what hits we have and how much
-    # unique, counts = np.unique(BigX, return_counts=True)
-    # a=np.array([counts,unique], dtype=int)
-    # print(len(a[:,a[1]<0][0]),len(a[0]>1),(a[:,a[0]>2][1]))
+            for j in files:
+                print(j)
+                seed, history = train(j, seqLen=seqLen, sampleMul=1, model_type=i, updateModel=True,
+                                      return_history=True)
+                file = generatePart(seed, partLength=333, seqLen=seqLen, temp=1., include_seed=False, model_type=i)
+                drumsynth.createWav(file, 'gen_temp_{}.wav'.format(i), addCountInAndCountOut=False,
+                                    deltaTempo=1,
+                                    countTempo=1)
+                log.extend(history[:][0])
+                log.extend(history[:][-1])
+        logs.append(log)
+        times.append(time() - t0)
+        print('training a model from scratch:%0.2f' % (time() - t0))
+    pickle.dump(logs, open("{}/logs_full_folder_complete_bigfiles_all16.log".format('.'), 'wb'))
+    print('times')
 
-    #generatePart(train('./big.csv',seqLen,sampleMul=4, forceGen=True))
-    #generatePart(train('./Kits/mcd2/takes/testbeat1537979079.645227.csv', seqLen, sampleMul=4,forceGen=True))
 
     #
     # # Just the hits: Not working
