@@ -11,7 +11,8 @@ from scipy.fftpack import fft
 
 #globals
 max_n_frames = 10
-total_priors = 0
+total_priors = 18
+
 
 
 class Drum(object):
@@ -380,20 +381,9 @@ def getPeaksFromBuffer(filt_spec, numHits):
         peaks = onset_detection.pick_onsets(H0, threshold=threshold)
     return peaks
 
-
-def recalculate_thresholds(filt_spec, shifts, drumkit, drumwise=False, method='NMFD'):
-    """
-
-    :param filt_spec: numpy array, The spectrum containing sound check
-    :param shifts: list of integers, the locations of different drums in filt_spec
-    :param drumkit: list of drums
-    :param drumwise: boolean, if True the thresholds will be calculated per drum,
-     if False a single trseshold is used for the whole drumkit
-    :param rm_win: int, window size.
-    :return: None
-    """
-    onset_alg = 2
+def get_Wpre(drumkit, max_n_frames=max_n_frames):
     total_heads = 0
+    total_priors=len(drumkit)*2
     Wpre = np.zeros((FILTERBANK_SHAPE, total_priors, max_n_frames))
     for i in range(len(drumkit)):
         heads = drumkit[i].get_heads()
@@ -410,6 +400,21 @@ def recalculate_thresholds(filt_spec, shifts, drumkit, drumwise=False, method='N
         for j in range(K2):
             Wpre[:, ind + j, :] = tails[:, :, j]
             total_tails += 1
+    return Wpre, total_heads
+
+def recalculate_thresholds(filt_spec, shifts, drumkit, drumwise=False, method='NMFD'):
+    """
+
+    :param filt_spec: numpy array, The spectrum containing sound check
+    :param shifts: list of integers, the locations of different drums in filt_spec
+    :param drumkit: list of drums
+    :param drumwise: boolean, if True the thresholds will be calculated per drum,
+     if False a single trseshold is used for the whole drumkit
+    :param rm_win: int, window size.
+    :return: None
+    """
+    onset_alg = 2
+    Wpre, total_heads = get_Wpre(drumkit)
     if method=='NMFD':
         H, Wpre, err1 = nmfd.NMFD(filt_spec.T, iters=128, Wpre=Wpre, include_priors=True, n_heads=total_heads)
     else:
@@ -496,7 +501,7 @@ def recalculate_thresholds(filt_spec, shifts, drumkit, drumwise=False, method='N
             # arbitrary minimum threshold check
             threshold = max((threshold, 0.05))
 
-            print('delta:', threshold, f_zero)
+            print('threshold: %f, f-score: %f' %(threshold, f_zero))
             drumkit[i].set_threshold(threshold)
 
 
@@ -1616,51 +1621,49 @@ def dec_to_binary(f):
 #
 #
 #
-# def get_preprocessed_spectrogram(buffer=None, A=None, B=None, sm_win=4, test=False, Print=False):
-#     """
-#     Preprocess source audio data and return a processed stft
-#
-#     :param buffer: numpy array, None, source audio
-#     :param A: numpy array, None, frequency vector of separated data
-#     :param B: numpy array, None, activations of separated data
-#     :param sm_win: int, smoothing window size
-#     :param test: boolean, if true E.Battenberg preprocessing is performed.
-#
-#     :return: numpy array, preprocessed stft of the source data
-#     """
-#     if buffer is not None:
-#         spec = madmom.audio.spectrogram.FilteredSpectrogram(buffer, filterbank=FILTERBANK, sample_rate=SAMPLE_RATE,
-#                                                             frame_size=FRAME_SIZE, hop_size=HOP_SIZE, fmin=20,
-#                                                             fmax=17000, window=np.kaiser(FRAME_SIZE, np.pi ** 2))
-#
-#         # if Print:
-#         #    showEnvelope((buffer[600000:1100000]))
-#         #    pass
-#
-#     if A is not None:
-#         spec = np.outer(A, B).T
-#     # kernel=np.kaiser(6,5)
-#     if test:
-#         mu = 10 ** 8
-#         for i in range(spec.shape[1]):
-#             spec[:, i] = np.log(1 + mu * np.abs(spec[:, i])) / np.log(1 + mu)
-#             # spec[:, i] = ((np.sign(spec[:, i]) * np.log(1 + mu * np.abs(spec[:, i])))) / (1 + np.log(mu))
-#
-#     kernel = np.hanning(sm_win)
-#     for i in range(spec.shape[1]):
-#         spec[:, i] = np.convolve(spec[:, i], kernel, 'same')
-#
-#     if test:
-#         spec = np.gradient(spec, axis=0)
-#         spec = np.clip(spec, 0, None, out=spec)
-#         # spec = (spec + np.abs(spec)) / 2
-#         for i in range(spec.shape[0]):
-#             spec[i, :] = np.mean(spec[i, :])
-#         # spec[1:]=spec[1:]-spec[:-1]
-#         # spec=(spec+np.abs(spec))/2
-#         # spec=spec/spec.max()
-#
-#     return spec
+#BACK IN THE GAME!!
+def get_preprocessed_spectrogram(buffer=None, A=None, B=None, sm_win=4, test=False, Print=False):
+    """
+    Preprocess source audio data and return a processed stft
+    :param buffer: numpy array, None, source audio
+    :param A: numpy array, None, frequency vector of separated data
+    :param B: numpy array, None, activations of separated data
+    :param sm_win: int, smoothing window size
+    :param test: boolean, if true E.Battenberg preprocessing is performed.
+    :return: numpy array, preprocessed stft of the source data
+    """
+    import madmom
+    FILTERBANK = madmom.audio.filters.BarkFilterbank(
+         madmom.audio.stft.fft_frequencies(num_fft_bins=int(FRAME_SIZE / 2), sample_rate=SAMPLE_RATE),
+         num_bands='double', fmin=20.0, fmax=15500.0, norm_filters=False, unique_filters=True)
+    if buffer is not None:
+        spec = madmom.audio.spectrogram.FilteredSpectrogram(buffer, filterbank=FILTERBANK, sample_rate=SAMPLE_RATE,
+                                                            frame_size=FRAME_SIZE, hop_size=HOP_SIZE, fmin=20,
+                                                            fmax=17000, window=np.kaiser(FRAME_SIZE, np.pi ** 2))
+        # if Print:
+        #    showEnvelope((buffer[600000:1100000]))
+        #    pass
+    if A is not None:
+        spec = np.outer(A, B).T
+    # kernel=np.kaiser(6,5)
+    if test:
+        mu = 10 ** 8
+        for i in range(spec.shape[1]):
+            spec[:, i] = np.log(1 + mu * np.abs(spec[:, i])) / np.log(1 + mu)
+            # spec[:, i] = ((np.sign(spec[:, i]) * np.log(1 + mu * np.abs(spec[:, i])))) / (1 + np.log(mu))
+    kernel = np.hanning(sm_win)
+    for i in range(spec.shape[1]):
+        spec[:, i] = np.convolve(spec[:, i], kernel, 'same')
+    if test:
+        spec = np.gradient(spec, axis=0)
+        spec = np.clip(spec, 0, None, out=spec)
+        # spec = (spec + np.abs(spec)) / 2
+        for i in range(spec.shape[0]):
+            spec[i, :] = np.mean(spec[i, :])
+        # spec[1:]=spec[1:]-spec[:-1]
+        # spec=(spec+np.abs(spec))/2
+        # spec=spec/spec.max()
+    return spec
 #def getStompTemplate():
 #    """
 #    records sound check takes

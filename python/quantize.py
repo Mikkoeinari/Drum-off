@@ -148,7 +148,7 @@ def beatSimpleDP(onsets, alpha=100):
     beats = np.array(beats[::-1], dtype=int)
     return beats
 
-def two_fold_quantize(onsets, drumkit):
+def two_fold_quantize(onsets, drumkit, quant_factor):
     onsets = onsets / onsets.max()
     deltaTempo = extract_tempo(onsets, constant_tempo=False)
     newmax = 0
@@ -161,7 +161,7 @@ def two_fold_quantize(onsets, drumkit):
             if newmax < max(i.get_hits()):
                 newmax = max(i.get_hits())
 
-    if True:
+    if quant_factor>.5:
         beats = np.zeros(newmax + 1)
         for i in drumkit:
             # create an odf from already found onsets weigh toward kick and snare
@@ -173,6 +173,7 @@ def two_fold_quantize(onsets, drumkit):
         beat_diff = np.zeros(tracked_beats.size)
         for i in range(tracked_beats.size):
             beat_diff[i] = fixed_beats[i] - tracked_beats[i]
+        print(sum(beat_diff))
         for i in drumkit:
             quant_hits = []
             for j in i.get_hits():

@@ -12,7 +12,7 @@ import pandas as pd
 import drumsynth
 from sklearn.utils import resample, class_weight
 from MGU import MGU
-from keras.callbacks import EarlyStopping, ModelCheckpoint, LearningRateScheduler,Callback
+from keras.callbacks import EarlyStopping, ModelCheckpoint, LearningRateScheduler,Callback, TensorBoard
 from keras.models import Model, Sequential,load_model
 from keras.layers import *#,Dense,Conv1D,Flatten,TimeDistributed,Input,  MaxPooling1D,GlobalAveragePooling1D,GRU, BatchNormalization, GRUCell, Dropout, TimeDistributed, Reshape, LSTM, Activation
 from keras.utils import Sequence,to_categorical
@@ -34,7 +34,7 @@ set_random_seed(2)
 t0 = time()
 seqLen=16
 #parallel MGU divisors
-dvs=[1,2,4,8,16]
+dvs=[1,2,4,8,16, 32, 64]
 #dvs=[1,4,16,64]
 partLength = 0
 lastLoss=0
@@ -97,15 +97,15 @@ def get_sequences(filename, seqLen=64, sampleMul=1., forceGen=False):
     X = np.array(words)
     y = np.array(outchar)
     samples = np.max([int(len(words) * sampleMul), 33])
-    X, y = resample(np.array(X), np.array(y),n_samples=samples, replace=True, random_state=2)
+    if forceGen is not 'game':
+        X, y = resample(np.array(X), np.array(y),n_samples=samples, replace=True, random_state=2)
     return X, y, numDiffHits
 
 def setLr(new_lr):
     global lr
     print('new learning rate:',new_lr)
     lr=new_lr
-def getLr():
-    return lr
+
 
 def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'):
     global model, CurrentKitPath
@@ -137,20 +137,42 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
             model.add(BatchNormalization())
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
 
-        elif model_type=='TDC_parallel_mgu':
-            drop=0.55
-            cdrop=0.6
-            sdrop=0.6
-            layerSize=int(4)
+        elif model_type=='many2many':
+            ###NOT FINISHED DO NOT TRY!!
+            X=Input(shape=(seqLen,))
+            embedding_layer = Embedding(numDiffHits + 1, numDiffHits)
+            reshape_layer=Reshape((1, numDiffHits))
+            mgu_layer=MGU(128, activation='tanh', return_sequences=False, dropout=0.0, recurrent_dropout=0.0,
+                        implementation=1)
+            out_layer=Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal")
+            output_layers = []
+            a0 = Input(shape=(layerSize,), name='a0')
+            c0 = Input(shape=(layerSize,), name='c0')
+            a = a0
+            c = c0
+            for i in range(seqLen):
+                x = Lambda(lambda x:X[:,i])(X)
+                emb1= embedding_layer(x)
+                res1 = reshape_layer(emb1)
+                mgu1= mgu_layer(res1)
+                out1=out_layer(mgu1)
+                output_layers.append(out1)
+            model = Model(inputs=[X],outputs=output_layers)
+
+        elif model_type=='ATT_TDC_P_mgu':
+            drop=0.7
+            cdrop=0.7
+            sdrop=0.7
             n_kernels=4
             unroll=False
             use_bias=False
-            ret_seq=False
+            ret_seq=True
             regVal=0.
             regVal2=0.
+            attention_on=True
             def get_layer(seqLen, n_kernels, n_win):
                 in1 = Input(shape=(seqLen,))
-                em1=Embedding(numDiffHits + 1, numDiffHits)(in1)
+                em1=Embedding(numDiffHits+1, numDiffHits)(in1)
                 reshape1=Reshape((1,seqLen, numDiffHits))(em1)
                 conv1=TimeDistributed(Conv1D(n_kernels,n_win, activation='elu',kernel_regularizer=regularizers.l2(regVal),
                     activity_regularizer=regularizers.l1(regVal2)), input_shape=(1,)+(seqLen, numDiffHits))(reshape1)
@@ -161,6 +183,13 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
                 #drop1=TimeDistributed(Dropout(cdrop))(flat1)
                 mgu1=(MGU(layerSize, activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
                               implementation=1, unroll=unroll, use_bias=use_bias))(flat1)
+                if attention_on:
+                    attention_r = Dense(layerSize, activation='softmax')(mgu1)
+                    attention_r = Flatten()(attention_r)
+                    # attention_r = Activation('softmax')(attention_r)
+                    attention_r = RepeatVector(layerSize)(attention_r)
+                    attention_r = Permute([2, 1])(attention_r)
+                    mgu1 = Multiply()([mgu1, attention_r])
                 return [in1, mgu1]
 
             layers=[]
@@ -170,7 +199,54 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
             layers=np.array(layers)
 
             merged=Concatenate()(list(layers[:,1]))
-            bn=BatchNormalization()(merged)
+            flat = Flatten()(merged)
+            bn=BatchNormalization()(flat)
+            out=Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal")(bn)
+            model = Model(list(layers[:,0]), out)
+
+        elif model_type=='TDC_parallel_mgu':
+            drop=0.55 #.55 without attention
+            cdrop=0.6
+            sdrop=0.6 #.6 without attention
+            layerSize=int(4) #4 without attention
+            n_kernels=4
+            unroll=False
+            use_bias=False
+            ret_seq=True
+            regVal=0.
+            regVal2=0.
+            attention_on=False
+            def get_layer(seqLen, n_kernels, n_win):
+                in1 = Input(shape=(seqLen,))
+                em1=Embedding(numDiffHits+1, numDiffHits)(in1)
+                reshape1=Reshape((1,seqLen, numDiffHits))(em1)
+                conv1=TimeDistributed(Conv1D(n_kernels,n_win, activation='elu',kernel_regularizer=regularizers.l2(regVal),
+                    activity_regularizer=regularizers.l1(regVal2)), input_shape=(1,)+(seqLen, numDiffHits))(reshape1)
+
+                #bn1=TimeDistributed(BatchNormalization())(conv1)
+                sdrop1=TimeDistributed(SpatialDropout1D(sdrop))(conv1)
+                flat1=TimeDistributed(Flatten())(sdrop1)
+                #drop1=TimeDistributed(Dropout(cdrop))(flat1)
+                mgu1=(MGU(layerSize, activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
+                              implementation=1, unroll=unroll, use_bias=use_bias))(flat1)
+                if attention_on:
+                    attention_r = Dense(layerSize, activation='softmax')(mgu1)
+                    attention_r = Flatten()(attention_r)
+                    # attention_r = Activation('softmax')(attention_r)
+                    attention_r = RepeatVector(layerSize)(attention_r)
+                    attention_r = Permute([2, 1])(attention_r)
+                    mgu1 = Multiply()([mgu1, attention_r])
+                return [in1, mgu1]
+
+            layers=[]
+            for i in dvs:
+                layers.append(get_layer(int(seqLen/i),n_kernels, min(8,int(seqLen/i))))
+            #Merging
+            layers=np.array(layers)
+
+            merged=Concatenate()(list(layers[:,1]))
+            flat = Flatten()(merged)
+            bn=BatchNormalization()(flat)
             out=Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal")(bn)
             model = Model(list(layers[:,0]), out)
 
@@ -220,12 +296,55 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
                           implementation=1))
             # model.add(BatchNormalization(momentum=0.5))
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
+        elif model_type=='attention_mgu':
+            att_input=False
+            att_mgu=True
+            #MGU block
+            inputs = Input(shape=(seqLen,))
+            emb1 = Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen)(inputs)
+            res1=Reshape((1, seqLen, numDiffHits), input_shape=(seqLen, numDiffHits))(emb1)
+            tim1=TimeDistributed(Conv1D(32, 2, activation='elu'), input_shape=(1,) + (seqLen, numDiffHits))(res1)
+            # model.add(TimeDistributed(MaxPooling1D(3)))
+            tim2=TimeDistributed(Flatten())(tim1)
+            tim3=TimeDistributed(Dropout(0.625))(tim2)
+            if att_input:
+                input_dim = int(emb1.shape[2])
+                print(emb1.shape)
+                attention_i = Permute((2, 1))(emb1)
+                attention_i = Reshape((input_dim, seqLen))(attention_i)
+                attention_i = Dense(seqLen, activation='tanh')(attention_i)
+                attention_i = Activation('softmax')(attention_i)
+                attention_i = Permute([2, 1])(attention_i)
+                attention_i_out = Multiply()([emb1, attention_i])
+                emb1=attention_i_out
+            mgu1 = (MGU(layerSize, activation='tanh', return_sequences=True, dropout=0.8, recurrent_dropout=0.8,
+                        implementation=1))(tim3)
+            if att_mgu:
+                #Attention block
+                attention_r = Dense(1, activation='softmax')(mgu1)
+                attention_r = Flatten()(attention_r)
+                #attention_r = Activation('softmax')(attention_r)
+                attention_r = RepeatVector(layerSize)(attention_r)
+                attention_r = Permute([2, 1])(attention_r)
+                mgu1 = Multiply()([mgu1, attention_r])
+
+
+            #attention_i = Permute([2, 1])(attention_i)
+
+            #Multiply blocks
+            flat = Flatten()(mgu1)
+            bn = BatchNormalization()(flat)
+            output = Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal")(bn)
+            model = Model(input=[inputs], output=output)
+
         elif model_type=='single_mgu':
+
             model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
             model.add(MGU(layerSize, activation='tanh',input_shape=(seqLen, numDiffHits),  # kernel_initializer='lecun_normal',
                       return_sequences=False, dropout=0.6, recurrent_dropout=0.6,implementation=1))
             model.add(BatchNormalization())
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
+
         elif model_type == 'stacked_mgu':
             model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
             model.add(MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
@@ -270,7 +389,7 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
         model.compile(loss='sparse_categorical_crossentropy',metrics=['accuracy'], optimizer=optr)
         print('Saving new model....')
         model.save_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath, model_type))
-        model.save('{}model_{}.hdf5'.format(CurrentKitPath,model_type))
+        #model.save('{}model_{}.hdf5'.format(CurrentKitPath,model_type))
     global graph
     graph = tf.get_default_graph()
     #writer = tf.summary.FileWriter('./graphs/', tf.get_default_graph())
@@ -339,10 +458,14 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
     temporarysaver = ModelCheckpoint(filepath="{}temp.hdf5".format(CurrentKitPath), verbose=0, save_best_only=False)
     genMdelSaver=ModelCheckpoint(filepath="{}weights_testivedot_ext.hdf5".format(CurrentKitPath), verbose=1, save_best_only=True)
     earlystopper = EarlyStopping(monitor="val_loss", min_delta=0.0, patience=2, mode='auto')
+    #tensorboard = TensorBoard(log_dir="logs/{}".format(time()))
     history = LossHistory()
     learninratescheduler=LearningRateScheduler(klik, verbose=1)
     if filename is not None and updateModel is not 'generator':
-        X_train, y_train, numDiffHits = get_sequences(filename, seqLen, sampleMul, forceGen=forceGen)
+        if updateModel is 'game':
+            X_train, y_train, numDiffHits = get_sequences(filename, seqLen, sampleMul, forceGen='game')
+        else:
+            X_train, y_train, numDiffHits = get_sequences(filename, seqLen, sampleMul, forceGen=forceGen)
         if X_train is None:
             return None
 
@@ -364,17 +487,10 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
         X_train=X_test
         tr_gen = myGenerator()
 
-    if model_type=='parallel_mgu' or model_type=='TDC_parallel_mgu':
+    if model_type in ['parallel_mgu','TDC_parallel_mgu','ATT_TDC_P_mgu']:
         X_train_comp =[]
         for i in dvs:
             X_train_comp.append(X_train[:, -int(seqLen / i):])
-        #X_train2 = X_train[:, -int(seqLen / dvs[1]):]
-        #X_train3 = X_train[:, -int(seqLen / dvs[2]):]
-        #X_train4 = X_train[:, -int(seqLen / dvs[3]):]
-        #X_train5 = X_train[:, -int(seqLen / dvs[4]):]
-        #X_train6 = X_train[:, -int(seqLen / dvs[5]):]
-        #X_train7 = X_train[:, -int(seqLen / dvs[6]):]
-        #X_train_comp=[X_train,X_train2, X_train3,X_train4, X_train5,X_train6, X_train7 ]
     else:
         X_train_comp=X_train
     if forceGen:
@@ -388,41 +504,74 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
         initial_epoch=0
 
     with graph.as_default():
+
         #Compute weigths
         class_weights = class_weight.compute_class_weight('balanced',
                                                       np.unique(y_train),
                                                       y_train)
-
+#
         if updateModel=='generator':
             #model.save_weights("./Kits/weights_testivedot_ext.hdf5")
             model.fit_generator(generator=tr_gen,epochs=20, steps_per_epoch=10, max_queue_size=10,callbacks=[genMdelSaver, earlystopper],
                               workers=1, use_multiprocessing=False, verbose=2, validation_data=(X_train_comp, y_test))
             model.load_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath,model_type))
             model.save('{}Kits/model_{}.hdf5'.format(CurrentKitPath,model_type))
-        if updateModel==True:
-            #model.load_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath,model_type))
-            #
-            model.fit(X_train_comp, y_train,batch_size=int(max([y_train.shape[0]/50,32])), epochs=initial_epoch+20,
-                  callbacks=[modelsaver,earlystopper,  history],# learninratescheduler],earlystopper,
-                  validation_split=0.33,
-                  verbose=2, initial_epoch=initial_epoch, class_weight=class_weights, shuffle=False)
+        if updateModel=='game':
+            model.fit(X_train_comp, y_train, batch_size=int(max([y_train.shape[0] / 50, 32])),
+                      epochs=initial_epoch + 20,
+                      callbacks=[modelsaver, history],  # learninratescheduler],earlystopper,
+                      #validation_split=0.33,
+                      verbose=2, initial_epoch=initial_epoch, class_weight=class_weights, shuffle=False)
             lastLoss = np.mean(history.losses[-10:])
-            pickle.dump(initial_epoch+20, open(CurrentKitPath+ '/initial_epoch.k', 'wb'))
+            pickle.dump(initial_epoch + 20, open(CurrentKitPath + '/initial_epoch.k', 'wb'))
+            model.save('{}model_{}.hdf5'.format(CurrentKitPath, model_type))
+
+
+        if updateModel == True:
+            # model.load_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath,model_type))
+            #
+            model.fit(X_train_comp, y_train, batch_size=int(max([y_train.shape[0] / 50, 32])),
+                      epochs=initial_epoch + 20,
+                      callbacks=[modelsaver, earlystopper, history],  # learninratescheduler],earlystopper,
+                      validation_split=0.33,
+                      verbose=2, initial_epoch=initial_epoch, class_weight=class_weights, shuffle=False)
+            lastLoss = np.mean(history.losses[-10:])
+            pickle.dump(initial_epoch + 20, open(CurrentKitPath + '/initial_epoch.k', 'wb'))
             model.load_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath, model_type))
             model.save('{}model_{}.hdf5'.format(CurrentKitPath, model_type))
-            #model.save_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath,model_type))
             #
-        elif updateModel==False:
+        if updateModel=='m2m':
+            # a0 = np.zeros((X_train_comp.shape[0],16))
+            print(X_train_comp.shape)
+
+            # y_train=np.roll(X_train_comp,-1,1)
+            y_comp = []
+            y_comp.append(y_train)
+            for i in range(seqLen - 1):
+                y_comp.append(np.roll(y_comp[-1], 1, 0))
+
+            # y_train=np.swapaxes(y_train, 0,1)
+            # y_train = np.expand_dims(y_train, axis=-1)
+            # y_train = np.expand_dims(y_train, axis=1)
+
             #model.load_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath,model_type))
-            model.fit(X_train_comp, y_train, batch_size=int(max([y_train.shape[0]/50,25])), epochs=20,
+            #
+            model.fit([X_train_comp],y_comp,batch_size=int(max([y_train.shape[0]/50,32])), epochs=initial_epoch+2000,
+                  callbacks=[history],# learninratescheduler],earlystopper,
+                  validation_split=0.33,
+                  verbose=2, initial_epoch=initial_epoch, shuffle=False)
+            lastLoss = np.mean(history.losses[-10:])
+            pickle.dump(initial_epoch+20, open(CurrentKitPath+ '/initial_epoch.k', 'wb'))
+
+        elif updateModel==False:
+            model.fit(X_train_comp, y_train[0], batch_size=int(max([y_train.shape[0]/50,25])), epochs=20,
                       callbacks=[temporarysaver,earlystopper,history],  # learninratescheduler],
                       validation_split=(0.33),
                       verbose=2, class_weight=class_weights, shuffle=False)
             #take mean of recent iteration losses for fuzz scaler
             lastLoss=np.mean(history.losses[-10:])
             print(lastLoss)
-            #model.load_weights("{}temp.hdf5".format(CurrentKitPath))
-        #model.save_weights("./Kits/weights_testivedot2.hdf5")
+
     if return_history:
         return X_train[0],history.hist
     else:
@@ -477,10 +626,9 @@ def generatePart(data,partLength=123,seqLen=16, temp=None, include_seed=False, m
     for i in range(partLength):
         data = data.reshape(1, seqLen)
         datas=[]
-        if model_type=='parallel_mgu' or model_type=='TDC_parallel_mgu':
+        if model_type in ['parallel_mgu', 'TDC_parallel_mgu', 'ATT_TDC_P_mgu']:
             for i in dvs:
                 datas.append(data[:,-int(seqLen/i):])
-            #datas=[data[:,-int(seqLen/dvs[0]):],data[:,-int(seqLen/dvs[1]):],data[:,-int(seqLen/dvs[2]):],data[:,-int(seqLen/dvs[3]):],data[:,-int(seqLen/dvs[4]):],data[:,-int(seqLen/dvs[5]):],data[:,-int(seqLen/dvs[6]):]]
         else :
             datas=[data]
         with graph.as_default():
@@ -569,7 +717,7 @@ def debug():
     ##vectorizeCSV('./Kits/Default/takes/testbeat1535385910.271116.csv')
     #
     ##print(takes)
-    seqLen=16
+    seqLen=64
     from keras.utils import plot_model
     if True:
         logs=[]
@@ -577,7 +725,7 @@ def debug():
         #
         model_type=['TDC_parallel_mgu', 'time_dist_conv_mgu','parallel_mgu','stacked_mgu','conv_mgu','single_mgu',
                     'single_gru', 'single_lstm', 'tcn']
-        #model_type = ['stacked_mgu']
+        model_type = ['ATT_TDC_P_mgu']
         buildVocabulary(hits=utils.get_possible_notes([0, 1, 2, 3, 5, 8, 9, 10, 11, 12, 13]))
         for j in model_type:
             log=[]
@@ -590,39 +738,48 @@ def debug():
             data = []
 
             trainingRuns=1
-
+            k=0
             t0=time()
             for i in takes2:
                 print(i)
+
                 t1 = time()
                 seed, history=train(i,seqLen=seqLen,sampleMul=1,model_type=j,updateModel=True, return_history=True)
 
-                file = generatePart(seed, partLength=333,seqLen=seqLen, temp=1., include_seed=False, model_type=j)
+                file = generatePart(seed, partLength=333,seqLen=seqLen, temp=.666, include_seed=False, model_type=j)
                 print('roundtrip time:%0.4f' % (time() - t1))
                 #drumsynth.createWav(i, 'orig_temp_{}.wav'.format(j), addCountInAndCountOut=False,
                 #                    deltaTempo=1,
                 #                    countTempo=1)
-                drumsynth.createWav(file, 'gen_temp_{}.wav'.format(j), addCountInAndCountOut=False,
+                drumsynth.createWav(file, 'gen_temp_{}_{}.wav'.format(j,k), addCountInAndCountOut=False,
+                                    deltaTempo=1,
+                                    countTempo=1)
+                drumsynth.createWav(i, 'gen_temp_{}_{}.wav'.format('orig', k), addCountInAndCountOut=False,
                                     deltaTempo=1,
                                     countTempo=1)
                 log.extend(history[:][0])
                 log.extend(history[:][-1])
+                k+=1
 
             for i in takes:
                 print(i)
                 seed, history=train(i,seqLen=seqLen,sampleMul=1,model_type=j,updateModel=True, return_history=True)
-                file = generatePart(seed, partLength=333,seqLen=seqLen, temp=1., include_seed=False, model_type=j)
-                drumsynth.createWav(file, 'gen_temp_{}.wav'.format(j), addCountInAndCountOut=False,
+                file = generatePart(seed, partLength=333,seqLen=seqLen, temp=.666, include_seed=False, model_type=j)
+                drumsynth.createWav(file, 'gen_temp_{}_{}.wav'.format(j, k), addCountInAndCountOut=False,
+                                    deltaTempo=1,
+                                    countTempo=1)
+                drumsynth.createWav(i, 'gen_temp_{}_{}.wav'.format('orig', k), addCountInAndCountOut=False,
                                     deltaTempo=1,
                                     countTempo=1)
                 log.extend(history[:][0])
                 log.extend(history[:][-1])
+                k+=1
 
             logs.append(log)
             times.append(time() - t0)
             print('training a model from scratch:%0.2f' % (time() - t0))
 
-    pickle.dump(logs, open("{}/logs_full_folder_complete_all16.log".format('.'), 'wb'))
+    pickle.dump(logs, open("{}/logs_full_folder_complete_att64.log".format('.'), 'wb'))
     print('times')
     print(times)
     return

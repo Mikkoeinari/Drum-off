@@ -36,7 +36,7 @@ def initKitBG(drumkit_path, K=1, L=10, drumwise=False, method='NMFD'):
     and stores the drumkit as a pickled file.
     :param drumkit_path: Folder containing soundcheck audio
     :param K: int, max number prior templates per drum
-    :param L: int, number of singnal frames to use in templates
+    :param L: int, number of signal frames to use in templates
     :param drumwise: Boolean, perform drumwise peak picking threshold recalculation
     or use same threshold for all drums
     :param method: 'NMFD' or 'NMF', the source separation approach to use
@@ -47,7 +47,6 @@ def initKitBG(drumkit_path, K=1, L=10, drumwise=False, method='NMFD'):
     #read drums from folder
     kit = [f for f in os.listdir(drumkit_path) if not f.startswith('.')]
     kit.sort()
-
     for i in range(len(kit)):
         # HACK!!! remove when you have the time!!!
         if (kit[i][:4] != 'drum' or len(kit[i]) > 10): continue
@@ -56,7 +55,9 @@ def initKitBG(drumkit_path, K=1, L=10, drumwise=False, method='NMFD'):
         #                             hop_size=HOP_SIZE)
         sr,buffer = wavfile.read("{}/{}".format(drumkit_path, kit[i]), mmap=True)
         #preprocess
-        filt_spec = stft(buffer)
+        filt_spec = get_preprocessed_spectrogram(buffer)
+        #filt_spec = stft(buffer)
+
         #find onsets
         peaks = getPeaksFromBuffer(filt_spec, N_PEAKS)
         if(peaks.shape[0]<N_PEAKS):
@@ -175,7 +176,7 @@ def playLive(drumkit_path, thresholdAdj=0.0,part_length=20, saveAll=False, creat
 
     return fileName, float(deltaTempo)
 
-def processLiveAudio(liveBuffer=None, drumkit=None, quant_factor=1.0, iters=0, method='NMFD', thresholdAdj=0.):
+def processLiveAudio(liveBuffer=None,spectrogram=None, drumkit=None, quant_factor=1.0, iters=0, method='NMFD', thresholdAdj=0.):
     """
     main logic for source separation, onset detection and tempo extraction and quantization
     :param liveBuffer: numpy array, the source audio
@@ -188,31 +189,39 @@ def processLiveAudio(liveBuffer=None, drumkit=None, quant_factor=1.0, iters=0, m
     """
 
     onset_alg = 2
-    filt_spec = stft(liveBuffer)
+    if liveBuffer is not None:
+        filt_spec = get_preprocessed_spectrogram(liveBuffer)
+    elif spectrogram is not None:
+        filt_spec=spectrogram
+    else:
+        assert 'You must provide either a processed spectrogram or an audio file location'
+    #filt_spec = stft(liveBuffer)
+
     stacks = 1
-    total_priors = 0
-    for i in range(len(drumkit)):
-        total_priors += drumkit[i].get_heads().shape[2]
-        total_priors += drumkit[i].get_tails().shape[2]
-    Wpre = np.zeros((FILTERBANK_SHAPE, total_priors, max_n_frames))
-    total_heads = 0
-
-    for i in range(len(drumkit)):
-        heads = drumkit[i].get_heads()
-        K1 = heads.shape[2]
-        ind = total_heads
-        for j in range(K1):
-            Wpre[:, ind + j, :] = heads[:, :, j]
-            total_heads += 1
-    total_tails = 0
-
-    for i in range(len(drumkit)):
-        tails = drumkit[i].get_tails()
-        K2 = tails.shape[2]
-        ind = total_heads + total_tails
-        for j in range(K2):
-            Wpre[:, ind + j, :] = tails[:, :, j]
-            total_tails += 1
+    Wpre, total_heads=get_Wpre(drumkit)
+    #total_priors = 0
+    #for i in range(len(drumkit)):
+    #    total_priors += drumkit[i].get_heads().shape[2]
+    #    total_priors += drumkit[i].get_tails().shape[2]
+    #Wpre = np.zeros((FILTERBANK_SHAPE, total_priors, max_n_frames))
+    #total_heads = 0
+#
+    #for i in range(len(drumkit)):
+    #    heads = drumkit[i].get_heads()
+    #    K1 = heads.shape[2]
+    #    ind = total_heads
+    #    for j in range(K1):
+    #        Wpre[:, ind + j, :] = heads[:, :, j]
+    #        total_heads += 1
+    #total_tails = 0
+#
+    #for i in range(len(drumkit)):
+    #    tails = drumkit[i].get_tails()
+    #    K2 = tails.shape[2]
+    #    ind = total_heads + total_tails
+    #    for j in range(K2):
+    #        Wpre[:, ind + j, :] = tails[:, :, j]
+    #        total_tails += 1
 
     for i in range(int(stacks)):
         if method == 'NMFD' or method == 'ALL':
@@ -291,7 +300,7 @@ def processLiveAudio(liveBuffer=None, drumkit=None, quant_factor=1.0, iters=0, m
     #Quantize performance if quant_factor is set.
     # In reality this is a boolean variable there is no sensitivity implemented
     if quant_factor > 0:
-        drumkit, deltaTempo=two_fold_quantize(onsets, drumkit)
+        drumkit, deltaTempo=two_fold_quantize(onsets, drumkit, quant_factor)
         return drumkit, np.mean(deltaTempo)
     else:
         return drumkit, Q_HOP/HOP_SIZE
@@ -513,7 +522,7 @@ def run_folder(audio_folder, annotation_folder):
     return sum[0] / len(test_annotation), sum[1] / len(test_annotation), sum[2] / len(test_annotation)
 
 
-def test_run(file_path=None, annotated=False, files=[None, None], method='NMF'):
+def test_run(file_path=None, annotated=False, files=[None, None], method='NMF', quantize=0., skip_secs=0):
     prec, rec, fsc = [0., 0., 0.]
     if files[0] is not None:
         audio_file_path = files[0]
@@ -538,13 +547,13 @@ def test_run(file_path=None, annotated=False, files=[None, None], method='NMF'):
 
     fs = np.zeros((256, 3))
 
-    skip_secs = int(44100 * 0)  # train:17.5
+    skip_secs = int(44100 * skip_secs)  # train:17.5
     for n in range(1):
 
         # initKitBG(filePath, 9, K=n)#, rm_win=n, bs_len=350)
         # t0 = time.time()
         plst, i = processLiveAudio(liveBuffer=buffer[skip_secs:],
-                                   drumkit=drumkit, quant_factor=1.0, iters=128, method=method)
+                                   drumkit=drumkit, quant_factor=quantize, iters=128, method=method)
         # print('\nNMFDtime:%0.2f' % (time.time() - t0))
         # Print scores if annotated
         for k in range(1):
@@ -590,10 +599,15 @@ def test_run(file_path=None, annotated=False, files=[None, None], method='NMF'):
 
     times = []
     bintimes = []
+    if quantize>0:
+        hl=Q_HOP
+    else:
+        hl=HOP_SIZE
+
     for i in plst:
         hits = i.get_hits()
         binhits = i.get_hits()
-        hits = frame_to_time(hits, hop_length=Q_HOP)
+        hits = frame_to_time(hits, hop_length=hl)
         labels = np.full(len(hits), i.get_midinote(), np.int64)
         binlabels = np.full(len(binhits), i.get_name(), np.int64)
         inst = zip(hits, labels)
@@ -743,10 +757,10 @@ def debug():
     # K=1
     file = './Kits/mcd_pad/'
     method = 'NMFD'
+    file='../trainSamplet/'
     initKitBG(file,K=K, drumwise=True, method=method)
     # print('Kit init processing time:%0.2f' % (time.time() - t0))
     loadKit(file)
-    return
     print(test_run(file_path=file, annotated=True, method=method))
     return
     prec_tot = 0
