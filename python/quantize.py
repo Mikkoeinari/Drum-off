@@ -1,55 +1,45 @@
 '''
 This module handles the Tempo Tracking, Beat Tracking and Quantization functionality
 '''
-from constants import *
-from scipy import fftpack as fft
 import numpy as np
+from scipy import fftpack as fft
+
+from constants import *
 from utils import frame_to_time, time_to_frame
+
 
 def extract_tempo(onsets=None, win_len_s=3, smooth_win_scalar=2, constant_tempo=True, h=HOP_SIZE):
     """
     Tempo extraction method modified version of the librosa library tempo extraction
     :param onsets: numpy array, novelty function
-    :param window_size_in_s: int, tempo extraction window length
-    :param constant_tempo: boolean, if True one tempo is used for all frames.
+    :param win_len_s: int, tempo extraction window length
+    :param smooth_win_scalar: int, multiplier of win_len_s for the tempi smoothing window
+    :param constant_tempo: boolean, if True mean tempo is used for all frames.
+    :param h: int, hop length
     :return: numpy array, a list of tempi
     """
-    #Window in samples
-    fps=SAMPLE_RATE/h
+    # Window in samples
+    fps = SAMPLE_RATE / h
     N = int(fps * win_len_s)
-    #max_bpm = int(DEFAULT_TEMPO * 4)
-    max_bpm=N
-    pad_len = int(N / 2 + 1)  # fixed pad length
+    # Get autocorrelation tempogram
+    autocorr = get_fft(onsets, N, fps, return_autoc=True)
 
-    onsets = np.pad(onsets, pad_len,
-                    mode='mean')
-    #Stride_tricks wiev of onsets, serious speedup.
-    n_frames = 1 + int((len(onsets) - N))
-    fonsets = np.lib.stride_tricks.as_strided(onsets, shape=(N, n_frames),
-                                              strides=(onsets.itemsize, onsets.itemsize))
+    # normalization and remove the complex values
+    sff = np.abs(autocorr)
 
-    #dft, only processing the tempo range.
-    fftonsets = fft.fft(fonsets, n=max_bpm, axis=0,overwrite_x=True)
+    # PLP Test, not worth it, 0 improvement
+    # sff= extract_plp(onsets, win_len_s=win_len_s, h=HOP_SIZE)
 
-    #dft times it's complex conjugate
-    comp = fftonsets * np.conj(fftonsets)
-
-    #inverse of comp
-    autocorr = fft.ifft(comp, axis=0, overwrite_x=True)
-
-    #normalization and remove the complex values
-    sff = (autocorr.real / autocorr.real.max())
-    #mean value
+    # mean value
     sff_mean = np.mean(sff, axis=1, keepdims=True)
 
-    #frequency to bpm bins
-    #This divides by zero :D Well i never...
-    bpms = 60 * fps / np.array(range(1,max_bpm))
-    bpms=np.concatenate((np.array([0.0000001]),bpms))
-    #gaussian weighing
+    # frequency to bpm bins
+    bpms = 60 * fps / np.array(range(1, N))
+    bpms = np.concatenate((np.array([0.0000001]), bpms))
+    # gaussian weighing
     prior_mean = np.exp(-0.5 * ((np.log2(bpms) - np.log2(DEFAULT_TEMPO)) / 1.) ** 2)
 
-    #Mean tempo
+    # Mean tempo
     bpm_mean = np.argmax(sff_mean * prior_mean[:, np.newaxis], axis=0)
 
     # first find the most common tempo of the take
@@ -58,39 +48,167 @@ def extract_tempo(onsets=None, win_len_s=3, smooth_win_scalar=2, constant_tempo=
     prior = np.exp(-0.5 * ((np.log2(bpms) - np.log2(tempi_mean)) / .2) ** 2)
     loc_max = np.argmax(sff * prior[:, np.newaxis], axis=0)
     tempi = bpms[loc_max]
-    #If ran twice gaps occur in tempotrack, set gaps to 120
+    # If ran twice gaps occur in tempotrack, set gaps to 120
     tempi[loc_max == 0] = DEFAULT_TEMPO
     # Get constant tempo estimate
     if constant_tempo:
         tempi[:] = tempi_mean
         tempi_smooth = tempi
 
-    #or smooth the local tempi
+    # or smooth the local tempi
     else:
-        #6s. window
-        kernel = np.hanning(int(N*smooth_win_scalar))
+        # 6s. window
+        kernel = np.hanning(int(N * smooth_win_scalar))
 
-        #Pad edges
-        tempi_pad = np.pad(tempi, pad_len, mode='mean')
+        # Pad edges
+        tempi_pad = np.pad(tempi, int(N / 2), mode='mean')
 
-        #Smooth and remove padding to align tempi to original beat
+        # Smooth and remove padding to align tempi to original beat
         tempi_smooth = np.convolve(tempi_pad / kernel.sum(), kernel, 'same')
-        tempi_smooth=np.roll(tempi_smooth,-pad_len)
+        tempi_smooth = np.roll(tempi_smooth, -int(N / 2))
 
-    #Constant target, could scale to manifolds here also... targets=[default/2, default, default*2,...]
+    # Constant target, could scale to manifolds here also... targets=[default/2, default, default*2,...]
     targets = [DEFAULT_TEMPO]
     target_tempos = []
     # Change tempi to tempo quantization multipliers
     for i in range(tempi_smooth.size):
         target_tempos.append(min(targets, key=lambda x: abs(x - tempi_smooth[i])))
 
-    #median for the mean tempo transform
+    # median for the mean tempo transform
     target_median = np.median(target_tempos)
 
-    #transform the smoothed tempi to scale factors from DEFAULT_TEMPO for quantization
+    # transform the smoothed tempi to scale factors from DEFAULT_TEMPO for quantization
     tempi_smooth[:] = tempi_smooth[:] / target_median
 
     return (tempi_smooth)
+
+
+def get_fft(signal, N, fps, return_autoc=False, return_half_spectrum=False):
+    """
+    Calculates a tempogram from a novelty function,
+    :param signal: numpy array, Novelty function
+    :param N: int, Window size in frames
+    :param fps: float, frames per second
+    :param return_autoc: Boolean, return Autocorrelation Tempogram
+    :param return_half_spectrum: Boolean, return bottom half of spectrum only
+    :return: numpy complex array, Tempogram
+    """
+    ##nr. frequency bins = Half of FRAME_SIZE
+
+    fs = N
+    # hop size
+    hs = N - int(fps / 5)
+    # frequencies
+    n_freqs = fs
+    n_ret = n_freqs
+    if return_half_spectrum:
+        n_ret = int(fs / 2)
+    # HOP_LENGTH spaced index
+    frames_index = np.arange(0, len(signal), 1)
+    # +2 frames to correct NMF systematic errors...
+    err_corr = 0
+    data = np.zeros((len(frames_index) + err_corr, n_freqs), dtype=np.complex64)
+    # Window
+    win = np.hanning(fs)
+    # STFT
+    for frame in range(len(frames_index)):
+        # Get one frame length audio clip
+        one_frame = signal[frames_index[frame]:frames_index[frame] + fs]
+        # Pad last frame if needed
+        if one_frame.shape[0] < fs:
+            one_frame = np.pad(one_frame, (0, fs - one_frame.shape[0]), 'mean')
+        # apply window
+        fft_frame = np.multiply(one_frame, win)
+        # FFT
+        data[frame + err_corr] = np.fft.fft(fft_frame, fs, axis=0)
+    if return_autoc:
+        comp = np.abs(data) ** 2
+        autoc = fft.ifft(comp, axis=-1)
+        if return_half_spectrum:
+            return autoc[:, :n_ret].T
+        else:
+            return autoc.T
+    if return_half_spectrum:
+        return data[:, n_ret:].T
+    else:
+        return data.T
+
+
+# stab in the PLP way, unfinished business...
+# import matplotlib.cm as cmaps
+# import matplotlib.pyplot as plt
+def extract_plp(onsets=None, win_len_s=6, h=HOP_SIZE):
+    """
+    Tempo extraction method modified version of the librosa library tempo extraction
+    :param onsets: numpy array, novelty function
+    :param window_size_in_s: int, tempo extraction window length
+    :param constant_tempo: boolean, if True one tempo is used for all frames.
+    :return: numpy array, a list of tempi
+    """
+
+    fps = SAMPLE_RATE / h
+    N = int(fps * win_len_s)
+    bpms = 60 * fps / np.array(np.arange(1, N))
+    bpms = np.concatenate((np.array([0]), bpms))
+    fftbpms = np.exp(bpms[:])
+    bpms = bpms[:258]
+
+    # plt.figure(figsize=(10,3))
+    # plt.plot(onsets[200:1200])
+    # plt.show()
+    print(fftbpms)
+    fftonsets = get_fft(onsets, N, fps, return_half_spectrum=True)
+    # plt.figure(figsize=(10,3))
+    # plt.imshow(np.abs(fftonsets), aspect='auto', origin='lower',cmap=cmaps.get_cmap('inferno'))
+    # plt.yticks(np.arange(0,250,10)[::1],fftbpms.astype(int))
+
+    # plt.show()
+    fftonsets = get_fft(onsets, N, fps, return_autoc=True, return_half_spectrum=True)
+    # plt.figure(figsize=(10, 3))
+    # plt.imshow(np.flipud(np.abs(fftonsets)), aspect='auto', origin='lower', cmap=cmaps.get_cmap('inferno'))
+    # plt.yticks(np.arange(0,250,5),bpms[::-5].astype(int))
+    # plt.show()
+    sff = np.abs(fftonsets)
+    sff_mean = np.mean(sff, axis=1, keepdims=True)
+    # frequency to bpm bins
+
+    # gaussian weighing
+    prior_mean = np.exp(-0.5 * ((np.log2(bpms) - np.log2(DEFAULT_TEMPO)) / 1.) ** 2)
+    # Mean tempo
+    bpm_mean = np.argmax(sff_mean * prior_mean[:, np.newaxis], axis=0)
+    # first find the most common tempo of the take
+    tempi_mean = bpms[bpm_mean]
+    print(tempi_mean, bpm_mean)
+    # then force the tempi to that area with the weighing function
+    prior = np.exp(-0.5 * ((np.log2(bpms) - np.log2(tempi_mean)) / .2) ** 2)
+    loc_max = np.argmax(sff * prior[:, np.newaxis], axis=0)
+    # loc_max = np.argmax(fftonsets)
+    tempi = bpms[loc_max]
+    # plt.figure(figsize=(10,2))
+    # plt.plot(tempi)
+    # plt.show()
+    phases = np.zeros_like(tempi)
+    for i in range(loc_max.shape[0]):
+        phases[i] = (1 / (2 * np.pi)) * np.arccos(fftonsets[loc_max[i], i].real / np.abs(fftonsets[loc_max[i], i]))
+
+    win_len = N
+    W = np.hanning(win_len)
+
+    plp = np.zeros_like(tempi)
+    for i in range(N, tempi.shape[0] - N):
+        t0 = int(np.ceil(i - win_len / 2))
+        t1 = int(np.floor(i + win_len / 2))
+        cosine = W * np.cos(2 * np.pi * (tempi[t0:t1] - phases[t0:t1]))
+        np.clip(cosine, 0, 1, cosine)
+        plp[t0:t1] += cosine
+
+    fftplp = get_fft(plp, N, fps, return_autoc=True)
+    sff = np.abs(fftplp)
+    return sff
+
+
+#
+
 
 def conform_time(X, tempomap, h=HOP_SIZE):
     """
@@ -112,7 +230,7 @@ def conform_time(X, tempomap, h=HOP_SIZE):
     # gap of beginning to the first hit as time value
     X = X.astype(int)
 
-    newgap = frame_to_time(sum(tempomap[:X[0]]),hop_length=h)
+    newgap = frame_to_time(sum(tempomap[:X[0]]), hop_length=h)
     # newgap = np.rint(newgap / shortest_note) * shortest_note
     # store first hit
     retX[0] = newgap
@@ -129,17 +247,18 @@ def conform_time(X, tempomap, h=HOP_SIZE):
     frame_retX = time_to_frame(retX, hop_length=Q_HOP).astype(int)
     return frame_retX
 
-#Ellis dp pseudocode to python
+
+# Ellis dp pseudocode to python
 def beatSimpleDP(onsets, alpha=100):
-    period=round(60.0 * SAMPLE_RATE/Q_HOP/DEFAULT_TEMPO)
+    period = round(60.0 * SAMPLE_RATE / Q_HOP / DEFAULT_TEMPO)
     backlink = np.full(onsets.size, -1)
     cumscore = onsets
     prange = np.arange(-2 * period, -np.round(period / 2) + 1, dtype=int)
-    txcost= (-alpha*abs((np.log(prange/-period))**2))
-    for i in range(max(-prange + 1),onsets.size):
+    txcost = (-alpha * abs((np.log(prange / -period)) ** 2))
+    for i in range(max(-prange + 1), onsets.size):
         timerange = i + prange
         scorecands = txcost + cumscore[timerange]
-        vv,xx = max(scorecands),scorecands.argmax()
+        vv, xx = max(scorecands), scorecands.argmax()
         cumscore[i] = vv + onsets[i]
         backlink[i] = timerange[xx]
     beats = [cumscore.argmax()]
@@ -148,32 +267,50 @@ def beatSimpleDP(onsets, alpha=100):
     beats = np.array(beats[::-1], dtype=int)
     return beats
 
-def two_fold_quantize(onsets, drumkit, quant_factor):
-    onsets = onsets / onsets.max()
-    deltaTempo = extract_tempo(onsets, constant_tempo=False)
-    newmax = 0
-    for i in drumkit:
-        hits = i.get_hits()
-        if len(hits) is None or len(hits) == 0:
-            i.set_hits([])
-        else:
-            i.set_hits(conform_time(hits, deltaTempo))
-            if newmax < max(i.get_hits()):
-                newmax = max(i.get_hits())
 
-    if quant_factor>.5:
+def two_fold_quantize(onsets, drumkit, quant_factor):
+    # Normalize
+    onsets = onsets / onsets.max()
+    # remove noise floor
+    onsets = onsets - .1
+    # clip
+    np.clip(onsets, 0, 1, onsets)
+
+    # test the method
+    # extract_plp(onsets)
+
+    # Get tempomap
+    deltaTempo = extract_tempo(onsets, constant_tempo=False)
+
+    # Smooth out tempo fluctuation and quantize around 120 bpm
+    if quant_factor <= 1.:
+        newmax = 0
+        for i in drumkit:
+            hits = i.get_hits()
+            if len(hits) is None or len(hits) == 0:
+                i.set_hits([])
+            else:
+                i.set_hits(conform_time(hits, deltaTempo))
+                if newmax < max(i.get_hits()):
+                    newmax = max(i.get_hits())
+
+    # Find beat positions and move to 120bpm grid
+    if quant_factor > .5:
+        newmax = 0
+        for i in drumkit:
+            newmax = max(newmax, max(i.get_hits()))
         beats = np.zeros(newmax + 1)
         for i in drumkit:
             # create an odf from already found onsets weigh toward kick and snare
             beats[i.get_hits()] += 1 - (i.get_name()[0] / (len(drumkit)))
         trimmed_beats = np.trim_zeros(beats)
-        tracked_beats = beatSimpleDP(trimmed_beats, alpha=100)
+
+        tracked_beats = beatSimpleDP(trimmed_beats, alpha=200)
         beat_interval = round((tracked_beats.max() - tracked_beats.min()) / tracked_beats.size)
         fixed_beats = range(tracked_beats.min(), tracked_beats.max() + 100, int(beat_interval))
         beat_diff = np.zeros(tracked_beats.size)
         for i in range(tracked_beats.size):
             beat_diff[i] = fixed_beats[i] - tracked_beats[i]
-        print(sum(beat_diff))
         for i in drumkit:
             quant_hits = []
             for j in i.get_hits():

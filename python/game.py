@@ -10,7 +10,7 @@ from utils import *
 import drumsynth
 from quantize import two_fold_quantize
 from scipy.io import wavfile
-
+import madmom
 import pickle
 
 
@@ -55,8 +55,8 @@ def initKitBG(drumkit_path, K=1, L=10, drumwise=False, method='NMFD'):
         #                             hop_size=HOP_SIZE)
         sr,buffer = wavfile.read("{}/{}".format(drumkit_path, kit[i]), mmap=True)
         #preprocess
-        filt_spec = get_preprocessed_spectrogram(buffer)
-        #filt_spec = stft(buffer)
+        #filt_spec = get_preprocessed_spectrogram(buffer)
+        filt_spec = stft(buffer)
 
         #find onsets
         peaks = getPeaksFromBuffer(filt_spec, N_PEAKS)
@@ -190,7 +190,7 @@ def processLiveAudio(liveBuffer=None,spectrogram=None, drumkit=None, quant_facto
 
     onset_alg = 2
     if liveBuffer is not None:
-        filt_spec = get_preprocessed_spectrogram(liveBuffer)
+        filt_spec = stft(liveBuffer)
     elif spectrogram is not None:
         filt_spec=spectrogram
     else:
@@ -624,7 +624,7 @@ def test_run(file_path=None, annotated=False, files=[None, None], method='NMF', 
     bindf.to_csv('testbeat3.csv', index=True, header=False, sep="\t")
     df = df[df.time != 0]
     # print('done!')
-    return [prec, rec, fsc]
+    #return [prec, rec, fsc]
     madmom.io.midi.write_midi(df.values, 'midi_testit_.mid')
     generated = splitrowsanddecode(bintimes)
     bintimes = mergerowsandencode(generated)
@@ -754,14 +754,18 @@ def testOnsDet(filePath, alg=0, ppAlg=0, ed=False):
 def debug():
     # debug
     # initKitBG('Kits/mcd2/',8,K)
-    # K=1
+    K=1
     file = './Kits/mcd_pad/'
     method = 'NMFD'
-    file='../trainSamplet/'
+    file='../DXSamplet/'
     initKitBG(file,K=K, drumwise=True, method=method)
     # print('Kit init processing time:%0.2f' % (time.time() - t0))
     loadKit(file)
-    print(test_run(file_path=file, annotated=True, method=method))
+    print(test_run(file_path=file, annotated=True, method=method, quantize=.0, skip_secs=0))
+
+    drumsynth.createWav('testbeat3.csv', 'sysAnnodQuantizedPart.wav', addCountInAndCountOut=False,
+                        deltaTempo=1,
+                        countTempo=1)
     return
     prec_tot = 0
     rec_tot = 0

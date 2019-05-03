@@ -1,18 +1,18 @@
 '''
 This module is the original scratchbook and handles a lot of general functionality
 '''
+import numpy as np
+from scipy.fftpack import fft
+from scipy.ndimage.filters import median_filter
+from sklearn.mixture import BayesianGaussianMixture
+
 import nmfd
 import onset_detection
 from constants import *
-from sklearn.mixture import BayesianGaussianMixture
-import numpy as np
-from scipy.ndimage.filters import median_filter
-from scipy.fftpack import fft
 
-#globals
+# globals
 max_n_frames = 10
 total_priors = 18
-
 
 
 class Drum(object):
@@ -124,18 +124,16 @@ def findDefBinsBG(frames, filteredSpec, ConvFrames, K):
     :param filteredSpec: Spectrogram, the spectrogram where the vectors are extracted from
     :param ConvFrames: int, number of frames the priors contain
     :param K: int, max number of priors per drum
-    :param bs_len: int, Not used
     :return: tuple of Numpy arrays, prior vectors Wpre,heads for actual hits and tails for decay part of the sound
     """
 
     global total_priors, max_n_frames
-    max_n_frames=ConvFrames
+    max_n_frames = ConvFrames
     gaps = np.zeros((frames.shape[0], max_n_frames))
     # gaps = np.zeros((frames.shape[0], ConvFrames))
     for i in range(frames.shape[0]):
         for j in range(ConvFrames):
             gaps[i, j] = frames[i] + j
-
 
     a = np.reshape(filteredSpec[gaps.astype(int)], (N_PEAKS, -1))
 
@@ -190,7 +188,7 @@ def findDefBinsDBSCAN(frames, filteredSpec, ConvFrames, eps=0.5):
     """
     from sklearn.cluster import DBSCAN
     global total_priors
-    eps=eps
+    eps = eps
     gaps = np.zeros((frames.shape[0], max_n_frames))
     # gaps = np.zeros((frames.shape[0], ConvFrames))
     for i in range(frames.shape[0]):
@@ -199,12 +197,13 @@ def findDefBinsDBSCAN(frames, filteredSpec, ConvFrames, eps=0.5):
 
     a = np.reshape(filteredSpec[gaps.astype(int)], (N_PEAKS, -1))
     dbs = DBSCAN(eps=eps, min_samples=4).fit(a)
-    K1,unique_labels=np.unique(dbs.labels_,return_inverse=True)
-    indices=np.unique(unique_labels)
+    K1, unique_labels = np.unique(dbs.labels_, return_inverse=True)
+    indices = np.unique(unique_labels)
     heads = np.zeros((FILTERBANK_SHAPE, max_n_frames, K1.shape[0]))
     for i in indices:
-        heads[:, :, i] = np.reshape(np.mean(a[unique_labels==i, :],axis=0), (FILTERBANK_SHAPE, max_n_frames), order='F')
-    eps=eps
+        heads[:, :, i] = np.reshape(np.mean(a[unique_labels == i, :], axis=0), (FILTERBANK_SHAPE, max_n_frames),
+                                    order='F')
+    eps = eps
     tailgaps = np.zeros((frames.shape[0], max_n_frames))
     for i in range(frames.shape[0]):
         for j in range(tailgaps.shape[1]):
@@ -218,8 +217,9 @@ def findDefBinsDBSCAN(frames, filteredSpec, ConvFrames, eps=0.5):
         tails[:, :, i] = np.reshape(np.mean(a2[unique_labels == i, :], axis=0), (FILTERBANK_SHAPE, max_n_frames),
                                     order='F')
     total_priors += K1.shape[0] + K2.shape[0]
-    print(K1.shape[0]+K2.shape[0])
+    print(K1.shape[0] + K2.shape[0])
     return (heads, tails, K1, K2)
+
 
 def findDefBinsOPTICS(frames=None, filteredSpec=None, ConvFrames=None, matrices=None):
     """
@@ -229,7 +229,7 @@ def findDefBinsOPTICS(frames=None, filteredSpec=None, ConvFrames=None, matrices=
     :param ConvFrames: int, number of frames the priors contain
     :return: tuple of Numpy arrays, prior vectors Wpre,heads for actual hits and tails for decay part of the sound
     """
-    #from sklearn.cluster import DBSCAN
+    # from sklearn.cluster import DBSCAN
     from python import OPTICS
     global total_priors
     if matrices is None:
@@ -241,16 +241,18 @@ def findDefBinsOPTICS(frames=None, filteredSpec=None, ConvFrames=None, matrices=
         a = np.reshape(filteredSpec[gaps.astype(int)], (N_PEAKS, -1))
         print(a.shape)
     else:
-        a=np.array(matrices[0])
-        #a=np.reshape(a,(a.shape[0], -1))
-        #print(a.shape)
+        a = np.array(matrices[0])
+        # a=np.reshape(a,(a.shape[0], -1))
+        # print(a.shape)
 
-    opts=OPTICS.OPTICS(min_samples=5, max_eps=np.inf, metric='l2',maxima_ratio=0.5, rejection_ratio=2,leaf_size=32).fit(a)
-    K1,unique_labels=np.unique(opts.labels_,return_inverse=True)
-    indices=np.unique(unique_labels)
+    opts = OPTICS.OPTICS(min_samples=5, max_eps=np.inf, metric='l2', maxima_ratio=0.5, rejection_ratio=2,
+                         leaf_size=32).fit(a)
+    K1, unique_labels = np.unique(opts.labels_, return_inverse=True)
+    indices = np.unique(unique_labels)
     heads = np.zeros((FILTERBANK_SHAPE, max_n_frames, K1.shape[0]))
     for i in indices:
-        heads[:, :, i] = np.reshape(np.mean(a[unique_labels==i, :],axis=0), (FILTERBANK_SHAPE, max_n_frames), order='F')
+        heads[:, :, i] = np.reshape(np.mean(a[unique_labels == i, :], axis=0), (FILTERBANK_SHAPE, max_n_frames),
+                                    order='F')
     if matrices is None:
         tailgaps = np.zeros((frames.shape[0], max_n_frames))
         for i in range(frames.shape[0]):
@@ -259,9 +261,10 @@ def findDefBinsOPTICS(frames=None, filteredSpec=None, ConvFrames=None, matrices=
         a2 = np.reshape(filteredSpec[tailgaps.astype(int)], (N_PEAKS, -1))
     else:
         a2 = np.array(matrices[1])
-        #a2 = np.reshape(a2, (a2.shape[0], -1))
-        #print(a2.shape)
-    opts = OPTICS.OPTICS(min_samples=5, max_eps=np.inf, metric='l2',maxima_ratio=0.5, rejection_ratio=2,leaf_size=32).fit(a2)
+        # a2 = np.reshape(a2, (a2.shape[0], -1))
+        # print(a2.shape)
+    opts = OPTICS.OPTICS(min_samples=5, max_eps=np.inf, metric='l2', maxima_ratio=0.5, rejection_ratio=2,
+                         leaf_size=32).fit(a2)
     K2, unique_labels = np.unique(opts.labels_, return_inverse=True)
     indices = np.unique(unique_labels)
     tails = np.zeros((FILTERBANK_SHAPE, max_n_frames, K2.shape[0]))
@@ -269,8 +272,9 @@ def findDefBinsOPTICS(frames=None, filteredSpec=None, ConvFrames=None, matrices=
         tails[:, :, i] = np.reshape(np.mean(a2[unique_labels == i, :], axis=0), (FILTERBANK_SHAPE, max_n_frames),
                                     order='F')
     total_priors += K1.shape[0] + K2.shape[0]
-    print(K1.shape[0]+K2.shape[0])
+    print(K1.shape[0] + K2.shape[0])
     return (heads, tails, K1, K2)
+
 
 def findDefBins(frames=None, filteredSpec=None, ConvFrames=None, matrices=None):
     """
@@ -288,7 +292,7 @@ def findDefBins(frames=None, filteredSpec=None, ConvFrames=None, matrices=None):
         a = np.reshape(filteredSpec[gaps.astype(int)], (N_PEAKS, -1))
     else:
         a = np.array(matrices[0])
-    heads= np.reshape(np.mean(a, axis=0), (FILTERBANK_SHAPE,max_n_frames, 1), order='F')
+    heads = np.reshape(np.mean(a, axis=0), (FILTERBANK_SHAPE, max_n_frames, 1), order='F')
     if matrices is None:
         tailgaps = np.zeros((frames.shape[0], ConvFrames))
         for i in range(frames.shape[0]):
@@ -298,10 +302,10 @@ def findDefBins(frames=None, filteredSpec=None, ConvFrames=None, matrices=None):
         a2 = np.reshape(filteredSpec[tailgaps.astype(int)], (N_PEAKS, -1))
 
     else:
-        a2=np.array(matrices[1])
+        a2 = np.array(matrices[1])
     tails = np.reshape(np.mean(a2, axis=0), (FILTERBANK_SHAPE, max_n_frames, 1), order='F')
     total_priors += 2
-    return (heads, tails, 1,1)
+    return (heads, tails, 1, 1)
 
 
 def get_possible_notes(drum_kit=None):
@@ -335,8 +339,9 @@ def get_possible_notes(drum_kit=None):
     # Add pauses to the notes
     possible_notes = np.concatenate((possible_notes, pauses))
     # return possible notes
-    possible_hits=possible_notes
+    possible_hits = possible_notes
     return (possible_notes)
+
 
 def to_midinote(notes):
     """
@@ -345,6 +350,7 @@ def to_midinote(notes):
     :return: list of corresponfing midinotes [36, 38, 42]
     """
     return list(MIDINOTES[i] for i in notes)
+
 
 def getPeaksFromBuffer(filt_spec, numHits):
     """
@@ -381,9 +387,10 @@ def getPeaksFromBuffer(filt_spec, numHits):
         peaks = onset_detection.pick_onsets(H0, threshold=threshold)
     return peaks
 
+
 def get_Wpre(drumkit, max_n_frames=max_n_frames):
     total_heads = 0
-    total_priors=len(drumkit)*2
+    total_priors = len(drumkit) * 2
     Wpre = np.zeros((FILTERBANK_SHAPE, total_priors, max_n_frames))
     for i in range(len(drumkit)):
         heads = drumkit[i].get_heads()
@@ -402,6 +409,7 @@ def get_Wpre(drumkit, max_n_frames=max_n_frames):
             total_tails += 1
     return Wpre, total_heads
 
+
 def recalculate_thresholds(filt_spec, shifts, drumkit, drumwise=False, method='NMFD'):
     """
 
@@ -415,10 +423,10 @@ def recalculate_thresholds(filt_spec, shifts, drumkit, drumwise=False, method='N
     """
     onset_alg = 2
     Wpre, total_heads = get_Wpre(drumkit)
-    if method=='NMFD':
+    if method == 'NMFD':
         H, Wpre, err1 = nmfd.NMFD(filt_spec.T, iters=128, Wpre=Wpre, include_priors=True, n_heads=total_heads)
     else:
-        H, err1=nmfd.semi_adaptive_NMFB(filt_spec.T,  Wpre=Wpre,iters=128,n_heads=total_heads)
+        H, err1 = nmfd.semi_adaptive_NMFB(filt_spec.T, Wpre=Wpre, iters=128, n_heads=total_heads)
     total_heads = 0
     Hs = []
     for i in range(len(drumkit)):
@@ -429,7 +437,7 @@ def recalculate_thresholds(filt_spec, shifts, drumkit, drumwise=False, method='N
             for k in range(K1):
                 index = ind + k
                 HN = onset_detection.superflux(A=sum(Wpre.T[0, index, :]), B=H[index], win_size=3)
-                #HN = energyDifference(H[index], win_size=6)
+                # HN = energyDifference(H[index], win_size=6)
                 # HN = HN / HN.max()
                 if k == 0:
                     H0 = HN
@@ -501,9 +509,8 @@ def recalculate_thresholds(filt_spec, shifts, drumkit, drumwise=False, method='N
             # arbitrary minimum threshold check
             threshold = max((threshold, 0.05))
 
-            print('threshold: %f, f-score: %f' %(threshold, f_zero))
+            print('threshold: %f, f-score: %f' % (threshold, f_zero))
             drumkit[i].set_threshold(threshold)
-
 
     if not drumwise:
         # print(len(Hs))
@@ -560,109 +567,90 @@ def recalculate_thresholds(filt_spec, shifts, drumkit, drumwise=False, method='N
     # for i in range(len(drums)):
     #    drums[i].set_threshold(mean)
 
-def rect_bark_filter_bank():
+
+def rect_bark_filter_bank(filter_height=0.1, min_freq=20, max_freq=20000, n_bins=49):
+    """
+    Rectangular filtebank
+    :param filter_height: float, height of filters
+    :param min_freq: int, lowest filter frequency
+    :param max_freq: int, highest filter frequency
+    :param n_bins: int, amount of filters.
+    :return: filterbank
+    """
+    #stft bins
     stft_bins = np.arange(FRAME_SIZE >> 1) / (FRAME_SIZE * 1. / SAMPLE_RATE)
-
-    # hack for more bark freq, 57 is the max, otherwise inc. the denominator
-    #bark_freq = np.array((600 * np.sinh((np.arange(0, 49)) / 12)))
-    #bark_freq[0] = 20
-
-    #Bark double frequencies from Madmom
-    bark_freq = np.array([20, 50, 100, 150, 200, 250, 300, 350, 400, 450,
-                            510, 570, 630, 700, 770, 840, 920, 1000, 1080,
-                            1170, 1270, 1370, 1480, 1600, 1720, 1850, 2000,
-                            2150, 2320, 2500, 2700, 2900, 3150, 3400, 3700,
-                            4000, 4400, 4800, 5300, 5800, 6400, 7000, 7700,
-                            8500, 9500, 10500, 12000, 13500, 15500])
+    # hack for more bark freq, 57 is the max, otherwise increment the denominator.
+    bark_freq = np.array((600 * np.sinh((np.arange(0, n_bins)) / 12)))
     # filter frequencies
-    bark_freq = bark_freq[bark_freq>20]
+    #Lose the low freq rumble
+    bark_freq = bark_freq[bark_freq > min_freq]
+    bark_freq = bark_freq[bark_freq < max_freq]
     filt_bank = np.zeros((len(stft_bins), len(bark_freq)))
     stft_bins = stft_bins[stft_bins >= bark_freq[0]]
-    index=0
-    for i in range(0, len(bark_freq)-1):
-        while stft_bins[index] > bark_freq[i] and stft_bins[index] < bark_freq[i+1] and index <= len(stft_bins):
-            filt_bank[index][i] += 1.
+    index = 0
+    for i in range(0, len(bark_freq) - 1):
+        while stft_bins[index] > bark_freq[i] and stft_bins[index] < bark_freq[i + 1] and index <= len(stft_bins):
+            filt_bank[index][i] = filter_height
             index += 1
+    filt_bank[index:, -1] += filter_height
     return np.array(filt_bank)
 
 
-
-def stft(audio_signal, A=None, B=None, test=False, streaming=False, filterbank=rect_bark_filter_bank(), hs=HOP_SIZE, fs=FRAME_SIZE, sr=SAMPLE_RATE):
-    #Battenberg OD etc.
+def stft(audio_signal, A=None, B=None, test=False, streaming=False, filterbank=rect_bark_filter_bank(), hs=HOP_SIZE,
+         fs=FRAME_SIZE, sr=SAMPLE_RATE):
+    # Battenberg OD etc.
     if A is not None and B is not None:
-        spec= np.outer(A, B).T
+        spec = np.outer(A, B).T
         if test:
 
-             mu = 10 ** 8
-             for i in range(spec.shape[1]):
-                 spec[:, i] = np.log(1 + mu * np.abs(spec[:, i])) / np.log(1 + mu)
-                 # spec[:, i] = ((np.sign(spec[:, i]) * np.log(1 + mu * np.abs(spec[:, i])))) / (1 + np.log(mu))
+            mu = 10 ** 8
+            for i in range(spec.shape[1]):
+                spec[:, i] = np.log(1 + mu * np.abs(spec[:, i])) / np.log(1 + mu)
+                # spec[:, i] = ((np.sign(spec[:, i]) * np.log(1 + mu * np.abs(spec[:, i])))) / (1 + np.log(mu))
 
-             kernel = np.hanning(4)
-             for i in range(spec.shape[1]):
-                 spec[:, i] = np.convolve(spec[:, i], kernel, 'same')
+            kernel = np.hanning(4)
+            for i in range(spec.shape[1]):
+                spec[:, i] = np.convolve(spec[:, i], kernel, 'same')
 
-             if test:
-                 spec = np.gradient(spec, axis=0)
-                 spec = np.clip(spec, 0, None, out=spec)
-                 # spec = (spec + np.abs(spec)) / 2
-                 for i in range(spec.shape[0]):
-                     spec[i, :] = np.mean(spec[i, :])
+            if test:
+                spec = np.gradient(spec, axis=0)
+                spec = np.clip(spec, 0, None, out=spec)
+                # spec = (spec + np.abs(spec)) / 2
+                for i in range(spec.shape[0]):
+                    spec[i, :] = np.mean(spec[i, :])
         return spec
-    # Moved outside the function
-    # def rect_bark_filter_bank():
-    #     stft_bins = np.arange(fs >> 1) / (fs * 1. / sr)
-    #
-    #     # hack for more bark freq, 57 is the max, otherwise inc. the denominator
-    #     #bark_freq = np.array((600 * np.sinh((np.arange(0, 49)) / 12)))
-    #     #bark_freq[0] = 20
-    #
-    #     #Bark double frequencies from Madmom
-    #     bark_freq = np.array([20, 50, 100, 150, 200, 250, 300, 350, 400, 450,
-    #                             510, 570, 630, 700, 770, 840, 920, 1000, 1080,
-    #                             1170, 1270, 1370, 1480, 1600, 1720, 1850, 2000,
-    #                             2150, 2320, 2500, 2700, 2900, 3150, 3400, 3700,
-    #                             4000, 4400, 4800, 5300, 5800, 6400, 7000, 7700,
-    #                             8500, 9500, 10500, 12000, 13500, 15500])
-    #     # filter frequencies
-    #     bark_freq = bark_freq[bark_freq>20]
-    #     filt_bank = np.zeros((len(stft_bins), len(bark_freq)))
-    #     stft_bins = stft_bins[stft_bins >= bark_freq[0]]
-    #     index=0
-    #     for i in range(0, len(bark_freq)-1):
-    #         while stft_bins[index] > bark_freq[i] and stft_bins[index] < bark_freq[i+1] and index <= len(stft_bins):
-    #             filt_bank[index][i] += 1.
-    #             index += 1
-    #     return np.array(filt_bank)
 
-
-    #nr. frequency bins = Half of FRAME_SIZE
-    n_frames=int(fs/2)
-    #HOP_LENGTH spaced index
-    frames_index= np.arange(0,len(audio_signal) ,hs)
-    #+2 frames to correct NMF systematic errors...
-    err_corr=2
+    ##nr. frequency bins = Half of FRAME_SIZE
+    n_frames = int(fs / 2)
+    # HOP_LENGTH spaced index
+    frames_index = np.arange(0, len(audio_signal), hs)
+    # +2 frames to correct NMF systematic errors... +1 for NMFD
+    err_corr =1
     if streaming:
-        err_corr=0
-    data=np.zeros((len(frames_index)+err_corr, n_frames), dtype=np.complex64)
-    #Window
-    win=np.kaiser(fs, np.pi ** 2)
-    #STFT
+        err_corr = 0
+    data = np.zeros((len(frames_index) + err_corr, n_frames), dtype=np.complex64)
+    # Window
+    win = np.kaiser(fs, np.pi ** 2)
+    # STFT
     for frame in range(len(frames_index)):
-        #Get one frame length audio clip
-        one_frame =audio_signal[frames_index[frame]:frames_index[frame]+hs]
-        #Pad last frame if needed
-        if one_frame.shape[0]<fs:
-            one_frame=np.pad(one_frame,(0,fs-one_frame.shape[0]), 'constant', constant_values=(0))
-        #apply window
-        fft_frame=np.multiply(one_frame, win)
-        #FFT
-        data[frame+err_corr] = fft(fft_frame, fs, axis=0)[:n_frames]
-    #mag spectrogram
+        # Get one frame length audio clip
+        one_frame = audio_signal[frames_index[frame]:frames_index[frame] + fs]
+        # Pad last frame if needed
+        if one_frame.shape[0] < fs:
+            one_frame = np.pad(one_frame, (0, fs - one_frame.shape[0]), 'constant', constant_values=(0))
+        # apply window
+        fft_frame = one_frame*win
+        # FFT
+        data[frame + err_corr] = fft(fft_frame, fs, axis=0)[:n_frames]
+
+    # mag spectrogram
     data = np.abs(data)
-    #filter data
-    data = data@filterbank
-    #for streaming we have to remove sys.error compesation.
+    # filter data
+    data = data @ filterbank
+    # for streaming we have to remove sys.error compesation.
+    win = np.hanning(4)
+    for i in range(data.shape[1]):
+        data[:, i] = np.convolve(data[:, i], win, 'same')
 
     return data
 
@@ -694,6 +682,7 @@ def time_to_frame(times, sr=SAMPLE_RATE, hop_length=HOP_SIZE):
     """
     samples = (np.asanyarray(times) * float(sr))
     return np.rint(np.asanyarray(samples) / (hop_length))
+
 
 def f_score(hits, hitNMiss, actual):
     """
@@ -742,9 +731,9 @@ def k_in_n(k, n, window=1):
     return float(hits)
 
 
-
 def movingAverage(x, window=500):
     return median_filter(x, size=(window))
+
 
 def cleanDoubleStrokes(hitList, resolution=10):
     retList = []
@@ -813,8 +802,6 @@ def truncZeros(frames):
     return frames
 
 
-
-
 def mergerowsandencode(a):
     """
         Merges hits occuring at the same frame.
@@ -861,13 +848,12 @@ def mergerowsandencode(a):
         value = int(a[i][1])
         # Encode the hit into a character array, place 1 on the index of the drum #
         if acceptHit(value, frames[index]):
-        #try:
+            # try:
             new_hit = np.bitwise_or(frames[index], 2 ** value)
-            #if new_hit in possible_hits:
-            frames[index]=new_hit
-        #except:
-            #print(frames[index], value)
-
+            # if new_hit in possible_hits:
+            frames[index] = new_hit
+        # except:
+        # print(frames[index], value)
 
     # return array of merged hits starting from the first occurring hit event
     if ENCODE_PAUSE:
@@ -1621,50 +1607,52 @@ def dec_to_binary(f):
 #
 #
 #
-#BACK IN THE GAME!!
-def get_preprocessed_spectrogram(buffer=None, A=None, B=None, sm_win=4, test=False, Print=False):
-    """
-    Preprocess source audio data and return a processed stft
-    :param buffer: numpy array, None, source audio
-    :param A: numpy array, None, frequency vector of separated data
-    :param B: numpy array, None, activations of separated data
-    :param sm_win: int, smoothing window size
-    :param test: boolean, if true E.Battenberg preprocessing is performed.
-    :return: numpy array, preprocessed stft of the source data
-    """
-    import madmom
-    FILTERBANK = madmom.audio.filters.BarkFilterbank(
-         madmom.audio.stft.fft_frequencies(num_fft_bins=int(FRAME_SIZE / 2), sample_rate=SAMPLE_RATE),
-         num_bands='double', fmin=20.0, fmax=15500.0, norm_filters=False, unique_filters=True)
-    if buffer is not None:
-        spec = madmom.audio.spectrogram.FilteredSpectrogram(buffer, filterbank=FILTERBANK, sample_rate=SAMPLE_RATE,
-                                                            frame_size=FRAME_SIZE, hop_size=HOP_SIZE, fmin=20,
-                                                            fmax=17000, window=np.kaiser(FRAME_SIZE, np.pi ** 2))
-        # if Print:
-        #    showEnvelope((buffer[600000:1100000]))
-        #    pass
-    if A is not None:
-        spec = np.outer(A, B).T
-    # kernel=np.kaiser(6,5)
-    if test:
-        mu = 10 ** 8
-        for i in range(spec.shape[1]):
-            spec[:, i] = np.log(1 + mu * np.abs(spec[:, i])) / np.log(1 + mu)
-            # spec[:, i] = ((np.sign(spec[:, i]) * np.log(1 + mu * np.abs(spec[:, i])))) / (1 + np.log(mu))
-    kernel = np.hanning(sm_win)
-    for i in range(spec.shape[1]):
-        spec[:, i] = np.convolve(spec[:, i], kernel, 'same')
-    if test:
-        spec = np.gradient(spec, axis=0)
-        spec = np.clip(spec, 0, None, out=spec)
-        # spec = (spec + np.abs(spec)) / 2
-        for i in range(spec.shape[0]):
-            spec[i, :] = np.mean(spec[i, :])
-        # spec[1:]=spec[1:]-spec[:-1]
-        # spec=(spec+np.abs(spec))/2
-        # spec=spec/spec.max()
-    return spec
-#def getStompTemplate():
+#def get_preprocessed_spectrogram(buffer=None, A=None, B=None, sm_win=4, test=False, Print=False):
+#    """
+#    Preprocess source audio data and return a processed stft
+#    :param buffer: numpy array, None, source audio
+#    :param A: numpy array, None, frequency vector of separated data
+#    :param B: numpy array, None, activations of separated data
+#    :param sm_win: int, smoothing window size
+#    :param test: boolean, if true E.Battenberg preprocessing is performed.
+#    :return: numpy array, preprocessed stft of the source data
+#    """
+#    import madmom
+#    FILTERBANK = madmom.audio.filters.BarkFilterbank(
+#        madmom.audio.stft.fft_frequencies(num_fft_bins=int(FRAME_SIZE / 2), sample_rate=SAMPLE_RATE),
+#        num_bands='double', fmin=20.0, fmax=15500.0, norm_filters=False, unique_filters=True)
+#    if buffer is not None:
+#        spec = madmom.audio.spectrogram.FilteredSpectrogram(buffer, filterbank=FILTERBANK, sample_rate=SAMPLE_RATE,
+#                                                            frame_size=FRAME_SIZE, hop_size=HOP_SIZE, fmin=20,
+#                                                            fmax=17000, window=np.kaiser(FRAME_SIZE, np.pi ** 2))
+#        # if Print:
+#        #    showEnvelope((buffer[600000:1100000]))
+#        #    pass
+#    if A is not None:
+#        spec = np.outer(A, B).T
+#    # kernel=np.kaiser(6,5)
+#    if test:
+#        mu = 10 ** 8
+#        for i in range(spec.shape[1]):
+#            spec[:, i] = np.log(1 + mu * np.abs(spec[:, i])) / np.log(1 + mu)
+#            # spec[:, i] = ((np.sign(spec[:, i]) * np.log(1 + mu * np.abs(spec[:, i])))) / (1 + np.log(mu))
+#    kernel = np.hanning(sm_win)
+#    for i in range(spec.shape[1]):
+#        spec[:, i] = np.convolve(spec[:, i], kernel, 'same')
+#    if test:
+#        spec = np.gradient(spec, axis=0)
+#        spec = np.clip(spec, 0, None, out=spec)
+#        # spec = (spec + np.abs(spec)) / 2
+#        for i in range(spec.shape[0]):
+#            spec[i, :] = np.mean(spec[i, :])
+#        # spec[1:]=spec[1:]-spec[:-1]
+#        # spec=(spec+np.abs(spec))/2
+#        # spec=spec/spec.max()
+#
+#    return spec
+#
+#
+# def getStompTemplate():
 #    """
 #    records sound check takes
 #    :return: numpy array, the recorded audio
@@ -1686,7 +1674,7 @@ def get_preprocessed_spectrogram(buffer=None, A=None, B=None, sm_win=4, test=Fal
 #            strm.close()
 #            return buffer[:j + 6000]
 #
-#def liveTake():
+# def liveTake():
 #    """
 #    records a drum take
 #    :return:
@@ -1707,7 +1695,7 @@ def get_preprocessed_spectrogram(buffer=None, A=None, B=None, sm_win=4, test=Fal
 #            # Should this yield instead of returning? To record as long as the drummer wants...
 #            return buffer[:j + 6000]
 #
-#def processLiveAudio_overwritten(liveBuffer=None, drumkit=None, quant_factor=1.0, iters=0, method='NMFD', thresholdAdj=0.):
+# def processLiveAudio_overwritten(liveBuffer=None, drumkit=None, quant_factor=1.0, iters=0, method='NMFD', thresholdAdj=0.):
 #    """
 #    main logic for source separation, onset detection and tempo extraction and quantization
 #    :param liveBuffer: numpy array, the source audio
@@ -1873,7 +1861,7 @@ def debug():
     from scipy.io import wavfile
     filename = './generated.wav'
     sr, audio = wavfile.read(filename, mmap=True)
-    audio=audio.astype(np.float32) / np.iinfo(audio.dtype).max
+    audio = audio.astype(np.float32) / np.iinfo(audio.dtype).max
     stft(audio)
 
 

@@ -68,7 +68,7 @@ def buildVocabulary(filename=None, hits=None):
     #diffHits=[x[0] for x in counts.most_common()]
     charI = dict((c, i) for i, c in enumerate(diffHits))
     Ichar = dict((i, c) for i, c in enumerate(diffHits))
-    print(len(charI))
+    print('vocabulary size: ',len(charI))
     print('vocabulary built')
 
 def getVocabulary():
@@ -384,6 +384,19 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
                              max_len=None,#64/16 result from 128
                              use_skip_connections=True,
                              dropout_rate=0.65))#64/16 result from 0.75
+        #the markovian option
+        elif model_type=='tcn_1':
+            model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
+            model.add(tcn.compiled_tcn(return_sequences=False,
+                             num_feat=numDiffHits,
+                             num_classes=numDiffHits,
+                             nb_filters=64,#64/16 result from 64
+                             kernel_size=1,#64/16 result from 8
+                             dilations=[2 ** i for i in range(3)],#64/16 result from 3
+                             nb_stacks=1,#64/16 result from 2
+                             max_len=None,#64/16 result from 128
+                             use_skip_connections=True,
+                             dropout_rate=0.5))#64/16 result from 0.75
         print(model.summary())
         optr = adam(lr=0.001)
         model.compile(loss='sparse_categorical_crossentropy',metrics=['accuracy'], optimizer=optr)
@@ -598,6 +611,10 @@ def generatePart(data,partLength=123,seqLen=16, temp=None, include_seed=False, m
 
     def sample(a, temperature=1.0):
         # helper function to sample an index from a probability array
+        if temperature<=0:
+            print ('Use temperatures over freezing >0°')
+            #return the most probable element to avoid errors
+            return a[0]
         a = np.asarray(a).astype('float64')
         a=a ** (1 / temperature)
         a_sum=a.sum()
@@ -724,8 +741,8 @@ def debug():
         times=[]
         #
         model_type=['TDC_parallel_mgu', 'time_dist_conv_mgu','parallel_mgu','stacked_mgu','conv_mgu','single_mgu',
-                    'single_gru', 'single_lstm', 'tcn']
-        model_type = ['ATT_TDC_P_mgu']
+                    'single_gru', 'single_lstm', 'tcn','ATT_TDC_P_mgu']
+        #model_type = ['ATT_TDC_P_mgu',]
         buildVocabulary(hits=utils.get_possible_notes([0, 1, 2, 3, 5, 8, 9, 10, 11, 12, 13]))
         for j in model_type:
             log=[]
@@ -751,12 +768,12 @@ def debug():
                 #drumsynth.createWav(i, 'orig_temp_{}.wav'.format(j), addCountInAndCountOut=False,
                 #                    deltaTempo=1,
                 #                    countTempo=1)
-                drumsynth.createWav(file, 'gen_temp_{}_{}.wav'.format(j,k), addCountInAndCountOut=False,
-                                    deltaTempo=1,
-                                    countTempo=1)
-                drumsynth.createWav(i, 'gen_temp_{}_{}.wav'.format('orig', k), addCountInAndCountOut=False,
-                                    deltaTempo=1,
-                                    countTempo=1)
+                #drumsynth.createWav(file, 'gen_temp_{}_{}.wav'.format(j,k), addCountInAndCountOut=False,
+                #                    deltaTempo=1,
+                #                    countTempo=1)
+                #drumsynth.createWav(i, 'gen_temp_{}_{}.wav'.format('orig', k), addCountInAndCountOut=False,
+                #                    deltaTempo=1,
+                #                    countTempo=1)
                 log.extend(history[:][0])
                 log.extend(history[:][-1])
                 k+=1
@@ -765,12 +782,12 @@ def debug():
                 print(i)
                 seed, history=train(i,seqLen=seqLen,sampleMul=1,model_type=j,updateModel=True, return_history=True)
                 file = generatePart(seed, partLength=333,seqLen=seqLen, temp=.666, include_seed=False, model_type=j)
-                drumsynth.createWav(file, 'gen_temp_{}_{}.wav'.format(j, k), addCountInAndCountOut=False,
-                                    deltaTempo=1,
-                                    countTempo=1)
-                drumsynth.createWav(i, 'gen_temp_{}_{}.wav'.format('orig', k), addCountInAndCountOut=False,
-                                    deltaTempo=1,
-                                    countTempo=1)
+                #drumsynth.createWav(file, 'gen_temp_{}_{}.wav'.format(j, k), addCountInAndCountOut=False,
+                #                    deltaTempo=1,
+                #                    countTempo=1)
+                #drumsynth.createWav(i, 'gen_temp_{}_{}.wav'.format('orig', k), addCountInAndCountOut=False,
+                #                    deltaTempo=1,
+                #                    countTempo=1)
                 log.extend(history[:][0])
                 log.extend(history[:][-1])
                 k+=1
