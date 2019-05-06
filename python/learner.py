@@ -34,7 +34,7 @@ set_random_seed(2)
 t0 = time()
 seqLen=16
 #parallel MGU divisors
-dvs=[1,2,4,8,16, 32, 64]
+dvs=[1, 2, 4, 8, 16, 32]
 #dvs=[1,4,16,64]
 partLength = 0
 lastLoss=0
@@ -121,7 +121,7 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
             raise ValueError('old model destroyed!!!')
         else:
             model = load_model('{}model_{}.hdf5'.format(filePath, model_type), custom_objects={'MGU': MGU})
-            optr = nadam(lr=0.002)
+            optr = nadam(lr=0.001)
             model.compile(loss='sparse_categorical_crossentropy', metrics=['accuracy'], optimizer=optr)
     except Exception as e:
         print('Making new model')
@@ -136,7 +136,28 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
                           implementation=1))
             model.add(BatchNormalization())
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
+        elif model_type=='autoencoder':
+            ###NOT FINISHED DO NOT TRY!!
+            in1 = Input(shape=(seqLen,))
+            em1 = Embedding(numDiffHits + 1, numDiffHits)(in1)
+            encoder=MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
+                return_sequences=False, dropout=0.5, recurrent_dropout=0.5, implementation=1)(em1)
+            decoder2 = RepeatVector(seqLen-1)(encoder)
+            decoder2 = MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
+                           return_sequences=False, dropout=0.5, recurrent_dropout=0.5, implementation=1)(decoder2)
+            bn = BatchNormalization()(decoder2)
+            out2 = Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal")(bn)
 
+            #enc1=Dense(640, activation="sigmoid")(in1)
+            #enc2=Dense(32, activation="relu")(enc1)
+            #enc3=Dense(16, activation="relu")(enc2)
+            #drop1=Dropout(0.0)(enc3)
+            #dec0=Dense(16, activation="relu")(drop1)
+            #dec1=Dense(32, activation="relu")(dec0)
+            #dec2=Dense(640, activation="sigmoid")(dec1)
+            ##flat=GlobalAveragePooling1D()(dec2)
+            #out = Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal")(dec2)
+            model=Model(inputs=in1, outputs=[out2])
         elif model_type=='many2many':
             ###NOT FINISHED DO NOT TRY!!
             X=Input(shape=(seqLen,))
@@ -504,6 +525,7 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
         X_train_comp =[]
         for i in dvs:
             X_train_comp.append(X_train[:, -int(seqLen / i):])
+
     else:
         X_train_comp=X_train
     if forceGen:
@@ -742,7 +764,7 @@ def debug():
         #
         model_type=['TDC_parallel_mgu', 'time_dist_conv_mgu','parallel_mgu','stacked_mgu','conv_mgu','single_mgu',
                     'single_gru', 'single_lstm', 'tcn','ATT_TDC_P_mgu']
-        #model_type = ['ATT_TDC_P_mgu',]
+        model_type = ['ATT_TDC_P_mgu']
         buildVocabulary(hits=utils.get_possible_notes([0, 1, 2, 3, 5, 8, 9, 10, 11, 12, 13]))
         for j in model_type:
             log=[]
@@ -768,9 +790,9 @@ def debug():
                 #drumsynth.createWav(i, 'orig_temp_{}.wav'.format(j), addCountInAndCountOut=False,
                 #                    deltaTempo=1,
                 #                    countTempo=1)
-                #drumsynth.createWav(file, 'gen_temp_{}_{}.wav'.format(j,k), addCountInAndCountOut=False,
-                #                    deltaTempo=1,
-                #                    countTempo=1)
+                drumsynth.createWav(file, 'gen_temp_{}_{}.wav'.format(j,'0'), addCountInAndCountOut=False,
+                                    deltaTempo=1,
+                                    countTempo=1)
                 #drumsynth.createWav(i, 'gen_temp_{}_{}.wav'.format('orig', k), addCountInAndCountOut=False,
                 #                    deltaTempo=1,
                 #                    countTempo=1)
@@ -782,9 +804,9 @@ def debug():
                 print(i)
                 seed, history=train(i,seqLen=seqLen,sampleMul=1,model_type=j,updateModel=True, return_history=True)
                 file = generatePart(seed, partLength=333,seqLen=seqLen, temp=.666, include_seed=False, model_type=j)
-                #drumsynth.createWav(file, 'gen_temp_{}_{}.wav'.format(j, k), addCountInAndCountOut=False,
-                #                    deltaTempo=1,
-                #                    countTempo=1)
+                drumsynth.createWav(file, 'gen_temp_{}_{}.wav'.format(j, '0'), addCountInAndCountOut=False,
+                                    deltaTempo=1,
+                                    countTempo=1)
                 #drumsynth.createWav(i, 'gen_temp_{}_{}.wav'.format('orig', k), addCountInAndCountOut=False,
                 #                    deltaTempo=1,
                 #                    countTempo=1)
@@ -796,7 +818,7 @@ def debug():
             times.append(time() - t0)
             print('training a model from scratch:%0.2f' % (time() - t0))
 
-    pickle.dump(logs, open("{}/logs_full_folder_complete_att64.log".format('.'), 'wb'))
+    pickle.dump(logs, open("{}/logs_full_folder_complete_att64_8.log".format('.'), 'wb'))
     print('times')
     print(times)
     return

@@ -522,7 +522,7 @@ def run_folder(audio_folder, annotation_folder):
     return sum[0] / len(test_annotation), sum[1] / len(test_annotation), sum[2] / len(test_annotation)
 
 
-def test_run(file_path=None, annotated=False, files=[None, None], method='NMF', quantize=0., skip_secs=0):
+def test_run(file_path=None, annotated=False, files=[None, None], method='NMF', quantize=0., skip_secs=0.):
     prec, rec, fsc = [0., 0., 0.]
     if files[0] is not None:
         audio_file_path = files[0]
@@ -624,31 +624,35 @@ def test_run(file_path=None, annotated=False, files=[None, None], method='NMF', 
     bindf.to_csv('testbeat3.csv', index=True, header=False, sep="\t")
     df = df[df.time != 0]
     # print('done!')
-    #return [prec, rec, fsc]
-    madmom.io.midi.write_midi(df.values, 'midi_testit_.mid')
-    generated = splitrowsanddecode(bintimes)
-    bintimes = mergerowsandencode(generated)
-    df = pd.DataFrame(times, columns=['time', 'inst'])
-    df['duration'] = pd.Series(np.full((len(times)), 0, np.int64))
-    df['vel'] = pd.Series(np.full((len(times)), 127, np.int64))
-    bindf = pd.DataFrame(bintimes, columns=['inst'])
-    bindf.to_csv('testbeat0.csv', index=True, header=False, sep="\t")
-    gen = pd.DataFrame(generated, columns=['time', 'inst'])
-    gen.to_csv('generated_enc_dec0.csv', index=False, header=None, sep='\t')
-
-    # print('pattern generating time:%0.2f' % (time() - t0))
-    # change to time and midinotes
-    gen['time'] = frame_to_time(gen['time'], hop_length=Q_HOP)
-    gen['inst'] = to_midinote(gen['inst'])
-    gen['duration'] = pd.Series(np.full((len(generated)), 0, np.int64))
-    gen['vel'] = pd.Series(np.full((len(generated)), 127, np.int64))
-    from madmom.io import midi
-    notes = madmom.utils.expand_notes(gen.values, duration=0.6, velocity=127)
-    filu = midi.MIDIFile.from_notes(notes, tempo=DEFAULT_TEMPO)
-    filu.save('midi_testit_enc_dec0.mid')
-    # madmom.io.midi.write_midi(gen.values, 'midi_testit_enc_dec0.mid')
-    # print('Processing time:%0.2f' % (time.time() - t0))
     return [prec, rec, fsc]
+    #madmom.io.midi.write_midi(df.values, 'midi_testit_.mid')
+    #generated = splitrowsanddecode(bintimes)
+    #bintimes = mergerowsandencode(generated)
+    #df = pd.DataFrame(times, columns=['time', 'inst'])
+    #df['duration'] = pd.Series(np.full((len(times)), 0, np.int64))
+    #df['vel'] = pd.Series(np.full((len(times)), 127, np.int64))
+    #bindf = pd.DataFrame(bintimes, columns=['inst'])
+    #bindf.to_csv('testbeat0.csv', index=True, header=False, sep="\t")
+    #gen = pd.DataFrame(generated, columns=['time', 'inst'])
+    #gen.to_csv('generated_enc_dec0.csv', index=False, header=None, sep='\t')
+#
+    ## print('pattern generating time:%0.2f' % (time() - t0))
+    ## change to time and midinotes
+    #if quantize>0:
+    #    midi_hop=Q_HOP
+    #else:
+    #    midi_hop=HOP_SIZE
+    #gen['time'] = frame_to_time(gen['time'], hop_length=midi_hop)
+    #gen['inst'] = to_midinote(gen['inst'])
+    #gen['duration'] = pd.Series(np.full((len(generated)), 0, np.int64))
+    #gen['vel'] = pd.Series(np.full((len(generated)), 127, np.int64))
+    #from madmom.io import midi
+    #notes = madmom.utils.expand_notes(gen.values, duration=0.6, velocity=127)
+    #filu = midi.MIDIFile.from_notes(notes, tempo=DEFAULT_TEMPO)
+    #filu.save('midi_testit_enc_dec0.mid')
+    ## madmom.io.midi.write_midi(gen.values, 'midi_testit_enc_dec0.mid')
+    ## print('Processing time:%0.2f' % (time.time() - t0))
+    #return [prec, rec, fsc]
 
 
 # Test method to check Eric Battenbergs onset detection function.
@@ -757,11 +761,11 @@ def debug():
     K=1
     file = './Kits/mcd_pad/'
     method = 'NMFD'
-    file='../DXSamplet/'
-    initKitBG(file,K=K, drumwise=True, method=method)
+    file='../trainSamplet/'
+    #initKitBG(file,K=K, drumwise=True, method=method)
     # print('Kit init processing time:%0.2f' % (time.time() - t0))
     loadKit(file)
-    print(test_run(file_path=file, annotated=True, method=method, quantize=.0, skip_secs=0))
+    print(test_run(file_path=file, annotated=True, method=method, quantize=0., skip_secs=0.))
 
     drumsynth.createWav('testbeat3.csv', 'sysAnnodQuantizedPart.wav', addCountInAndCountOut=False,
                         deltaTempo=1,

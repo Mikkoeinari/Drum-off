@@ -568,7 +568,8 @@ def recalculate_thresholds(filt_spec, shifts, drumkit, drumwise=False, method='N
     #    drums[i].set_threshold(mean)
 
 
-def rect_bark_filter_bank(filter_height=0.1, min_freq=20, max_freq=20000, n_bins=49):
+def rect_bark_filter_bank(filter_height=0.1, min_freq=20, max_freq=20000, n_bins=49,
+                          fs=FRAME_SIZE, sr=SAMPLE_RATE):
     """
     Rectangular filtebank
     :param filter_height: float, height of filters
@@ -578,7 +579,7 @@ def rect_bark_filter_bank(filter_height=0.1, min_freq=20, max_freq=20000, n_bins
     :return: filterbank
     """
     #stft bins
-    stft_bins = np.arange(FRAME_SIZE >> 1) / (FRAME_SIZE * 1. / SAMPLE_RATE)
+    stft_bins = np.arange(fs >> 1) / (fs * 1. / sr)
     # hack for more bark freq, 57 is the max, otherwise increment the denominator.
     bark_freq = np.array((600 * np.sinh((np.arange(0, n_bins)) / 12)))
     # filter frequencies
@@ -596,29 +597,8 @@ def rect_bark_filter_bank(filter_height=0.1, min_freq=20, max_freq=20000, n_bins
     return np.array(filt_bank)
 
 
-def stft(audio_signal, A=None, B=None, test=False, streaming=False, filterbank=rect_bark_filter_bank(), hs=HOP_SIZE,
+def stft(audio_signal, streaming=False, filterbank=rect_bark_filter_bank(), hs=HOP_SIZE,
          fs=FRAME_SIZE, sr=SAMPLE_RATE):
-    # Battenberg OD etc.
-    if A is not None and B is not None:
-        spec = np.outer(A, B).T
-        if test:
-
-            mu = 10 ** 8
-            for i in range(spec.shape[1]):
-                spec[:, i] = np.log(1 + mu * np.abs(spec[:, i])) / np.log(1 + mu)
-                # spec[:, i] = ((np.sign(spec[:, i]) * np.log(1 + mu * np.abs(spec[:, i])))) / (1 + np.log(mu))
-
-            kernel = np.hanning(4)
-            for i in range(spec.shape[1]):
-                spec[:, i] = np.convolve(spec[:, i], kernel, 'same')
-
-            if test:
-                spec = np.gradient(spec, axis=0)
-                spec = np.clip(spec, 0, None, out=spec)
-                # spec = (spec + np.abs(spec)) / 2
-                for i in range(spec.shape[0]):
-                    spec[i, :] = np.mean(spec[i, :])
-        return spec
 
     ##nr. frequency bins = Half of FRAME_SIZE
     n_frames = int(fs / 2)
@@ -646,12 +626,13 @@ def stft(audio_signal, A=None, B=None, test=False, streaming=False, filterbank=r
     # mag spectrogram
     data = np.abs(data)
     # filter data
+    filterbank=rect_bark_filter_bank(filter_height=0.1,
+                                     min_freq=20, max_freq=17000, n_bins=49, fs=fs, sr=sr)
     data = data @ filterbank
     # for streaming we have to remove sys.error compesation.
     win = np.hanning(4)
     for i in range(data.shape[1]):
         data[:, i] = np.convolve(data[:, i], win, 'same')
-
     return data
 
 
