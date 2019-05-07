@@ -24,6 +24,7 @@ import tcn
 #Fix seed, comment for random operation
 from numpy.random import seed
 from tensorflow import set_random_seed
+#todo remove these!!!
 seed(1)
 set_random_seed(2)
 #Force cpu processing

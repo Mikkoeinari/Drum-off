@@ -11,6 +11,7 @@ import onset_detection
 from constants import *
 
 # globals
+#todo remove these!!!
 max_n_frames = 10
 total_priors = 18
 

@@ -10,6 +10,7 @@ import wave
 from scipy.io import wavfile
 
 #global variable to stop all playback
+#todo remove these!!!
 _ImRunning = False
 _ImRecording = False
 #we store an arbitrary sample and use it's properties to init player
