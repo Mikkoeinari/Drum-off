@@ -6,9 +6,9 @@ from scipy.fftpack import fft
 from scipy.ndimage.filters import median_filter
 from sklearn.mixture import BayesianGaussianMixture
 
-import nmfd
-import onset_detection
-from constants import *
+import drum_off.nmfd as nmfd
+import drum_off.onset_detection as onset_detection
+from drum_off.constants import *
 
 # globals
 #todo remove these!!!
@@ -503,7 +503,7 @@ def recalculate_thresholds(filt_spec, shifts, drumkit, drumwise=False, method='N
             # if optimal threshold is within a range [threshold, maxd] find a sweet spot empirically,
             #  increasing alpha lowers threshold and decreases precision
             if maxd > 0:
-                alpha = 0.55
+                alpha = 0.7
                 beta = 1 - alpha
                 threshold = (alpha * threshold + beta * maxd)
 
@@ -793,7 +793,7 @@ def mergerowsandencode(a):
             100 2
         to
             100 5
-        where 5 is decoded into char array 000000101 in the GRU-NN.
+        where 5 is decoded into char array 000000101 in the RNN.
 
         Also the hits are assumed to be in tempo 120bpm and all the
         frames not in 120bpm 16th notes are quantized.

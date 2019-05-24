@@ -1,11 +1,11 @@
-import utils
-import game
+import drum_off.utils as utils
+import drum_off.game as game
 import time
 import pyaudio
-import nmfd
-import onset_detection
+import drum_off.nmfd as nmfd
+import drum_off.onset_detection as onset_detection
 import numpy as np
-from constants import *
+from drum_off.constants import *
 import matplotlib.pyplot as plt
 import matplotlib.cm as cmaps
 from scipy.signal import istft

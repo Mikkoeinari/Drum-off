@@ -4,7 +4,7 @@ notes: migrate to scipy.io.wavfile to avoid format problems
 '''
 import pandas as pd
 import numpy as np
-import utils
+import drum_off.utils as utils
 import pyaudio
 import wave
 from scipy.io import wavfile
@@ -183,7 +183,7 @@ def playFile(filePath, *args):
     return playFile(wavFile)
 
 
-def record_part(part_len_seconds=15):
+def record_part(part_len_seconds=30):
     """
     records a drum take
     :return:

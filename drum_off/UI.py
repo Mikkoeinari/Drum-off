@@ -13,14 +13,14 @@ from kivy.clock import  mainthread
 from kivy.config import Config
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.image import Image
-import game
-import utils
+import drum_off.game as game
+import drum_off.utils as utils
 from os import mkdir, listdir
 import threading
 from os.path import join, isdir
 import pickle
-import drumsynth
-import learner as mgu
+import drum_off.drumsynth as drumsynth
+import drum_off.learner as mgu
 import numpy as np
 kivy.require('1.10.1')
 Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
@@ -345,7 +345,7 @@ class SoundCheckPerformScreen(Screen):
             pass
         utils._ImRunning = False
         #Should we have a count in?
-        time.sleep(1)
+        #time.sleep(1)
         self.performMessage = 'Start Playing!'
 
         def callback():
@@ -529,12 +529,12 @@ class PlayScreen(Screen):
         fullPath = self.lastPlayerPart
         print(fullPath)
         def callback():
-            #try:##INIT MODEL!!
-                if mgu.getLr!=self.lr:
-                    try:
-                        mgu.setLr(self.lr)
-                    except Exception as e:
-                        print(e)
+            try:##INIT MODEL!!
+                #if mgu.getLr!=self.lr:
+                #    try:
+                #        mgu.setLr(self.lr)
+                #    except Exception as e:
+                #        print(e)
                 #TODO: make user adjustable length
                 self.lastGenPart = mgu.generatePart(
                         mgu.train(fullPath, sampleMul=self.trSize,
@@ -549,10 +549,10 @@ class PlayScreen(Screen):
                     return
                 elif self.pBtnMessage == 'Stop':
                     self.playBackLast()
-            #except Exception as e:
-            #    print('virhe! computer turn: ',e)
-            #    self.halt = True
-            #    self.pBtnMessage = 'Play'
+            except Exception as e:
+                print('virhe! computer turn: ',e)
+                self.halt = True
+                self.pBtnMessage = 'Play'
         t = threading.Thread(target=callback)
         t.start()
 
@@ -595,7 +595,7 @@ class PlayScreen(Screen):
             try:
                 print('recording turn')
                 #TODO:make user adjustable length
-                self.lastPlayerPart, self.deltaTempo=game.playLive(fullPath, thresholdAdj=self.threshold,part_length=20, saveAll=True, quantize=self.quantize)
+                self.lastPlayerPart, self.deltaTempo=game.playLive(fullPath, thresholdAdj=self.threshold,part_length=30, saveAll=True, quantize=self.quantize)
                 if self.lastPlayerPart==False:
                     return
                 self.createLast(self.lastPlayerPart,outFile='./player_performance.wav',addCountInAndCountOut=(not self.step))

@@ -705,14 +705,14 @@ MyScreenManager:
             pos_hint: {"x": 0.61, 'y':0.30}
         CCheckBox:
             id: modelRadio3
-            text:'stacked_mgu_tanh'
+            text:'ATT_TDC_P_mgu'
             size_hint:(0.1,0.01)
             pos_hint:{'x':0.47,'y':0.25}
             active:False
             group:'models'
             on_release:root.set_model_type(self.text)
         Label:
-            text: 'Stacked MGU'
+            text: 'ATT_TDC_P_mgu'
             size_hint:(.01, .01)
             pos_hint: {"x": 0.61, 'y':0.25}
         CCheckBox:

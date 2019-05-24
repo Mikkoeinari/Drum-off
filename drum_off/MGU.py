@@ -7,7 +7,7 @@ https://keras.io
 import keras.backend as K
 from keras import activations, regularizers, initializers, constraints
 from keras.layers import GRU, GRUCell
-
+import numpy as np
 
 def _generate_dropout_mask(ones, rate, training=None, count=1):
     def dropped_inputs():
@@ -68,7 +68,6 @@ class MGUCell(GRUCell):
         self.state_size = self.units
         self._dropout_mask = None
         self._recurrent_dropout_mask = None
-
     def build(self, input_shape):
         input_dim = input_shape[-1]
         self.kernel = self.add_weight(shape=(input_dim, self.units * 2),
@@ -268,7 +267,6 @@ class MGUCell(GRUCell):
         base_config = super(GRUCell, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
 
-
 class MGU(GRU):
     def __init__(self, units,
                  activation='tanh',
@@ -336,38 +334,22 @@ class MGU(GRU):
                             implementation=implementation,
                             reset_after=reset_after)
 
+    def prune_weights(self, prune_percentile):
+        """
+        Experimental weight pruning method, purely testing purposes, results erratic.
+        :param prune_percentile: int, The percentile below the weights will be reinitialized
+        :return: None, reinitialization is done in place.
+        """
+        weights=self.cell.get_weights()
+        #for i in range(len(weights)):
+        i=0
+        prune=weights[i]<np.percentile(weights[i], prune_percentile)
+        if self._initial_weights is not None:
+            weights[i][prune]=self._initial_weights[i][prune]
+        else:
+            self._initial_weights=weights
+            #summed=np.sum(weights[i], axis=0)
+            #lowest_w=np.argmin(summed)
+            #weights[i][:,lowest_w]=0
+        self.cell.set_weights(weights)
 
-"""
-GRU2
-Epoch 00028: val_loss did not improve from 1.08684
-Loaded model from disk
-Model saved to disk.
-Model learning time:211.32
-MGU2
-Epoch 00021: val_loss did not improve from 1.10513
-Loaded model from disk
-Model saved to disk.
-Model learning time:104.33
-MGU
-Epoch 00009: val_loss did not improve from 1.13102
-Loaded model from disk
-Model saved to disk.
-Model learning time:47.42
-GRU3
-Epoch 00011: val_loss did not improve from 1.21055
-Loaded model from disk
-Model saved to disk.
-Model learning time:85.60
-MGU3
-Epoch 00019: val_loss did not improve from 1.21663
-Loaded model from disk
-Model saved to disk.
-Model learning time:94.65
-GRU
-Epoch 00017: val_loss did not improve from 1.24733
-Loaded model from disk
-Model saved to disk.
-Model learning time:129.61
-
-GRUvs.MGU 8s.vs.5s. training time
-"""

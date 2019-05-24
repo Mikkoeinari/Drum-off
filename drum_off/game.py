@@ -6,9 +6,9 @@ import re
 import threading
 import time
 import pandas as pd
-from utils import *
-import drumsynth
-from quantize import two_fold_quantize
+from drum_off.utils import *
+import drum_off.drumsynth as drumsynth
+from drum_off.quantize import two_fold_quantize
 from scipy.io import wavfile
 import pickle
 
@@ -106,7 +106,7 @@ def loadKit(drumkit_path):
     return drumkit
 
 
-def playLive(drumkit_path, thresholdAdj=0.0,part_length=20, saveAll=False, createMidi=False, quantize=0.):
+def playLive(drumkit_path, thresholdAdj=0.0,part_length=30, saveAll=False, createMidi=False, quantize=0.):
     """
     #Records one drum part of the player transcribes it and stores to a csv or also to a midi file
     The audio is not saved.
@@ -125,7 +125,7 @@ def playLive(drumkit_path, thresholdAdj=0.0,part_length=20, saveAll=False, creat
         print('liveplay:', e)
     # transcribe the take
     plst, deltaTempo = processLiveAudio(liveBuffer=buffer, drumkit=drumkit,
-                                        quant_factor=quantize, iters=256, method='NMFD', thresholdAdj=thresholdAdj)
+                                        quant_factor=quantize, iters=96, method='NMFD_iters', thresholdAdj=thresholdAdj)
     # Make an annotation of the separate drums hit times
     times = []
     bintimes = []
@@ -200,9 +200,14 @@ def processLiveAudio(liveBuffer=None,spectrogram=None, drumkit=None, quant_facto
     Wpre, total_heads=get_Wpre(drumkit)
     for i in range(int(stacks)):
         if method == 'NMFD' or method == 'ALL':
-            H, Wpre, err1 = nmfd.NMFD(filt_spec.T, iters=iters, Wpre=Wpre, include_priors=True, n_heads=total_heads, hand_break=True)
+            H, Wpre, err1 = nmfd.NMFD(filt_spec.T, iters=iters, Wpre=Wpre, include_priors=True,
+                                      n_heads=total_heads, hand_break=True)
+        elif method == 'NMFD_iters':
+            H, Wpre, err1 = nmfd.NMFD(filt_spec.T, iters=iters, Wpre=Wpre, include_priors=True,
+                                      n_heads=total_heads, hand_break=False)
         if method == 'NMF' or method == 'ALL':
-            H, err2 = nmfd.semi_adaptive_NMFB(filt_spec.T, Wpre=Wpre, iters=iters, n_heads=total_heads, hand_break=True)
+            H, err2 = nmfd.semi_adaptive_NMFB(filt_spec.T, Wpre=Wpre, iters=iters,
+                                              n_heads=total_heads, hand_break=True)
         if method == 'ALL':
             errors = np.zeros((err1.size, 2))
             errors[:, 0] = err1
@@ -508,7 +513,7 @@ def test_run(file_path=None, annotated=False, files=[None, None], method='NMF', 
         if annotated:
             annot_file_path = "{}midiBeatAnnod.csv".format(file_path)
     # print(audio_file_path)
-    print('.', end='', flush=True)
+    #print('.', end='', flush=True)
     try:
         #buffer = madmom.audio.Signal(audio_file_path, frame_size=FRAME_SIZE,
         #                             hop_size=HOP_SIZE)
@@ -528,7 +533,7 @@ def test_run(file_path=None, annotated=False, files=[None, None], method='NMF', 
         # initKitBG(filePath, 9, K=n)#, rm_win=n, bs_len=350)
         # t0 = time.time()
         plst, i = processLiveAudio(liveBuffer=buffer[skip_secs:],
-                                   drumkit=drumkit, quant_factor=quantize, iters=128, method=method)
+                                   drumkit=drumkit, quant_factor=quantize, iters=75, method=method)
         # print('\nNMFDtime:%0.2f' % (time.time() - t0))
         # Print scores if annotated
         for k in range(1):
@@ -550,7 +555,7 @@ def test_run(file_path=None, annotated=False, files=[None, None], method='NMF', 
                     recall += rec * actHits.shape[0]
                     fscore += (f_drum * actHits.shape[0])
                     true_tot += actHits.shape[0]
-                    print(prec, rec, f_drum)
+                    #print(prec, rec, f_drum)
                     # add_to_samples_and_dictionary(i.drum, buffer, i.get_hits())
                 prec = precision / true_tot
                 fs[n, 0] = (precision / true_tot)
@@ -729,7 +734,9 @@ def test_run(file_path=None, annotated=False, files=[None, None], method='NMF', 
 #   print('F-score: {}'.format(fscore / true_tot))
 #   # fs[n,2]=(fscore / true_tot)
 
-
+#todo Does the part lenght affect the error_limit?!?!?!?!?
+#do we want fixed iterations, it's now fixed!!!
+#do testing!
 def debug():
     # debug
     # initKitBG('Kits/mcd2/',8,K)
@@ -737,7 +744,7 @@ def debug():
     file = './Kits/mcd_pad/'
     method = 'NMFD'
     file='../trainSamplet/'
-    #initKitBG(file,K=K, drumwise=True, method=method)
+    initKitBG(file,K=K, drumwise=True, method=method)
     # print('Kit init processing time:%0.2f' % (time.time() - t0))
     loadKit(file)
     print(test_run(file_path=file, annotated=True, method=method, quantize=0., skip_secs=0.))

@@ -4,8 +4,8 @@ This module handles the Tempo Tracking, Beat Tracking and Quantization functiona
 import numpy as np
 from scipy import fftpack as fft
 
-from constants import *
-from utils import frame_to_time, time_to_frame
+from drum_off.constants import *
+from drum_off.utils import frame_to_time, time_to_frame
 
 
 def extract_tempo(onsets=None, win_len_s=3, smooth_win_scalar=2, constant_tempo=True, h=HOP_SIZE):
@@ -61,7 +61,7 @@ def extract_tempo(onsets=None, win_len_s=3, smooth_win_scalar=2, constant_tempo=
         kernel = np.hanning(int(N * smooth_win_scalar))
 
         # Pad edges
-        tempi_pad = np.pad(tempi, kernel.size, mode='mean')
+        tempi_pad = np.pad(tempi, kernel.size, mode='edge')
         # Smooth and remove padding to align tempi to original beat
         tempi_smooth = np.convolve(tempi_pad / kernel.sum(), kernel, 'same')
         tempi_smooth = np.roll(tempi_smooth, -kernel.size)
@@ -241,7 +241,8 @@ def two_fold_quantize(onsets, drumkit, quant_factor):
         trimmed_beats = np.trim_zeros(beats)
 
         tracked_beats = beatSimpleDP(trimmed_beats, alpha=680)
-        beat_interval = round((tracked_beats.max() - tracked_beats.min()) / tracked_beats.size)
+        beat_interval = tracked_beats[1:] - tracked_beats[:-1]
+        beat_interval = round(np.mean(beat_interval))
         fixed_beats = range(tracked_beats.min(), tracked_beats.max() + 100, int(beat_interval))
         beat_diff = np.zeros(tracked_beats.size)
         for i in range(tracked_beats.size):

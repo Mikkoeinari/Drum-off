@@ -2,22 +2,24 @@
 This module contains sequence learning and generating related functionality
 '''
 
-import utils
-import constants
+import drum_off.utils as utils
+import drum_off.constants as constants
 from time import time
 from random import randint
 import pickle
 import os
 import pandas as pd
-import drumsynth
+import drum_off.drumsynth as drumsynth
 from sklearn.utils import resample, class_weight
-from MGU import MGU
+from drum_off.MGU import MGU
 from keras.callbacks import EarlyStopping, ModelCheckpoint, LearningRateScheduler,Callback, TensorBoard
 from keras.models import Model, Sequential,load_model
 from keras.layers import *#,Dense,Conv1D,Flatten,TimeDistributed,Input,  MaxPooling1D,GlobalAveragePooling1D,GRU, BatchNormalization, GRUCell, Dropout, TimeDistributed, Reshape, LSTM, Activation
 from keras.utils import Sequence,to_categorical
 from keras import regularizers
 from keras.constraints import max_norm
+from keras import backend as K
+import keras
 from keras.optimizers import *#nadam
 from collections import Counter
 import tcn
@@ -33,9 +35,9 @@ set_random_seed(2)
 # os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 #sys.setrecursionlimit(10000)
 t0 = time()
-seqLen=16
+seqLen=128
 #parallel MGU divisors
-dvs=[1, 2, 4, 8, 16, 32]
+dvs=np.array([2 ** i for i in range(16)])
 #dvs=[1,4,16,64]
 partLength = 0
 lastLoss=0
@@ -78,7 +80,7 @@ def getVocabulary():
 
 global model, graph
 
-def get_sequences(filename, seqLen=64, sampleMul=1., forceGen=False):
+def get_sequences(filename, seqLen=seqLen, sampleMul=1., forceGen=False):
     #If you use this you must use Embedding layer and sparse_categorical_crossentropy
     # i.e. model.add(Embedding(numDiffHits+1,numDiffHits, input_length=seqLen))
     data = []
@@ -97,9 +99,16 @@ def get_sequences(filename, seqLen=64, sampleMul=1., forceGen=False):
      outchar.append(dataI[i + seqLen])
     X = np.array(words)
     y = np.array(outchar)
-    samples = np.max([int(len(words) * sampleMul), 33])
+    samples = int(len(words) * sampleMul)
+    if samples<32:
+        return Exception('Not enough sequences to learn from', samples)
     if forceGen is not 'game':
-        X, y = resample(np.array(X), np.array(y),n_samples=samples, replace=True, random_state=2)
+        try:
+#todo remove random state
+            X, y = resample(np.array(X), np.array(y),n_samples=samples, replace=True, random_state=2)
+        except Exception as e:
+            print(e)
+            return e
     return X, y, numDiffHits
 
 def setLr(new_lr):
@@ -108,7 +117,7 @@ def setLr(new_lr):
     lr=new_lr
 
 
-def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'):
+def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_mgu'):
     global model, CurrentKitPath
     layerSize =16#numDiffHits #Layer size = number of categorical variables
     if kitPath is None:
@@ -139,6 +148,7 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
         elif model_type=='autoencoder':
             ###NOT FINISHED DO NOT TRY!!
+
             in1 = Input(shape=(seqLen,))
             em1 = Embedding(numDiffHits + 1, numDiffHits)(in1)
             encoder=MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
@@ -183,7 +193,6 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
 
         elif model_type=='ATT_TDC_P_mgu':
             drop=0.7
-            cdrop=0.7
             sdrop=0.7
             n_kernels=4
             unroll=False
@@ -191,10 +200,21 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
             ret_seq=True
             regVal=0.
             regVal2=0.
-            attention_on=True
+            layerSize=16
+            att_layer_size=16
+            input_attention=False
+            mgu_attention=True
             def get_layer(seqLen, n_kernels, n_win):
                 in1 = Input(shape=(seqLen,))
                 em1=Embedding(numDiffHits+1, numDiffHits)(in1)
+                if input_attention:
+                    input_dim = int(em1.shape[2])
+                    attention_i = Permute((2, 1))(em1)
+                    attention_i = Reshape((input_dim, seqLen))(attention_i)
+                    attention_i = Dense(att_layer_size, activation='softmax')(attention_i)
+                    attention_i = Permute([2, 1])(attention_i)
+                    attention_i_out = Multiply()([em1, attention_i])
+                    em1 = attention_i_out
                 reshape1=Reshape((1,seqLen, numDiffHits))(em1)
                 conv1=TimeDistributed(Conv1D(n_kernels,n_win, activation='elu',kernel_regularizer=regularizers.l2(regVal),
                     activity_regularizer=regularizers.l1(regVal2)), input_shape=(1,)+(seqLen, numDiffHits))(reshape1)
@@ -205,17 +225,16 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
                 #drop1=TimeDistributed(Dropout(cdrop))(flat1)
                 mgu1=(MGU(layerSize, activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
                               implementation=1, unroll=unroll, use_bias=use_bias))(flat1)
-                if attention_on:
-                    attention_r = Dense(layerSize, activation='softmax')(mgu1)
+                if mgu_attention:
+                    attention_r = Dense(att_layer_size, activation='softmax')(mgu1)
                     attention_r = Flatten()(attention_r)
-                    # attention_r = Activation('softmax')(attention_r)
                     attention_r = RepeatVector(layerSize)(attention_r)
                     attention_r = Permute([2, 1])(attention_r)
                     mgu1 = Multiply()([mgu1, attention_r])
                 return [in1, mgu1]
 
             layers=[]
-            for i in dvs:
+            for i in dvs[dvs<=seqLen]:
                 layers.append(get_layer(int(seqLen/i),n_kernels, min(8,int(seqLen/i))))
             #Merging
             layers=np.array(layers)
@@ -225,19 +244,57 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
             bn=BatchNormalization()(flat)
             out=Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal")(bn)
             model = Model(list(layers[:,0]), out)
-
-        elif model_type=='TDC_parallel_mgu':
-            drop=0.55 #.55 without attention
-            cdrop=0.6
-            sdrop=0.6 #.6 without attention
-            layerSize=int(4) #4 without attention
+        #UNFINISHED DO  NOT  USE
+        elif model_type=='ATT_P_mgu':
+            drop=0.7
+            cdrop=0.7
+            sdrop=0.7
             n_kernels=4
             unroll=False
             use_bias=False
             ret_seq=True
             regVal=0.
             regVal2=0.
-            attention_on=False
+            attention_on=True
+            def get_layer(seqLen):
+                in1 = Input(shape=(seqLen,))
+                em1=Embedding(numDiffHits+1, numDiffHits)(in1)
+                #drop1=TimeDistributed(Dropout(cdrop))(flat1)
+                mgu1=(MGU(layerSize, activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
+                              implementation=1, unroll=unroll, use_bias=use_bias))(em1)
+                if attention_on:
+                    attention_r = Dense(1, activation='softmax')(em1)
+                    attention_r = Flatten()(attention_r)
+                    # attention_r = Activation('softmax')(attention_r)
+                    attention_r = RepeatVector(seqLen)(attention_r)
+                    #attention_r = Permute([2, 1])(attention_r)
+                    print(mgu1.shape, attention_r.shape)
+                    mgu1 = Multiply()([mgu1, attention_r])
+                return [in1, mgu1]
+
+            layers=[]
+            for i in dvs[dvs<=seqLen]:
+                layers.append(get_layer(int(seqLen/i)))
+            #Merging
+            layers=np.array(layers)
+
+            merged = Add()(list(layers[:, 1]))
+            bn = BatchNormalization()(merged)
+            out = Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal")(bn)
+            model = Model(list(layers[:, 0]), out)
+
+        elif model_type=='TDC_parallel_mgu':
+            drop=0.55
+            cdrop=0.6
+            sdrop=0.6
+            layerSize=int(4)
+            n_kernels=4
+            unroll=False
+            use_bias=False
+            ret_seq=True
+            regVal=0.
+            regVal2=0.
+
             def get_layer(seqLen, n_kernels, n_win):
                 in1 = Input(shape=(seqLen,))
                 em1=Embedding(numDiffHits+1, numDiffHits)(in1)
@@ -251,17 +308,10 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
                 #drop1=TimeDistributed(Dropout(cdrop))(flat1)
                 mgu1=(MGU(layerSize, activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
                               implementation=1, unroll=unroll, use_bias=use_bias))(flat1)
-                if attention_on:
-                    attention_r = Dense(layerSize, activation='softmax')(mgu1)
-                    attention_r = Flatten()(attention_r)
-                    # attention_r = Activation('softmax')(attention_r)
-                    attention_r = RepeatVector(layerSize)(attention_r)
-                    attention_r = Permute([2, 1])(attention_r)
-                    mgu1 = Multiply()([mgu1, attention_r])
                 return [in1, mgu1]
 
             layers=[]
-            for i in dvs:
+            for i in dvs[dvs<=seqLen]:
                 layers.append(get_layer(int(seqLen/i),n_kernels, min(8,int(seqLen/i))))
             #Merging
             layers=np.array(layers)
@@ -285,7 +335,7 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
                 return [in1, mgu1]
 
             layers = []
-            for i in dvs:
+            for i in dvs[dvs<=seqLen]:
                 layers.append(get_layer(int(seqLen / i)))
             # Merging
             layers = np.array(layers)
@@ -308,13 +358,14 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
         elif model_type == 'time_dist_mp_conv_mgu':
             # TimeDistributed version
+            layerSize=256
             model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
             model.add(Reshape((1, seqLen, numDiffHits), input_shape=(seqLen, numDiffHits)))
-            model.add(TimeDistributed(Conv1D(64, 2, activation='elu'), input_shape=(1,) + (seqLen, numDiffHits)))
-            model.add(TimeDistributed(MaxPooling1D(3)))
+            model.add(TimeDistributed(Conv1D(32, 2, activation='elu'), input_shape=(1,) + (seqLen, numDiffHits)))
+            #model.add(TimeDistributed(MaxPooling1D(3)))
             model.add(TimeDistributed(Flatten()))
-            model.add(TimeDistributed(Dropout(0.4)))
-            model.add(MGU(layerSize, activation='elu', return_sequences=False, dropout=0.4, recurrent_dropout=0.4,
+            model.add(TimeDistributed(Dropout(0.85)))
+            model.add(MGU(layerSize, activation='tanh', return_sequences=False, dropout=0.85, recurrent_dropout=0.85,
                           implementation=1))
             # model.add(BatchNormalization(momentum=0.5))
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
@@ -334,8 +385,7 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
                 print(emb1.shape)
                 attention_i = Permute((2, 1))(emb1)
                 attention_i = Reshape((input_dim, seqLen))(attention_i)
-                attention_i = Dense(seqLen, activation='tanh')(attention_i)
-                attention_i = Activation('softmax')(attention_i)
+                attention_i = Dense(layerSize, activation='softmax')(attention_i)
                 attention_i = Permute([2, 1])(attention_i)
                 attention_i_out = Multiply()([emb1, attention_i])
                 emb1=attention_i_out
@@ -343,9 +393,8 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
                         implementation=1))(tim3)
             if att_mgu:
                 #Attention block
-                attention_r = Dense(1, activation='softmax')(mgu1)
+                attention_r = Dense(layerSize, activation='softmax')(mgu1)
                 attention_r = Flatten()(attention_r)
-                #attention_r = Activation('softmax')(attention_r)
                 attention_r = RepeatVector(layerSize)(attention_r)
                 attention_r = Permute([2, 1])(attention_r)
                 mgu1 = Multiply()([mgu1, attention_r])
@@ -432,7 +481,7 @@ def initModel(seqLen=16,kitPath=None, destroy_old=False, model_type='single_mgu'
 
 def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=None, updateModel=False, model_type='parallel_mgu', return_history=False):
     global lastLoss
-    print(model_type)
+    print('begin training model: ', model_type)
     class drumSeq(Sequence):
 
         def __init__(self,filename, batch_size=200, shuffle=True):
@@ -473,6 +522,21 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
             for k, v in logs.items():
                 self.history.setdefault(k, []).append(v)
 
+    def reset_weights(model):
+        session = K.get_session()
+        for layer in model.layers:
+            if isinstance(layer, keras.engine.network.Network):
+                reset_weights(layer)
+                continue
+            for l in layer.__dict__.values():
+                if hasattr(l, 'initializer'):
+                    l.initializer.run(session=session)
+    #Don't call, experimental stuff...
+    def prune_layers(model):
+        for layer in model.layers:
+            if isinstance(layer, MGU):
+                layer.prune_weights(15)
+
     #Callbacks#
     class LossHistory(Callback):
         def on_train_begin(self, logs={}):
@@ -485,8 +549,9 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
         def on_batch_end(self, batch, logs={}):
             self.losses.append(logs.get('loss'))
             self.accs.append(logs.get('acc'))
-        def on_epoch_end(self, epoch, logs={}):
 
+        def on_epoch_end(self, epoch, logs={}):
+            #prune_layers(model)
             self.hist.append([logs.get('loss'),logs.get('acc'),logs.get('val_loss'),logs.get('val_acc'),epoch])
 
     modelsaver = ModelCheckpoint(filepath="{}weights_testivedot_{}.hdf5".format(CurrentKitPath,model_type), verbose=1, save_best_only=True)
@@ -497,12 +562,15 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
     history = LossHistory()
     learninratescheduler=LearningRateScheduler(klik, verbose=1)
     if filename is not None and updateModel is not 'generator':
-        if updateModel is 'game':
-            X_train, y_train, numDiffHits = get_sequences(filename, seqLen, sampleMul, forceGen='game')
-        else:
-            X_train, y_train, numDiffHits = get_sequences(filename, seqLen, sampleMul, forceGen=forceGen)
-        if X_train is None:
-            return None
+        try:
+            if updateModel is 'game':
+                X_train, y_train, numDiffHits = get_sequences(filename, seqLen, sampleMul, forceGen='game')
+            else:
+                X_train, y_train, numDiffHits = get_sequences(filename, seqLen, sampleMul, forceGen=forceGen)
+            if X_train is None:
+                return None
+        except Exception as e:
+            return (None,None)
 
     if updateModel is 'generator':
         def myGenerator():
@@ -522,9 +590,9 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
         X_train=X_test
         tr_gen = myGenerator()
 
-    if model_type in ['parallel_mgu','TDC_parallel_mgu','ATT_TDC_P_mgu']:
+    if model_type in ['parallel_mgu','TDC_parallel_mgu','ATT_TDC_P_mgu','ATT_P_mgu']:
         X_train_comp =[]
-        for i in dvs:
+        for i in dvs[dvs<=seqLen]:
             X_train_comp.append(X_train[:, -int(seqLen / i):])
 
     else:
@@ -567,7 +635,7 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
             # model.load_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath,model_type))
             #
             model.fit(X_train_comp, y_train, batch_size=int(max([y_train.shape[0] / 50, 32])),
-                      epochs=initial_epoch + 20,
+                      epochs=initial_epoch+20,
                       callbacks=[modelsaver, earlystopper, history],  # learninratescheduler],earlystopper,
                       validation_split=0.33,
                       verbose=2, initial_epoch=initial_epoch, class_weight=class_weights, shuffle=False)
@@ -616,10 +684,12 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
 def generatePart(data,partLength=123,seqLen=16, temp=None, include_seed=False, model_type='parallel_mgu'):
 
     #print(data)
+    if data is None:
+        data=np.zeros(seqLen)
     seed = data
     data = seed
 
-    print('generating new sequence.')
+    #print('generating new sequence.')
     generated=[]
 
     #save seed
@@ -661,13 +731,13 @@ def generatePart(data,partLength=123,seqLen=16, temp=None, include_seed=False, m
         fuzz = np.max([1.5 - lastLoss, 0.1])
     else:
         fuzz = temp
-    print('fuzz factor:',fuzz)
+    #print('fuzz factor:',fuzz)
     #print(data.shape)
     for i in range(partLength):
         data = data.reshape(1, seqLen)
         datas=[]
-        if model_type in ['parallel_mgu', 'TDC_parallel_mgu', 'ATT_TDC_P_mgu']:
-            for i in dvs:
+        if model_type in ['parallel_mgu', 'TDC_parallel_mgu', 'ATT_TDC_P_mgu','ATT_P_mgu']:
+            for i in dvs[dvs<=seqLen]:
                 datas.append(data[:,-int(seqLen/i):])
         else :
             datas=[data]
@@ -682,7 +752,7 @@ def generatePart(data,partLength=123,seqLen=16, temp=None, include_seed=False, m
     gen = pd.DataFrame(generated, columns=['inst'])
     filename = 'generated.csv'
     gen.to_csv(filename, index=True, header=None, sep='\t')
-    print('valmis')
+    #print('valmis')
     #return here, remove for testing
     return filename
 
@@ -757,7 +827,7 @@ def debug():
     ##vectorizeCSV('./Kits/Default/takes/testbeat1535385910.271116.csv')
     #
     ##print(takes)
-    seqLen=64
+    seqLen=128
     from keras.utils import plot_model
     if True:
         logs=[]
@@ -766,6 +836,7 @@ def debug():
         model_type=['TDC_parallel_mgu', 'time_dist_conv_mgu','parallel_mgu','stacked_mgu','conv_mgu','single_mgu',
                     'single_gru', 'single_lstm', 'tcn','ATT_TDC_P_mgu']
         model_type = ['ATT_TDC_P_mgu']
+
         buildVocabulary(hits=utils.get_possible_notes([0, 1, 2, 3, 5, 8, 9, 10, 11, 12, 13]))
         for j in model_type:
             log=[]
@@ -788,17 +859,18 @@ def debug():
 
                 file = generatePart(seed, partLength=333,seqLen=seqLen, temp=.666, include_seed=False, model_type=j)
                 print('roundtrip time:%0.4f' % (time() - t1))
-                #drumsynth.createWav(i, 'orig_temp_{}.wav'.format(j), addCountInAndCountOut=False,
-                #                    deltaTempo=1,
-                #                    countTempo=1)
+                drumsynth.createWav(i, 'orig_temp_{}.wav'.format(j), addCountInAndCountOut=False,
+                                    deltaTempo=1,
+                                    countTempo=1)
                 drumsynth.createWav(file, 'gen_temp_{}_{}.wav'.format(j,'0'), addCountInAndCountOut=False,
                                     deltaTempo=1,
                                     countTempo=1)
                 #drumsynth.createWav(i, 'gen_temp_{}_{}.wav'.format('orig', k), addCountInAndCountOut=False,
                 #                    deltaTempo=1,
                 #                    countTempo=1)
-                log.extend(history[:][0])
-                log.extend(history[:][-1])
+                if history is not None:
+                    log.extend(history[:][0])
+                    log.extend(history[:][-1])
                 k+=1
 
             for i in takes:
@@ -811,8 +883,9 @@ def debug():
                 #drumsynth.createWav(i, 'gen_temp_{}_{}.wav'.format('orig', k), addCountInAndCountOut=False,
                 #                    deltaTempo=1,
                 #                    countTempo=1)
-                log.extend(history[:][0])
-                log.extend(history[:][-1])
+                if history is not None:
+                    log.extend(history[:][0])
+                    log.extend(history[:][-1])
                 k+=1
 
             logs.append(log)
