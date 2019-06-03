@@ -215,33 +215,31 @@ def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_
                     attention_i = Permute([2, 1])(attention_i)
                     attention_i_out = Multiply()([em1, attention_i])
                     em1 = attention_i_out
-                reshape1=Reshape((1,seqLen, numDiffHits))(em1)
+                reshape1=Reshape((1,seqLen,numDiffHits))(em1)
                 conv1=TimeDistributed(Conv1D(n_kernels,n_win, activation='elu',kernel_regularizer=regularizers.l2(regVal),
                     activity_regularizer=regularizers.l1(regVal2)), input_shape=(1,)+(seqLen, numDiffHits))(reshape1)
-
-                #bn1=TimeDistributed(BatchNormalization())(conv1)
                 sdrop1=TimeDistributed(SpatialDropout1D(sdrop))(conv1)
                 flat1=TimeDistributed(Flatten())(sdrop1)
-                #drop1=TimeDistributed(Dropout(cdrop))(flat1)
                 mgu1=(MGU(layerSize, activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
                               implementation=1, unroll=unroll, use_bias=use_bias))(flat1)
+
                 if mgu_attention:
                     attention_r = Dense(att_layer_size, activation='softmax')(mgu1)
                     attention_r = Flatten()(attention_r)
                     attention_r = RepeatVector(layerSize)(attention_r)
                     attention_r = Permute([2, 1])(attention_r)
                     mgu1 = Multiply()([mgu1, attention_r])
+                    mgu1=Flatten()(mgu1)
                 return [in1, mgu1]
 
             layers=[]
             for i in dvs[dvs<=seqLen]:
                 layers.append(get_layer(int(seqLen/i),n_kernels, min(8,int(seqLen/i))))
+
             #Merging
             layers=np.array(layers)
-
             merged=Concatenate()(list(layers[:,1]))
-            flat = Flatten()(merged)
-            bn=BatchNormalization()(flat)
+            bn=BatchNormalization()(merged)
             out=Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal")(bn)
             model = Model(list(layers[:,0]), out)
         #UNFINISHED DO  NOT  USE
@@ -371,10 +369,12 @@ def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
         elif model_type=='attention_mgu':
             att_input=False
-            att_mgu=True
+            mgu_attention=True
+            att_mgu=False
+            att_layer_size=16
             #MGU block
-            inputs = Input(shape=(seqLen,))
-            emb1 = Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen)(inputs)
+            in1 = Input(shape=(seqLen,))
+            emb1 = Embedding(numDiffHits + 1, numDiffHits)(in1)
             res1=Reshape((1, seqLen, numDiffHits), input_shape=(seqLen, numDiffHits))(emb1)
             tim1=TimeDistributed(Conv1D(32, 2, activation='elu'), input_shape=(1,) + (seqLen, numDiffHits))(res1)
             # model.add(TimeDistributed(MaxPooling1D(3)))
@@ -385,27 +385,34 @@ def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_
                 print(emb1.shape)
                 attention_i = Permute((2, 1))(emb1)
                 attention_i = Reshape((input_dim, seqLen))(attention_i)
-                attention_i = Dense(layerSize, activation='softmax')(attention_i)
+                attention_i = Dense(seqLen, activation='softmax')(attention_i)
                 attention_i = Permute([2, 1])(attention_i)
                 attention_i_out = Multiply()([emb1, attention_i])
                 emb1=attention_i_out
-            mgu1 = (MGU(layerSize, activation='tanh', return_sequences=True, dropout=0.8, recurrent_dropout=0.8,
-                        implementation=1))(tim3)
+            mgu1 = (MGU(layerSize, activation='tanh', return_sequences=True, dropout=.6, recurrent_dropout=.6,
+                        implementation=1, unroll=False, use_bias=False))(emb1)
+            if mgu_attention:
+                attention_r = Dense(att_layer_size, activation='softmax')(mgu1)
+                attention_r = Flatten()(attention_r)
+                attention_r = RepeatVector(layerSize)(attention_r)
+                attention_r = Permute([2, 1])(attention_r)
+                mgu1 = Multiply()([mgu1, attention_r])
             if att_mgu:
                 #Attention block
                 attention_r = Dense(layerSize, activation='softmax')(mgu1)
                 attention_r = Flatten()(attention_r)
                 attention_r = RepeatVector(layerSize)(attention_r)
                 attention_r = Permute([2, 1])(attention_r)
+                print(mgu1.shape)
                 mgu1 = Multiply()([mgu1, attention_r])
 
 
             #attention_i = Permute([2, 1])(attention_i)
 
             #Multiply blocks
-            flat = Flatten()(mgu1)
-            bn = BatchNormalization()(flat)
-            output = Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal")(bn)
+            #flat = Flatten()(mgu1)
+            #bn = BatchNormalization()(flat)
+            output = Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal")(mgu1)
             model = Model(input=[inputs], output=output)
 
         elif model_type=='single_mgu':
@@ -635,7 +642,7 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
             # model.load_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath,model_type))
             #
             model.fit(X_train_comp, y_train, batch_size=int(max([y_train.shape[0] / 50, 32])),
-                      epochs=initial_epoch+20,
+                      epochs=initial_epoch+100,
                       callbacks=[modelsaver, earlystopper, history],  # learninratescheduler],earlystopper,
                       validation_split=0.33,
                       verbose=2, initial_epoch=initial_epoch, class_weight=class_weights, shuffle=False)
@@ -681,7 +688,7 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
     else:
         return X_train[0]#,history.hist
 
-def generatePart(data,partLength=123,seqLen=16, temp=None, include_seed=False, model_type='parallel_mgu'):
+def generatePart(data,partLength=123,seqLen=seqLen, temp=None, include_seed=False, model_type='parallel_mgu'):
 
     #print(data)
     if data is None:
@@ -857,12 +864,12 @@ def debug():
                 t1 = time()
                 seed, history=train(i,seqLen=seqLen,sampleMul=1,model_type=j,updateModel=True, return_history=True)
 
-                file = generatePart(seed, partLength=333,seqLen=seqLen, temp=.666, include_seed=False, model_type=j)
+                file = generatePart(seed, partLength=333,seqLen=seqLen, temp=.75, include_seed=False, model_type=j)
                 print('roundtrip time:%0.4f' % (time() - t1))
-                drumsynth.createWav(i, 'orig_temp_{}.wav'.format(j), addCountInAndCountOut=False,
-                                    deltaTempo=1,
-                                    countTempo=1)
-                drumsynth.createWav(file, 'gen_temp_{}_{}.wav'.format(j,'0'), addCountInAndCountOut=False,
+                #drumsynth.createWav(i, './gen_ex/orig_{}_{}.wav'.format(j,k), addCountInAndCountOut=False,
+                #                    deltaTempo=1,
+                #                    countTempo=1)
+                drumsynth.createWav(file, './gen_ex/gen_0.75°_{}_{}.wav'.format(j,k), addCountInAndCountOut=False,
                                     deltaTempo=1,
                                     countTempo=1)
                 #drumsynth.createWav(i, 'gen_temp_{}_{}.wav'.format('orig', k), addCountInAndCountOut=False,
@@ -873,20 +880,20 @@ def debug():
                     log.extend(history[:][-1])
                 k+=1
 
-            for i in takes:
-                print(i)
-                seed, history=train(i,seqLen=seqLen,sampleMul=1,model_type=j,updateModel=True, return_history=True)
-                file = generatePart(seed, partLength=333,seqLen=seqLen, temp=.666, include_seed=False, model_type=j)
-                drumsynth.createWav(file, 'gen_temp_{}_{}.wav'.format(j, '0'), addCountInAndCountOut=False,
-                                    deltaTempo=1,
-                                    countTempo=1)
-                #drumsynth.createWav(i, 'gen_temp_{}_{}.wav'.format('orig', k), addCountInAndCountOut=False,
-                #                    deltaTempo=1,
-                #                    countTempo=1)
-                if history is not None:
-                    log.extend(history[:][0])
-                    log.extend(history[:][-1])
-                k+=1
+            #for i in takes:
+            #    print(i)
+            #    seed, history=train(i,seqLen=seqLen,sampleMul=3,model_type=j,updateModel=True, return_history=True)
+            #    file = generatePart(seed, partLength=333,seqLen=seqLen, temp=.666, include_seed=False, model_type=j)
+            #    drumsynth.createWav(file, 'gen_temp_{}_{}.wav'.format(j, '0'), addCountInAndCountOut=False,
+            #                        deltaTempo=1,
+            #                        countTempo=1)
+            #    #drumsynth.createWav(i, 'gen_temp_{}_{}.wav'.format('orig', k), addCountInAndCountOut=False,
+            #    #                    deltaTempo=1,
+            #    #                    countTempo=1)
+            #    if history is not None:
+            #        log.extend(history[:][0])
+            #        log.extend(history[:][-1])
+            #    k+=1
 
             logs.append(log)
             times.append(time() - t0)

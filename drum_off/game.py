@@ -28,7 +28,7 @@ def soundcheckDrum(drumkit_path, drumId):
     #madmom.io.audio.write_wave_file(buffer, '{}/drum{}.wav'.format(drumkit_path, drumId), sample_rate=SAMPLE_RATE)
 
 
-def initKitBG(drumkit_path, K=1, L=10, drumwise=False, method='NMFD'):
+def initKitBG(drumkit_path, K=1, L=10, drumwise=True, method='NMFD'):
     """
     Initialize drumkit from completed soundcheck audio. Finds prior templates for source separation,
     recalculates thresholds for peak picking, saves information to drum objects

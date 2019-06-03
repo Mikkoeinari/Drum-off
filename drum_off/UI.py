@@ -102,7 +102,7 @@ drumNames = {'kick': 0,  # only one allowed
 countInPath='./countIn.csv'
 countInWavPath='click.wav'
 countInLength=2
-model_type='single_mgu'
+model_type='ATT_TDC_P_mgu'
 
 class StartScreen(Screen):
     def getStatus(self):
@@ -394,8 +394,9 @@ class PlayScreen(Screen):
     modify = BooleanProperty()
     step = BooleanProperty()
     halt = BooleanProperty()
+    computer_on=BooleanProperty()
     lr=NumericProperty()
-    quantize=BooleanProperty()
+    quantize=NumericProperty()
     def __init__(self, **kwargs):
         super(PlayScreen, self).__init__(**kwargs)
         self.performMessage = 'Press play to start'
@@ -412,8 +413,9 @@ class PlayScreen(Screen):
         self.modify=True
         self.step = True
         self.halt=True
+        self.computer_on=False
         self.lr=0.003
-        self.quantize=True
+        self.quantize=1.
 
 
     def setTrSize(self, *args):
@@ -431,7 +433,12 @@ class PlayScreen(Screen):
         self.lr=args[1]
 
     def setQuantize(self,*args):
-        self.quantize=args[0]
+        if args[0]:
+            self.quantize=1.
+        else:
+            self.quantize=0.
+    def setComputerOn(self,*args):
+        self.computer_on=args[0]
 
 
 
@@ -603,7 +610,12 @@ class PlayScreen(Screen):
                     self.playBackMessage = 'Play Back Last Performance'
                     self.pBtnMessage='Play'
                 elif self.pBtnMessage == 'Stop':
-                    self.doComputerTurn()
+                    if self.computer_on:
+                        self.doComputerTurn()
+                    else:
+                        while self.lastMessage != './player_performance.wav':
+                            pass
+                        self.playBackLast()
             except Exception as e:
                 print('player playback ui: ',e)
                 self.halt = True
