@@ -747,7 +747,7 @@ def debug():
     initKitBG(file,K=K, drumwise=True, method=method)
     # print('Kit init processing time:%0.2f' % (time.time() - t0))
     loadKit(file)
-    print(test_run(file_path=file, annotated=True, method=method, quantize=0., skip_secs=0.))
+    print(test_run(file_path=file, annotated=True, method=method, quantize=1., skip_secs=17.5))
 
     drumsynth.createWav('testbeat3.csv', 'sysAnnodQuantizedPart.wav', addCountInAndCountOut=False,
                         deltaTempo=1,

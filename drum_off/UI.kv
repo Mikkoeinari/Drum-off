@@ -719,7 +719,7 @@ MyScreenManager:
             text:'ATT_TDC_P_mgu'
             size_hint:(0.1,0.01)
             pos_hint:{'x':0.47,'y':0.25}
-            active:True
+            active:False
             group:'models'
             on_release:root.set_model_type(self.text)
         Label:
@@ -740,14 +740,14 @@ MyScreenManager:
             pos_hint: {"x": 0.61, 'y':0.20}
         CCheckBox:
             id: modelRadio5
-            text:'stacked_mgu_tanh'
+            text:'multi2multi'
             size_hint:(0.1,0.01)
             pos_hint:{'x':0.47,'y':0.15}
-            active:False
+            active:True
             group:'models'
             on_release:root.set_model_type(self.text)
         Label:
-            text: 'Stacked MGU'
+            text: 'Multi In-Multi Out'
             size_hint:(.01, .01)
             pos_hint: {"x": 0.61, 'y':0.15}
         CCheckBox:

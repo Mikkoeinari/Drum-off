@@ -76,6 +76,7 @@ def createWav(filePath, outName=None, addCountInAndCountOut=True, deltaTempo=1.0
     d = pd.read_csv(filePath, header=None, sep="\t").values
     #d = list(utils.truncZeros(np.array(d[:, 1])))
     d=list(d[:,1])
+    #todo: make sure there is notes in the file
     if addCountInAndCountOut:
         c=pd.read_csv('countIn.csv', header=None, sep="\t").values
         #c = list(utils.truncZeros(np.array(c[:, 1])))
@@ -91,7 +92,8 @@ def createWav(filePath, outName=None, addCountInAndCountOut=True, deltaTempo=1.0
     d = gen.values
     # file pointer
     cursor = 0
-
+    if d.size<1:
+        return None
     # max file size
     fileLength = int((d[-1][0] * 44100 / 8) + len(sounds[int(d[-1][1])]))
     outfile = np.zeros((fileLength,), dtype=int)

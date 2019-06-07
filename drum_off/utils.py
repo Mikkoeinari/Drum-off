@@ -883,14 +883,22 @@ def splitrowsanddecode(a, deltaTempo=1.0):
     # return the split hits
     return decodedFrames
 
-
-def dec_to_binary(f):
+def dec_to_binary(f, str_len=MAX_DRUMS, ret_type='str'):
     """
     Returns a binary representation on a given integer
     :param f: an integer
     :return: A binary array representation of f
     """
-    return format(f, "0{}b".format(MAX_DRUMS))
+    bin_form=np.array(list(format(f, "0{}b".format(str_len)))).astype(ret_type)
+    return list(bin_form)
+
+def enc_to_int(a):
+    int_form=0
+    for i in range(len(a)):
+        if a[i]==1:
+            int_form = np.bitwise_or(int_form, 2 ** i)
+
+    return int_form
 
 
 #########################################################

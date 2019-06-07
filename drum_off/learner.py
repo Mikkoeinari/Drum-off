@@ -80,6 +80,78 @@ def getVocabulary():
 
 global model, graph
 
+def csv_to_pianoroll(filename):
+    """
+    get a multi column csv representation of a performance
+    :param filename: string, A merged representation csv file
+    :param kit_notes: list of integers, kit components
+    :return: numpy array, each kit component in separate column, pauses expanded to rows of zeros
+    """
+    #read input
+
+    d = pd.read_csv(filename, header=None, sep="\t").values
+    #return space
+    pr =[]
+    #add silence
+    #for i in range(seqLen):
+    #    pr.append(np.zeros(constants.MAX_DRUMS).astype('int'))
+    #iterate csv
+    for i in d[:,1]:
+        #rows of zeros for pause frames
+        if i<0:
+            for i in range(-1*i):
+                pr.append(np.zeros(constants.MAX_DRUMS).astype('int'))
+        #decode to binary list of drumhits, reverse for more natural ordering
+        else:
+            num=np.array(utils.dec_to_binary(i,constants.MAX_DRUMS, ret_type='int'))[::-1]
+            pr.append(num)
+
+    #cast to numpy array
+    pr=np.array(pr)
+    #return pianoroll
+    return pr
+
+def merged_from_pianoroll(pr, simple=True):
+    merged=[]
+    pause_length=0
+    for i in pr:
+        note=utils.enc_to_int(i)
+        if note==0:
+            if simple:
+                merged.append(0)
+            else:
+                pause_length += 1
+                if pause_length > 30:
+                    merged.append(-pause_length)
+                    pause_length=0
+        else:
+            if not simple:
+                if pause_length>0:
+                    merged.append(-pause_length)
+                    pause_length = 0
+            merged.append(note)
+    return merged
+
+def get_multi_sequences(filename, seqLen=seqLen, sampleMul=1.):
+    pr=csv_to_pianoroll(filename)
+    words=[]
+    outchar=[]
+    for i in range(0, pr.shape[0] - seqLen, 1):
+        words.append(pr[i: i + seqLen,:])
+        outchar.append(pr[i + seqLen,:])
+    X = np.array(words)
+    y = np.array(outchar)
+    samples = int(len(words) * sampleMul)
+    if samples < 32:
+        return Exception('Not enough sequences to learn from', samples)
+    try:
+        # todo remove random state
+        X, y = resample(np.array(X), np.array(y), n_samples=samples, replace=False, random_state=2)
+    except Exception as e:
+        print(e)
+        return e
+    return np.transpose(X, (2,0,1)), y.T
+
 def get_sequences(filename, seqLen=seqLen, sampleMul=1., forceGen=False):
     #If you use this you must use Embedding layer and sparse_categorical_crossentropy
     # i.e. model.add(Embedding(numDiffHits+1,numDiffHits, input_length=seqLen))
@@ -99,7 +171,7 @@ def get_sequences(filename, seqLen=seqLen, sampleMul=1., forceGen=False):
      outchar.append(dataI[i + seqLen])
     X = np.array(words)
     y = np.array(outchar)
-    samples = int(len(words) * sampleMul)
+    samples = max(32,int(len(words) * sampleMul))
     if samples<32:
         return Exception('Not enough sequences to learn from', samples)
     if forceGen is not 'game':
@@ -117,7 +189,7 @@ def setLr(new_lr):
     lr=new_lr
 
 
-def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_mgu'):
+def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_mgu', multi_drums=constants.MAX_DRUMS):
     global model, CurrentKitPath
     layerSize =16#numDiffHits #Layer size = number of categorical variables
     if kitPath is None:
@@ -146,6 +218,79 @@ def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_
                           implementation=1))
             model.add(BatchNormalization())
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
+
+        elif model_type=='multi2multi':
+            layerSize=128
+            dense_layer_size=128
+            mgu_attention=False
+            def get_drum_layer(seqLen):
+                in1=Input(shape=(seqLen,))
+                rs1=Reshape((1,seqLen,))(in1)
+                mgu1=MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
+                    return_sequences=True, dropout=0.7, recurrent_dropout=0.7, implementation=1)(rs1)
+                #mgu1 = MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
+                #           return_sequences=True, dropout=0., recurrent_dropout=0., implementation=1)(mgu1)
+                #mgu1 = MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
+                #           return_sequences=True, dropout=0., recurrent_dropout=0., implementation=1)(mgu1)
+                #mgu1 = MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
+                #           return_sequences=True, dropout=0., recurrent_dropout=0., implementation=1)(mgu1)
+                if mgu_attention:
+                    attention_r = Dense(layerSize, activation='tanh')(mgu1)
+                    attention_r = Flatten()(attention_r)
+                    attention_r = RepeatVector(layerSize)(attention_r)
+                    attention_r = Permute([2, 1])(attention_r)
+                    mgu1 = Add()([mgu1, attention_r])
+                mgu1 = Flatten()(mgu1)
+                return [in1,mgu1]
+            def get_out_layer(in_layer):
+                dense1=Dense(dense_layer_size,kernel_initializer='he_normal', activation='relu')(in_layer)
+                dense2=Dense(1,kernel_initializer='he_normal', activation='softplus')(dense1)
+                return [in_layer, dense2]
+
+            in_layers=[]
+            for i in range(multi_drums):
+                in_layers.append(get_drum_layer(seqLen))
+            in_layers = np.array(in_layers)
+
+            merged = Concatenate()(list(in_layers[:, 1]))
+
+            out_layers=[]
+            for i in range(multi_drums):
+                out_layers.append(get_out_layer(merged))
+            out_layers = np.array(out_layers)
+
+            model=Model(list(in_layers[:,0]), list(out_layers[:,1]))
+
+        elif model_type=='multi2one':
+            layerSize=64
+            dense_layer_size=128
+            def get_drum_layer(seqLen):
+                in1=Input(shape=(seqLen,))
+                rs1=Reshape((1,seqLen,))(in1)
+                mgu1=MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
+                    return_sequences=False, dropout=0.75, recurrent_dropout=0.75, implementation=1)(rs1)
+
+                return [in1,mgu1]
+
+            def get_out_layer(in_layer):
+                # dense1=Dense(dense_layer_size,kernel_initializer='he_normal', activation='relu')(in_layer)
+                dense2 = Dense(1, kernel_initializer='he_normal', activation='tanh')(in_layer)
+                return [in_layer, dense2]
+
+            in_layers=[]
+            for i in range(multi_drums):
+                in_layers.append(get_drum_layer(seqLen))
+            in_layers = np.array(in_layers)
+
+            merged = Concatenate()(list(in_layers[:, 1]))
+            out_layers = []
+            for i in range(multi_drums):
+                out_layers.append(get_out_layer(merged))
+            out_layers = np.array(out_layers)
+            merged = Concatenate()(list(out_layers[:, 1]))
+            dense2 = Dense(numDiffHits, kernel_initializer='he_normal', activation='softmax')(merged)
+            model=Model(list(in_layers[:,0]), dense2)
+
         elif model_type=='autoencoder':
             ###NOT FINISHED DO NOT TRY!!
 
@@ -191,10 +336,11 @@ def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_
                 output_layers.append(out1)
             model = Model(inputs=[X],outputs=output_layers)
 
+
         elif model_type=='ATT_TDC_P_mgu':
             drop=0.7
             sdrop=0.7
-            n_kernels=4
+            n_kernels=3
             unroll=False
             use_bias=False
             ret_seq=True
@@ -220,9 +366,8 @@ def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_
                     activity_regularizer=regularizers.l1(regVal2)), input_shape=(1,)+(seqLen, numDiffHits))(reshape1)
                 sdrop1=TimeDistributed(SpatialDropout1D(sdrop))(conv1)
                 flat1=TimeDistributed(Flatten())(sdrop1)
-                mgu1=(MGU(layerSize, activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
-                              implementation=1, unroll=unroll, use_bias=use_bias))(flat1)
-
+                mgu1=MGU(layerSize, activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
+                              implementation=1, unroll=unroll, use_bias=use_bias)(flat1)
                 if mgu_attention:
                     attention_r = Dense(att_layer_size, activation='softmax')(mgu1)
                     attention_r = Flatten()(attention_r)
@@ -234,7 +379,7 @@ def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_
 
             layers=[]
             for i in dvs[dvs<=seqLen]:
-                layers.append(get_layer(int(seqLen/i),n_kernels, min(8,int(seqLen/i))))
+                layers.append(get_layer(int(seqLen/i),n_kernels, min(3,int(seqLen/i))))
 
             #Merging
             layers=np.array(layers)
@@ -242,7 +387,8 @@ def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_
             bn=BatchNormalization()(merged)
             out=Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal")(bn)
             model = Model(list(layers[:,0]), out)
-        #UNFINISHED DO  NOT  USE
+
+        #using the attention class
         elif model_type=='ATT_P_mgu':
             drop=0.7
             cdrop=0.7
@@ -260,23 +406,20 @@ def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_
                 #drop1=TimeDistributed(Dropout(cdrop))(flat1)
                 mgu1=(MGU(layerSize, activation='tanh', return_sequences=ret_seq, dropout=drop, recurrent_dropout=drop,
                               implementation=1, unroll=unroll, use_bias=use_bias))(em1)
-                if attention_on:
-                    attention_r = Dense(1, activation='softmax')(em1)
-                    attention_r = Flatten()(attention_r)
-                    # attention_r = Activation('softmax')(attention_r)
-                    attention_r = RepeatVector(seqLen)(attention_r)
-                    #attention_r = Permute([2, 1])(attention_r)
-                    print(mgu1.shape, attention_r.shape)
-                    mgu1 = Multiply()([mgu1, attention_r])
-                return [in1, mgu1]
-
+                attention_r = Dense(1, activation='softmax')(mgu1)
+                attention_r = Flatten()(attention_r)
+                attention_r = RepeatVector(layerSize)(attention_r)
+                attention_r = Permute([2, 1])(attention_r)
+                att1 = Multiply()([mgu1, attention_r])
+                att1 = Flatten()(att1)
+                return [in1, att1]
             layers=[]
             for i in dvs[dvs<=seqLen]:
                 layers.append(get_layer(int(seqLen/i)))
             #Merging
             layers=np.array(layers)
 
-            merged = Add()(list(layers[:, 1]))
+            merged = Concatenate()(list(layers[:, 1]))
             bn = BatchNormalization()(merged)
             out = Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal")(bn)
             model = Model(list(layers[:, 0]), out)
@@ -352,8 +495,36 @@ def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_
             model.add(TimeDistributed(Dropout(0.625)))
             model.add(MGU(layerSize, activation='tanh', return_sequences=False, dropout=0.6, recurrent_dropout=0.6,
                           implementation=1))
+
             model.add(BatchNormalization())
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
+
+        elif model_type == 'time_dist_conv_mgu_att':
+            mgu_attention = True
+            layerSize=64
+            att_layer_size = 64
+            drop=0.7
+            # TimeDistributed version
+            in1 = Input(shape=(seqLen,))
+            emb1 = Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen)(in1)
+            res1 = Reshape((1, seqLen, numDiffHits), input_shape=(seqLen, numDiffHits))(emb1)
+            td1 = TimeDistributed(Conv1D(32, 8, activation='elu'), input_shape=(1,) + (seqLen, numDiffHits))(res1)
+            td2 = TimeDistributed(Flatten())(td1)
+            td3 = TimeDistributed(Dropout(drop))(td2)
+            mgu1 = (MGU(layerSize, activation='elu', return_sequences=True, dropout=drop, recurrent_dropout=drop,
+                       implementation=1))(td3)
+
+            if mgu_attention:
+                attention_r = Dense(att_layer_size, activation='softmax')(mgu1)
+                attention_r = Flatten()(attention_r)
+                attention_r = RepeatVector(layerSize)(attention_r)
+                attention_r = Permute([2, 1])(attention_r)
+                mgu1 = Multiply()([mgu1, attention_r])
+                mgu1 = Flatten()(mgu1)
+
+            bn1 = BatchNormalization()(mgu1)
+            out = Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal")(bn1)
+            model = Model(in1, out)
         elif model_type == 'time_dist_mp_conv_mgu':
             # TimeDistributed version
             layerSize=256
@@ -477,7 +648,11 @@ def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_
                              dropout_rate=0.5))#64/16 result from 0.75
         print(model.summary())
         optr = adam(lr=0.001)
-        model.compile(loss='sparse_categorical_crossentropy',metrics=['accuracy'], optimizer=optr)
+        if model_type=='multi2multi':
+            model.compile(loss='binary_crossentropy', metrics=['accuracy'], optimizer=optr)
+
+        else:
+            model.compile(loss='sparse_categorical_crossentropy',metrics=['accuracy'], optimizer=optr)
         print('Saving new model....')
         model.save_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath, model_type))
         #model.save('{}model_{}.hdf5'.format(CurrentKitPath,model_type))
@@ -570,13 +745,30 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
     learninratescheduler=LearningRateScheduler(klik, verbose=1)
     if filename is not None and updateModel is not 'generator':
         try:
-            if updateModel is 'game':
+            if model_type=='multi2multi':
+                X_train, y_train = get_multi_sequences(filename=filename, seqLen=seqLen, sampleMul=1.)
+                seed = X_train[:, 0, :]
+                y_train=list(y_train)
+            elif model_type=='multi2one':
+                X_train, y_train = get_multi_sequences(filename=filename, seqLen=seqLen, sampleMul=1.)
+                seed = X_train[:, 0, :]
+                y_train=merged_from_pianoroll(y_train.T)
+                for i in range(len(y_train)):
+                    try:
+                        char=charI[y_train[i]]
+                    except:
+                        char=charI[-1]
+                    y_train[i]=char
+            elif updateModel is 'game':
                 X_train, y_train, numDiffHits = get_sequences(filename, seqLen, sampleMul, forceGen='game')
+                seed=X_train[-1]
             else:
                 X_train, y_train, numDiffHits = get_sequences(filename, seqLen, sampleMul, forceGen=forceGen)
+                seed = X_train[-1]
             if X_train is None:
                 return None
         except Exception as e:
+            print('virhe',e)
             return (None,None)
 
     if updateModel is 'generator':
@@ -601,11 +793,11 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
         X_train_comp =[]
         for i in dvs[dvs<=seqLen]:
             X_train_comp.append(X_train[:, -int(seqLen / i):])
-
     else:
         X_train_comp=X_train
     if forceGen:
-        return X_train[0]
+        seed = X_train[-1]
+        return seed
     # model=getModel()
     # model.fit_generator(generator=tr_gen, steps_per_epoch=200, max_queue_size=10,callbacks=[modelsaver, earlystopper],
     #                    workers=8, use_multiprocessing=True, verbose=1)
@@ -617,9 +809,9 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
     with graph.as_default():
 
         #Compute weigths
-        class_weights = class_weight.compute_class_weight('balanced',
-                                                      np.unique(y_train),
-                                                      y_train)
+        #class_weights = class_weight.compute_class_weight('balanced',
+        #                                              np.unique(y_train),
+        #                                              y_train)
 #
         if updateModel=='generator':
             #model.save_weights("./Kits/weights_testivedot_ext.hdf5")
@@ -641,13 +833,13 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
         if updateModel == True:
             # model.load_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath,model_type))
             #
-            model.fit(X_train_comp, y_train, batch_size=int(max([y_train.shape[0] / 50, 32])),
-                      epochs=initial_epoch+100,
+            model.fit(list(X_train_comp), y_train, batch_size=int(max([ 32])),
+                      epochs=initial_epoch+5,
                       callbacks=[modelsaver, earlystopper, history],  # learninratescheduler],earlystopper,
                       validation_split=0.33,
-                      verbose=2, initial_epoch=initial_epoch, class_weight=class_weights, shuffle=False)
+                      verbose=0, initial_epoch=initial_epoch, shuffle=False)
             lastLoss = np.mean(history.losses[-10:])
-            pickle.dump(initial_epoch + 20, open(CurrentKitPath + '/initial_epoch.k', 'wb'))
+            pickle.dump(initial_epoch+5, open(CurrentKitPath + '/initial_epoch.k', 'wb'))
             model.load_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath, model_type))
             model.save('{}model_{}.hdf5'.format(CurrentKitPath, model_type))
             #
@@ -675,18 +867,32 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
             pickle.dump(initial_epoch+20, open(CurrentKitPath+ '/initial_epoch.k', 'wb'))
 
         elif updateModel==False:
-            model.fit(X_train_comp, y_train[0], batch_size=int(max([y_train.shape[0]/50,25])), epochs=20,
+            model.fit(list(X_train_comp), y_train, batch_size=32, epochs=20,
                       callbacks=[temporarysaver,earlystopper,history],  # learninratescheduler],
                       validation_split=(0.33),
-                      verbose=2, class_weight=class_weights, shuffle=False)
+                      verbose=2,  shuffle=False)
             #take mean of recent iteration losses for fuzz scaler
             lastLoss=np.mean(history.losses[-10:])
             print(lastLoss)
+        elif updateModel == 'true_sched':
+                # model.load_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath,model_type))
+                #
+                for i in range(20):
+                    model.fit(X_train_comp, y_train, batch_size=int(max([y_train.shape[0] / 50, 32])),
+                              epochs=1,
+                              callbacks=[modelsaver, earlystopper, history,LearningRateScheduler(lambda _: 5e-3 * (0.6** i))],  # learninratescheduler],earlystopper,
+                              validation_split=0.33,
+                              verbose=2, initial_epoch=0, class_weight=class_weights, shuffle=False)
+                lastLoss = np.mean(history.losses[-10:])
+                pickle.dump(initial_epoch + 20, open(CurrentKitPath + '/initial_epoch.k', 'wb'))
+                model.load_weights("{}weights_testivedot_{}.hdf5".format(CurrentKitPath, model_type))
+                model.save('{}model_{}.hdf5'.format(CurrentKitPath, model_type))
+
 
     if return_history:
-        return X_train[0],history.hist
+        return seed,history.hist
     else:
-        return X_train[0]#,history.hist
+        return seed#,history.hist
 
 def generatePart(data,partLength=123,seqLen=seqLen, temp=None, include_seed=False, model_type='parallel_mgu'):
 
@@ -694,7 +900,7 @@ def generatePart(data,partLength=123,seqLen=seqLen, temp=None, include_seed=Fals
     if data is None:
         data=np.zeros(seqLen)
     seed = data
-    data = seed
+
 
     #print('generating new sequence.')
     generated=[]
@@ -732,7 +938,22 @@ def generatePart(data,partLength=123,seqLen=seqLen, temp=None, include_seed=Fals
         #a = np.exp(a) / np.sum(np.exp(a))
         # choices = range(len(a))
         # return np.random.choice(choices, p=a)
-
+    def sample_multi(a, flam_inhibitor, temperature, pause_threshold):
+        # helper function to sample an index from a probability array
+        # this version is for the multi output network
+        if(max(a)<=pause_threshold):return np.zeros_like(a).astype('int')
+        if temperature <= 0:
+            print('Use temperatures over freezing >0°')
+            # return the most probable element to avoid errors
+            return a[0]
+        a = np.asarray(a).astype('float64')
+        a = a ** (1 / temperature)
+        a_sum = a.sum()
+        a = a / a_sum
+        selection=np.random.multinomial(1, a, 1)
+        # If last note contained a hit remove itm this removes flams that originate from poor transcription.
+        selection=selection-flam_inhibitor
+        return np.clip(selection, 0,1)[0]
 
     if temp is -1:
         fuzz = np.max([1.5 - lastLoss, 0.1])
@@ -740,22 +961,58 @@ def generatePart(data,partLength=123,seqLen=seqLen, temp=None, include_seed=Fals
         fuzz = temp
     #print('fuzz factor:',fuzz)
     #print(data.shape)
-    for i in range(partLength):
-        data = data.reshape(1, seqLen)
+
+    flam_inhibitor=np.zeros(constants.MAX_DRUMS).astype('int')
+    i=0
+    while i < partLength:
+        if model_type in ['multi2multi','multi2one']:
+            data = data.reshape(constants.MAX_DRUMS, 1, seqLen)
+        else:
+            data = data.reshape(1, seqLen)
         datas=[]
         if model_type in ['parallel_mgu', 'TDC_parallel_mgu', 'ATT_TDC_P_mgu','ATT_P_mgu']:
             for i in dvs[dvs<=seqLen]:
                 datas.append(data[:,-int(seqLen/i):])
+        elif model_type in ['multi2multi','multi2one']:
+            datas = list(data)
         else :
             datas=[data]
         with graph.as_default():
             pred = model.predict(datas, verbose=0)
 
-        next_index = sample(pred[0],fuzz)
-        next_char = Ichar.get(next_index,0)
-        generated.append(next_char)
-        data=np.concatenate((data[:,1:], [[next_index]]), axis=-1)
+        if model_type is 'multi2multi':
+            next_notes = np.array(pred).flatten()
+            #sample hit
+            next_notes=sample_multi(next_notes,flam_inhibitor, fuzz, pause_threshold=0.1)
+            #store notes
+            flam_inhibitor=next_notes
+            #add notes to seed
+            data = np.concatenate((data[:, :, 1:], next_notes.reshape(constants.MAX_DRUMS, 1, 1)), axis=2)
+            #encode notes to single int
+            next_char = utils.enc_to_int(next_notes)
+            #append to generated part
+            generated.append(next_char)
+            #If we generate only pauses, increase fuzz ant try again.
 
+        elif model_type is 'multi2one':
+            next_index = sample(pred[0], fuzz)
+            next_char = Ichar.get(next_index, 0)
+            generated.append(next_char)
+            if next_char<0:
+                pauses=np.abs(next_char)
+                next_char=0
+                #for i in range(pauses):
+                #    next_notes = np.array(utils.dec_to_binary(next_char, str_len=constants.MAX_DRUMS))
+                #    data = np.concatenate((data[:, :, 1:], next_notes.reshape(constants.MAX_DRUMS, 1, 1)), axis=2)
+            #else:
+            next_notes=np.array(utils.dec_to_binary(next_char,str_len=constants.MAX_DRUMS))
+            data = np.concatenate((data[:, :, 1:], next_notes.reshape(constants.MAX_DRUMS, 1, 1)), axis=2)
+        else:
+            next_index = sample(pred[0], fuzz)
+            next_char = Ichar.get(next_index, 0)
+            generated.append(next_char)
+            data = np.concatenate((data[:, 1:], [[next_index]]), axis=-1)
+        i+=1
     gen = pd.DataFrame(generated, columns=['inst'])
     filename = 'generated.csv'
     gen.to_csv(filename, index=True, header=None, sep='\t')
@@ -775,13 +1032,109 @@ def generatePart(data,partLength=123,seqLen=seqLen, temp=None, include_seed=Fals
     gen['vel'] = pd.Series(np.full((len(generated)), 127, np.int64))
     madmom.io.midi.write_midi(gen.values, 'generated_{}.mid'.format(model_type))
 
+def train_pr(files=None, seqLen=seqLen, sampleMul=1.,
+             forceGen=False, bigFile=None, updateModel=False,
+             model_type='parallel_mgu', return_history=False):
+    import lightgbm as lgb
+    from sklearn.model_selection import train_test_split
+    X_train=[]
+    y_train=[]
+    for i in files:
+        print(i)
+        try:
+            a, b, numDiffHits =get_sequences(i, sampleMul=8, seqLen=64)
+        except:
+            continue
+        X_train.extend(a)
+        y_train.extend(b)
+    X_train=np.array(X_train)
+    y_train=np.array(y_train)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.1, random_state=42)
+    lgb_train = lgb.Dataset(X_train, y_train)
+    lgb_eval = lgb.Dataset(X_val, y_val)
+    lgb_seed=pd.DataFrame(X_train[0])
 
+    ##LIGHTGBM
+    params = {
+        'boosting_type': 'gbdt',
+        'objective': 'multiclass',
+        'metric': 'multi_logloss',
+        'num_leaves': 12,
+        'learning_rate': 0.01,
+        'max_depth': -1,
+        #'min_data_in_leaf': 20,
+        #'feature_fraction': 0.8,
+        #'bagging_fraction': 0.9,
+        #'bagging_freq': 5,
+        'verbose': 1,
+        #'device': 'cpu',
+        'num_threads': 8,
+        'min_data': 1,
+        'num_class': 142
+
+    }
+
+    print('Start training...')
+    # feature_name and categorical_feature
+    # try:
+    gbm = lgb.train(params,
+                    lgb_train,
+                    num_boost_round=1000,
+                    valid_sets=[lgb_train, lgb_eval],
+                    early_stopping_rounds=10)
+
+    print('Start predicting...')
+    # predict
+    #print(lgb_seed)
+    def sample(a, temperature=0.75):
+        # helper function to sample an index from a probability array
+        if temperature<=0:
+            print ('Use temperatures over freezing >0°')
+            #return the most probable element to avoid errors
+            return a[0]
+        a = np.asarray(a).astype('float64')
+        a=a ** (1 / temperature)
+        a_sum=a.sum()
+        a=a/a_sum
+        return np.argmax(np.random.multinomial(1, a, 1))
+    generated=[]
+    lgb_seed = pd.DataFrame(get_sequences(files[0], sampleMul=8, seqLen=64)[0])
+    preds_lgb = gbm.predict(lgb_seed, num_iteration=gbm.best_iteration)
+    for i in range(len(preds_lgb)):
+        next_index=np.argmax(preds_lgb[i])
+        #next_index=sample(preds_lgb[i], temperature=.85)
+        #lgb_seed.loc[lgb_seed.shape[0]]=next_index
+        next_char = Ichar.get(next_index, 0)
+        generated.append(next_char)
+    gen = pd.DataFrame(generated, columns=['inst'])
+    filename = 'generated.csv'
+    gen.to_csv(filename, index=True, header=None, sep='\t')
+    # print('valmis')
+    # return here, remove for testing
+    return filename
+
+
+def generate_pr(data,partLength=123,seqLen=seqLen, temp=None,
+                include_seed=False, model_type='parallel_mgu'):
+    return None
 
 #####################################
 #Testing from here on end do not use unless absolutely necessary.
 #make midi from source file
 def debug():
-
+    #takes = ['./Kits/timedist/takes/{}'.format(f) for f in os.listdir('./Kits/timedist/takes/') if
+    #          not f.startswith('.')]
+#
+    #takes.sort()
+    #print(takes[0])
+    #buildVocabulary(hits=utils.get_possible_notes([0, 1, 2, 3, 5, 8, 9, 10, 11, 12, 13]))
+    #file=train_pr(takes)
+    #drumsynth.createWav(file, './testibiisi.wav', addCountInAndCountOut=False,
+    #                    deltaTempo=1,
+    #                    countTempo=1)
+    ##pr=csv_to_pianoroll('generated.csv', [0, 1, 2, 3, 5, 8, 9, 10, 11, 12, 13])
+    ##merged_from_pianoroll(pr)
+    #return
     #d=pd.read_csv('../../midi_data_set/mididata8.csv', header=None, sep="\t").values
     #generated=list(d[:, 1])
     #generated = splitrowsanddecode(generated)
@@ -835,16 +1188,29 @@ def debug():
     #
     ##print(takes)
     seqLen=128
+    temp=0.75
     from keras.utils import plot_model
     if True:
         logs=[]
         times=[]
         #
         model_type=['TDC_parallel_mgu', 'time_dist_conv_mgu','parallel_mgu','stacked_mgu','conv_mgu','single_mgu',
-                    'single_gru', 'single_lstm', 'tcn','ATT_TDC_P_mgu']
-        model_type = ['ATT_TDC_P_mgu']
+                    'single_gru', 'single_lstm', 'tcn','ATT_TDC_P_mgu','time_dist_conv_mgu_att']
+        model_type = ['multi2multi']
 
         buildVocabulary(hits=utils.get_possible_notes([0, 1, 2, 3, 5, 8, 9, 10, 11, 12, 13]))
+
+        if False:
+            model = initModel(seqLen=seqLen, destroy_old=True, model_type=model_type[0])
+            seed, history = train('testbeat3.csv', seqLen=seqLen, sampleMul=1, model_type=model_type[0], updateModel=True, return_history=True)
+
+            file = generatePart(seed, partLength=1000, seqLen=seqLen, temp=temp, include_seed=False, model_type=model_type[0])
+
+            drumsynth.createWav(file, './gen_ex/trainSamplet_test.wav', addCountInAndCountOut=False,
+                                deltaTempo=1,
+                                countTempo=1)
+            return
+
         for j in model_type:
             log=[]
             model = initModel(seqLen=seqLen, destroy_old=True, model_type=j)
@@ -864,12 +1230,12 @@ def debug():
                 t1 = time()
                 seed, history=train(i,seqLen=seqLen,sampleMul=1,model_type=j,updateModel=True, return_history=True)
 
-                file = generatePart(seed, partLength=333,seqLen=seqLen, temp=.75, include_seed=False, model_type=j)
+                file = generatePart(seed, partLength=500,seqLen=seqLen, temp=temp, include_seed=False, model_type=j)
                 print('roundtrip time:%0.4f' % (time() - t1))
                 #drumsynth.createWav(i, './gen_ex/orig_{}_{}.wav'.format(j,k), addCountInAndCountOut=False,
                 #                    deltaTempo=1,
                 #                    countTempo=1)
-                drumsynth.createWav(file, './gen_ex/gen_0.75°_{}_{}.wav'.format(j,k), addCountInAndCountOut=False,
+                drumsynth.createWav(file, './gen_ex/gen_{}°_{}_{}.wav'.format(temp,j,k), addCountInAndCountOut=False,
                                     deltaTempo=1,
                                     countTempo=1)
                 #drumsynth.createWav(i, 'gen_temp_{}_{}.wav'.format('orig', k), addCountInAndCountOut=False,
@@ -880,20 +1246,20 @@ def debug():
                     log.extend(history[:][-1])
                 k+=1
 
-            #for i in takes:
-            #    print(i)
-            #    seed, history=train(i,seqLen=seqLen,sampleMul=3,model_type=j,updateModel=True, return_history=True)
-            #    file = generatePart(seed, partLength=333,seqLen=seqLen, temp=.666, include_seed=False, model_type=j)
-            #    drumsynth.createWav(file, 'gen_temp_{}_{}.wav'.format(j, '0'), addCountInAndCountOut=False,
-            #                        deltaTempo=1,
-            #                        countTempo=1)
-            #    #drumsynth.createWav(i, 'gen_temp_{}_{}.wav'.format('orig', k), addCountInAndCountOut=False,
-            #    #                    deltaTempo=1,
-            #    #                    countTempo=1)
-            #    if history is not None:
-            #        log.extend(history[:][0])
-            #        log.extend(history[:][-1])
-            #    k+=1
+            for i in takes:
+                print(i)
+                seed, history=train(i,seqLen=seqLen,sampleMul=1,model_type=j,updateModel=True, return_history=True)
+                file = generatePart(seed, partLength=500,seqLen=seqLen, temp=.5, include_seed=False, model_type=j)
+                drumsynth.createWav(file, './gen_ex/gen_{}°_{}_{}.wav'.format(temp,j,k), addCountInAndCountOut=False,
+                                    deltaTempo=1,
+                                    countTempo=1)
+                #drumsynth.createWav(i, 'gen_temp_{}_{}.wav'.format('orig', k), addCountInAndCountOut=False,
+                #                    deltaTempo=1,
+                #                    countTempo=1)
+                if history is not None:
+                    log.extend(history[:][0])
+                    log.extend(history[:][-1])
+                k+=1
 
             logs.append(log)
             times.append(time() - t0)

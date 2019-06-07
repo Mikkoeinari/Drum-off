@@ -102,7 +102,7 @@ drumNames = {'kick': 0,  # only one allowed
 countInPath='./countIn.csv'
 countInWavPath='click.wav'
 countInLength=2
-model_type='ATT_TDC_P_mgu'
+model_type='multi2multi'
 
 class StartScreen(Screen):
     def getStatus(self):
