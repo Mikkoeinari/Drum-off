@@ -226,8 +226,8 @@ def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_
             def get_drum_layer(seqLen):
                 in1=Input(shape=(seqLen,))
                 rs1=Reshape((1,seqLen,))(in1)
-                mgu1=MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
-                    return_sequences=True, dropout=0.7, recurrent_dropout=0.7, implementation=1)(rs1)
+                mgu1=Bidirectional(MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
+                    return_sequences=True, dropout=0.7, recurrent_dropout=0.7, implementation=1))(rs1)
                 #mgu1 = MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
                 #           return_sequences=True, dropout=0., recurrent_dropout=0., implementation=1)(mgu1)
                 #mgu1 = MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
@@ -1187,7 +1187,7 @@ def debug():
     ##vectorizeCSV('./Kits/Default/takes/testbeat1535385910.271116.csv')
     #
     ##print(takes)
-    seqLen=128
+    seqLen=256
     temp=0.75
     from keras.utils import plot_model
     if True:
@@ -1195,14 +1195,14 @@ def debug():
         times=[]
         #
         model_type=['TDC_parallel_mgu', 'time_dist_conv_mgu','parallel_mgu','stacked_mgu','conv_mgu','single_mgu',
-                    'single_gru', 'single_lstm', 'tcn','ATT_TDC_P_mgu','time_dist_conv_mgu_att']
+                    'single_gru', 'single_lstm', 'tcn','ATT_TDC_P_mgu','time_dist_conv_mgu_att', 'multi2one', 'multi2multi']
         model_type = ['multi2multi']
 
         buildVocabulary(hits=utils.get_possible_notes([0, 1, 2, 3, 5, 8, 9, 10, 11, 12, 13]))
 
         if False:
             model = initModel(seqLen=seqLen, destroy_old=True, model_type=model_type[0])
-            seed, history = train('testbeat3.csv', seqLen=seqLen, sampleMul=1, model_type=model_type[0], updateModel=True, return_history=True)
+            seed, history = train('testbeat3.csv', seqLen=seqLen, sampleMul=3, model_type=model_type[0], updateModel=True, return_history=True)
 
             file = generatePart(seed, partLength=1000, seqLen=seqLen, temp=temp, include_seed=False, model_type=model_type[0])
 
