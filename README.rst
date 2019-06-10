@@ -30,10 +30,10 @@ The development is in progress and the code can be forked and run at own risk.
 Instructions for playing the Game
 =================================
 
-For playing this game you need a system capable of running the code, microphone to record the drumming and some way of playing pack the generated or transcribed parts.
-The code has been tested with a macbook laptop computer it's the internal microphone and the speakers or headphones connected to the headphone jack.
-The recording level needs to be adjusted so that as little as possible distortion is produces. With acoustic drums distortion will occur.
-Using a made up drumkit with something like coffecups as hi-hats, table as a snare drum and the floor as a kick drum can be used if a drumkit is not available.
+For playing this game you need a system capable of running the code, microphone to record the drumming and some way of playing back the generated or transcribed parts.
+The code has been developed with: a macbook laptop computer, it's the internal microphone and the speakers or headphones connected to the headphone jack.
+The microphone recording level might need to be adjusted so that as little as possible distortion is produces. With acoustic drum kit distortion will occur.
+A made up drumkit with something like coffee cups as hi-hats, table as a snare drum and the floor as a kick drum can be used if a real drum kit is not available.
 
 Start screen:
 -------------
