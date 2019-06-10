@@ -22,6 +22,7 @@ Installing
 The development is in progress and the code can be forked and run at own risk.
 
 - Clone the repository
+- Navigate to folder "drum_off"
 - Run the game with command::
 
     python drumoff.py
