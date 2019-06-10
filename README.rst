@@ -19,7 +19,8 @@ Required Libraries
 
 Installing
 ==========
-The development is in proggress and the code can be forked and run at own risk.
+The development is in progress and the code can be forked and run at own risk.
+
 - Clone the repository
 - Run the game with command::
 
@@ -45,10 +46,10 @@ Soundcheck screen:
 
 - Type a name for your drumkit
 - Record 16 hits per drum by pressing the red record button button next to drum name, playing the hits and then pressing the blue stop button.
-    * You may audit your samples by pressing the green play button after recording the samples. This helps in debugging performance problems
+    - You may audit your samples by pressing the green play button after recording the samples. This helps in debugging performance problems
 - Some drums have multiple sample options next to their control buttons. For hi-hat these resemble: close, open and hihat stomp hits. For tom-toms and cymbals the numbers represent different drums. Select the number and perform separate soundcheck per each drum/playing style.
 - After recording all drum's samples press"finish soundcheck" to process the sample audio, prepare the learning model and return to Start screen.
-    * Different neural network models can be selected from the "Model type" radio buttons, the default "Multi In-Multi Out" model is recommended.
+    - Different neural network models can be selected from the "Model type" radio buttons, the default "Multi In-Multi Out" model is recommended.
 
 Load Drumkit sceen:
 -------------------
@@ -61,9 +62,9 @@ Drum-Off! screen:
 - Start playing by pressing "Play".
 
 - If you have the option "Stop after perform" option selected you may play back your performance after pressing "stop" by selecting "Play Back Last Performance."
-    * if you have "Computer adversary" enabled you can play the computer turn by pressing "computer" after stopping your performance.
-    * If you have "Stop after perform" disabled, your performance or computer performance is played back automatically after your turn.
-    * Playing with "Computer Adversary" enabled and "Stop after perform" is the intended game mode, the optional behaviour can be used for debugging.
+    - if you have "Computer adversary" enabled you can play the computer turn by pressing "computer" after stopping your performance.
+    - If you have "Stop after perform" disabled, your performance or computer performance is played back automatically after your turn.
+    - Playing with "Computer Adversary" enabled and "Stop after perform" is the intended game mode, the optional behaviour can be used for debugging.
 - All other options are used for debugging and tuning performance
     - "Update Model" can be used to prevent saving the model after learning a new part.
     - "Use adjustment" can be used to change all drums onset detection threshold if source separation does not perform satisfactory.
