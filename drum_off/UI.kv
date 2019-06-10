@@ -69,7 +69,7 @@ MyScreenManager:
             id:compChk
             text:'fixed'
             on_release: root.setComputerOn(compChk.active)
-            active:False
+            active:True
             size_hint:(0.1,0.01)
             pos_hint:{'x':0.47,'y':0.76}
         Label:
@@ -92,7 +92,7 @@ MyScreenManager:
             text:'fixed'
             size_hint:(0.1,0.01)
             pos_hint:{'x':0.47,'y':0.65}
-            active:True
+            active:False
             on_release:root.toggleStep()
         Label:
             text: 'Stop after perform'
@@ -170,7 +170,7 @@ MyScreenManager:
             size_hint:(0.1,0.01)
             pos_hint:{'x':0.47,'y':0.53}
         Label:
-            text: 'use default 1.33'
+            text: 'use default 1.0'
             size_hint:(.01, .01)
             pos_hint: {"x": 0.61, 'y':0.53}
         Label:
@@ -185,9 +185,9 @@ MyScreenManager:
             value:1
             size_hint:(.3, .05)
             pos_hint: {"x": 0.7, 'y':0.51}
-            on_value:root.setTrSize(0,1.33) if tdsChk.active else root.setTrSize(*args)
+            on_value:root.setTrSize(0,1.0) if tdsChk.active else root.setTrSize(*args)
         Label:
-            text: '1.33' if tdsChk.active else str(root.train_size)[:3]
+            text: '1.0' if tdsChk.active else str(root.train_size)[:3]
             size_hint:(.01, .01)
             pos_hint: {"x": 0.95, 'y':0.56}
 

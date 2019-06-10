@@ -406,14 +406,14 @@ class PlayScreen(Screen):
         self.lastPlayerPart = ''
         self.lastGenPart = ''
         self.playBackMessage = ''
-        self.trSize=1.33
+        self.trSize=1.0
         self.temperature=0.8
         self.threshold = 0.0
         self.deltaTempo=1.0
         self.modify=True
-        self.step = True
+        self.step = False
         self.halt=True
-        self.computer_on=False
+        self.computer_on=True
         self.lr=0.003
         self.quantize=1.
 

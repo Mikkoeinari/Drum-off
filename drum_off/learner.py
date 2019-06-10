@@ -220,8 +220,8 @@ def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
 
         elif model_type=='multi2multi':
-            layerSize=128
-            dense_layer_size=128
+            layerSize=16
+            dense_layer_size=32
             mgu_attention=False
             def get_drum_layer(seqLen):
                 in1=Input(shape=(seqLen,))
@@ -237,9 +237,9 @@ def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_
                 if mgu_attention:
                     attention_r = Dense(layerSize, activation='tanh')(mgu1)
                     attention_r = Flatten()(attention_r)
-                    attention_r = RepeatVector(layerSize)(attention_r)
+                    attention_r = RepeatVector(layerSize*2)(attention_r)
                     attention_r = Permute([2, 1])(attention_r)
-                    mgu1 = Add()([mgu1, attention_r])
+                    mgu1 = Multiply()([mgu1, attention_r])
                 mgu1 = Flatten()(mgu1)
                 return [in1,mgu1]
             def get_out_layer(in_layer):

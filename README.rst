@@ -66,12 +66,12 @@ Drum-Off! screen:
 - If you have the option "Stop after perform" option selected you may play back your performance after pressing "stop" by selecting "Play Back Last Performance."
     - if you have "Computer adversary" enabled you can play the computer turn by pressing "computer" after stopping your performance.
     - If you have "Stop after perform" disabled, your performance or computer performance is played back automatically after your turn.
-    - Playing with "Computer Adversary" enabled and "Stop after perform" is the intended game mode, the optional behaviour can be used for debugging.
+    - Playing with "Computer Adversary" enabled and "Stop after perform" disabled is the intended game mode, the optional behaviour can be used for debugging.
 - All other options are used for debugging and tuning performance
     - "Update Model" can be used to prevent saving the model after learning a new part.
     - "Use adjustment" can be used to change all drums onset detection threshold if source separation does not perform satisfactory.
         - more likely a new soundcheck is needed.
-    - "use default 1.33" and the corresponding slider can be used to oversample the training data, bootstrapping up to 12 times the data. This will lead to overfitting.
+    - "use default 1.0" and the corresponding slider can be used to oversample the training data, bootstrapping up to 12 times the data. This will lead to overfitting.
         - Currently not relevant with "Multi In-Multi Out" model.
     - "dynamic temp" and "Temperature" slider can be used to introduce more or less variance to the generated sequences. The artistic freedom the computer exhibits.
     - Adjusting learning rate is currently offline, it is no longer relevant.
