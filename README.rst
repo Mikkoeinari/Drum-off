@@ -14,14 +14,18 @@ Required Libraries
 - pandas: CSV file io
 - tensorflow: Neural networks
 - keras: Neural networks
-(- keras-tcn: TC network) TC network was removed due to python version difference, manual editing of library was needed.
 - kivy: User Interface
 
 Installing
 ==========
-The development is in progress and the code can be forked and run at own risk.
+The development is in progress and the code can be cloned and run at own risk.
 
 - Clone the repository
+- Navigate to folder Drum-Off
+- Install dependencies::
+
+    $pip install -r requirements.txt
+
 - Navigate to folder "drum_off"
 - Run the game with command::
 
