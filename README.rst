@@ -22,7 +22,7 @@ The development is in progress and the code can be cloned and run at own risk.
 
 - Clone the repository
 - Navigate to folder Drum-Off
-- Install dependencies::
+- Install dependencies if needed (tensorflow might needa different version depending on the os and GPU/CPU config.)::
 
     $pip install -r requirements.txt
 
