@@ -14,7 +14,7 @@ Required Libraries
 - pandas: CSV file io
 - tensorflow: Neural networks
 - keras: Neural networks
-- keras-tcn: TCN network
+(- keras-tcn: TC network) TC network was removed due to python version difference, manual editing of library was needed.
 - kivy: User Interface
 
 Installing

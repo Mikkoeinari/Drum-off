@@ -22,7 +22,7 @@ from keras import backend as K
 import keras
 from keras.optimizers import *#nadam
 from collections import Counter
-import tcn
+#import tcn
 #Fix seed, comment for random operation
 from numpy.random import seed
 from tensorflow import set_random_seed
@@ -620,32 +620,33 @@ def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_
                           return_sequences=False, dropout=0.7, recurrent_dropout=0.7, implementation=1))
             model.add(BatchNormalization())
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
-
-        elif model_type=='tcn':
-            model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
-            model.add(tcn.compiled_tcn(return_sequences=False,
-                             num_feat=numDiffHits,
-                             num_classes=numDiffHits,
-                             nb_filters=32,#64/16 result from 64
-                             kernel_size=2,#64/16 result from 8
-                             dilations=[2 ** i for i in range(2)],#64/16 result from 3
-                             nb_stacks=1,#64/16 result from 2
-                             max_len=None,#64/16 result from 128
-                             use_skip_connections=True,
-                             dropout_rate=0.65))#64/16 result from 0.75
-        #the markovian option
-        elif model_type=='tcn_1':
-            model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
-            model.add(tcn.compiled_tcn(return_sequences=False,
-                             num_feat=numDiffHits,
-                             num_classes=numDiffHits,
-                             nb_filters=64,#64/16 result from 64
-                             kernel_size=1,#64/16 result from 8
-                             dilations=[2 ** i for i in range(3)],#64/16 result from 3
-                             nb_stacks=1,#64/16 result from 2
-                             max_len=None,#64/16 result from 128
-                             use_skip_connections=True,
-                             dropout_rate=0.5))#64/16 result from 0.75
+        #these use different python version, manual tinkering with keras-tcn package needet to work
+        #DO NOT INCLUDE IN PACKAGE
+        #elif model_type=='tcn':
+        #    model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
+        #    model.add(tcn.compiled_tcn(return_sequences=False,
+        #                     num_feat=numDiffHits,
+        #                     num_classes=numDiffHits,
+        #                     nb_filters=32,#64/16 result from 64
+        #                     kernel_size=2,#64/16 result from 8
+        #                     dilations=[2 ** i for i in range(2)],#64/16 result from 3
+        #                     nb_stacks=1,#64/16 result from 2
+        #                     max_len=None,#64/16 result from 128
+        #                     use_skip_connections=True,
+        #                     dropout_rate=0.65))#64/16 result from 0.75
+        ##the markovian option
+        #elif model_type=='tcn_1':
+        #    model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
+        #    model.add(tcn.compiled_tcn(return_sequences=False,
+        #                     num_feat=numDiffHits,
+        #                     num_classes=numDiffHits,
+        #                     nb_filters=64,#64/16 result from 64
+        #                     kernel_size=1,#64/16 result from 8
+        #                     dilations=[2 ** i for i in range(3)],#64/16 result from 3
+        #                     nb_stacks=1,#64/16 result from 2
+        #                     max_len=None,#64/16 result from 128
+        #                     use_skip_connections=True,
+        #                     dropout_rate=0.5))#64/16 result from 0.75
         print(model.summary())
         optr = adam(lr=0.001)
         if model_type=='multi2multi':

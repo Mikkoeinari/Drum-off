@@ -6,12 +6,12 @@ with open("README.rst", "r") as fh:
 required_libraries=['pyaudio>=0.2.11',
                     'scikit-learn>=0.2',
                     'sklearn>=0.0',
-                    'scipy>=1',
+                    'scipy>=1.0',
                     'numpy>=1.11',
                     'pandas>=0.18',
-                    'tensorflow>=1.8',
+                    'tensorflow>=1.3',
                     'keras>=2.2.4',
-                    'keras-tcn>=2.3.5',
+                    #'keras-tcn>=2.3.5',
                     'kivy>=1.1',
                     ]
 
@@ -22,7 +22,7 @@ package_data= ['Sounds/*.wav',
 
 setuptools.setup(
     name="drum_off",
-    version="0.0.dev9",
+    version="0.0.dev11",
     author="Mikko Hakila",
     author_email="hakila@gmail.com",
     description="Drum-Off, a live drumming game",
