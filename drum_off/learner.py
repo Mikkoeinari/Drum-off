@@ -93,8 +93,8 @@ def csv_to_pianoroll(filename):
     #return space
     pr =[]
     #add silence
-    #for i in range(seqLen):
-    #    pr.append(np.zeros(constants.MAX_DRUMS).astype('int'))
+    for i in range(seqLen):
+        pr.append(np.zeros(constants.MAX_DRUMS).astype('int'))
     #iterate csv
     for i in d[:,1]:
         #rows of zeros for pause frames
@@ -146,7 +146,7 @@ def get_multi_sequences(filename, seqLen=seqLen, sampleMul=1.):
         return Exception('Not enough sequences to learn from', samples)
     try:
         # todo remove random state
-        X, y = resample(np.array(X), np.array(y), n_samples=samples, replace=False, random_state=2)
+        X, y = resample(np.array(X), np.array(y), n_samples=samples, replace=True, random_state=2)
     except Exception as e:
         print(e)
         return e
@@ -220,22 +220,21 @@ def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
 
         elif model_type=='multi2multi':
-            layerSize=16
-            dense_layer_size=32
+            layerSize=128
+            dense_layer_size=128
             mgu_attention=False
             def get_drum_layer(seqLen):
                 in1=Input(shape=(seqLen,))
                 rs1=Reshape((1,seqLen,))(in1)
-                mgu1=Bidirectional(MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
+                mgu1=(MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
                     return_sequences=True, dropout=0.7, recurrent_dropout=0.7, implementation=1))(rs1)
-                #mgu1 = MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
-                #           return_sequences=True, dropout=0., recurrent_dropout=0., implementation=1)(mgu1)
-                #mgu1 = MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
-                #           return_sequences=True, dropout=0., recurrent_dropout=0., implementation=1)(mgu1)
+                #mgu1 = Bidirectional(MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
+                #           return_sequences=True, dropout=0., recurrent_dropout=0., implementation=1))(mgu1)
+
                 #mgu1 = MGU(layerSize, activation='tanh', input_shape=(seqLen, numDiffHits),
                 #           return_sequences=True, dropout=0., recurrent_dropout=0., implementation=1)(mgu1)
                 if mgu_attention:
-                    attention_r = Dense(layerSize, activation='tanh')(mgu1)
+                    attention_r = Dense(layerSize, activation='relu')(mgu1)
                     attention_r = Flatten()(attention_r)
                     attention_r = RepeatVector(layerSize*2)(attention_r)
                     attention_r = Permute([2, 1])(attention_r)
@@ -584,7 +583,7 @@ def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_
             #flat = Flatten()(mgu1)
             #bn = BatchNormalization()(flat)
             output = Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal")(mgu1)
-            model = Model(input=[inputs], output=output)
+            model = Model(input=in1, output=output)
 
         elif model_type=='single_mgu':
 
@@ -620,7 +619,7 @@ def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_
                           return_sequences=False, dropout=0.7, recurrent_dropout=0.7, implementation=1))
             model.add(BatchNormalization())
             model.add(Dense(numDiffHits, activation="softmax", kernel_initializer="he_normal"))
-        #these use different python version, manual tinkering with keras-tcn package needet to work
+        #TCN library uses different python version, manual tinkering with keras-tcn package needed to work
         #DO NOT INCLUDE IN PACKAGE
         #elif model_type=='tcn':
         #    model.add(Embedding(numDiffHits + 1, numDiffHits, input_length=seqLen))
@@ -993,7 +992,6 @@ def generatePart(data,partLength=123,seqLen=seqLen, temp=None, include_seed=Fals
             next_char = utils.enc_to_int(next_notes)
             #append to generated part
             generated.append(next_char)
-            #If we generate only pauses, increase fuzz ant try again.
 
         elif model_type is 'multi2one':
             next_index = sample(pred[0], fuzz)
@@ -1189,7 +1187,7 @@ def debug():
     #
     ##print(takes)
     seqLen=256
-    temp=0.75
+    temp=1.2
     from keras.utils import plot_model
     if True:
         logs=[]

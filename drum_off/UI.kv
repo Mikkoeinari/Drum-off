@@ -15,6 +15,12 @@
             pos: int(self.center_x - 16), int(self.center_y - 16)
 
 <PicCheckBox>:
+    canvas.after:
+        Color:
+            rgb: 0,0,0
+        Rectangle:
+            pos:self.center_x-44, self.center_y-32
+            size:[12,12]
 
 MyScreenManager:
     StartScreen:
@@ -305,12 +311,12 @@ MyScreenManager:
             text: 'Kick'
             size_hint:(.25, .05)
             pos_hint: {"x": 0, 'y':0.85}
-        TextInput:
-            id: kdn
-            input_filter: 'int'
-            hint_text:''
-            size_hint:(.25, .05)
-            pos_hint: {"x": .625, 'y':0.85}
+        #TextInput:
+        #    id: kdn
+        #    input_filter: 'int'
+        #    hint_text:''
+        #    size_hint:(.25, .05)
+        #    pos_hint: {"x": .625, 'y':0.85}
         NumberButton:
             id:kd0
             group:'kick'
@@ -348,12 +354,12 @@ MyScreenManager:
             text: 'Snare'
             size_hint:(.25, .05)
             pos_hint: {"x": 0, 'y':0.80}
-        TextInput:
-            id: snn
-            input_filter: 'int'
-            hint_text:''
-            size_hint:(.25, .05)
-            pos_hint: {"x": .625, 'y':0.80}
+        #TextInput:
+        #    id: snn
+        #    input_filter: 'int'
+        #    hint_text:''
+        #    size_hint:(.25, .05)
+        #    pos_hint: {"x": .625, 'y':0.80}
         NumberButton:
             id:sn0
             background_radio_normal : './UiImg/red' + 'One' + '.png'
@@ -396,12 +402,12 @@ MyScreenManager:
             text: 'Hihat'
             size_hint:(.25, .05)
             pos_hint: {"x": 0, 'y':0.75}
-        TextInput:
-            id: hhn
-            input_filter: 'int'
-            hint_text:''
-            size_hint:(.25, .05)
-            pos_hint: {"x": .625, 'y':0.75}
+        #TextInput:
+        #    id: hhn
+        #    input_filter: 'int'
+        #    hint_text:''
+        #    size_hint:(.25, .05)
+        #    pos_hint: {"x": .625, 'y':0.75}
         NumberButton:
             id:hh0
             background_radio_normal : './UiImg/red' + 'One' + '.png'
@@ -461,12 +467,12 @@ MyScreenManager:
             text: 'Toms'
             size_hint:(.25, .05)
             pos_hint: {"x": 0, 'y':0.70}
-        TextInput:
-            id: ttn
-            input_filter: 'int'
-            hint_text:''
-            size_hint:(.25, .05)
-            pos_hint: {"x": .625, 'y':0.70}
+        #TextInput:
+        #    id: ttn
+        #    input_filter: 'int'
+        #    hint_text:''
+        #    size_hint:(.25, .05)
+        #    pos_hint: {"x": .625, 'y':0.70}
         NumberButton:
             id:tt0
             background_radio_normal : './UiImg/red' + 'One' + '.png'
@@ -474,6 +480,7 @@ MyScreenManager:
             background_radio_disabled_normal : './UiImg/green' + 'One' + '.png'
             background_radio_disabled_down :'./UiImg/green' + 'One' + 'Act.png'
             active:True
+            allow_stretch: True
             on_active:root.ttTake=0
             group:'toms'
             size_hint:(.05, .05)
@@ -485,6 +492,7 @@ MyScreenManager:
             background_radio_disabled_normal : './UiImg/green' + 'Two' + '.png'
             background_radio_disabled_down :'./UiImg/green' + 'Two' + 'Act.png'
             on_active:root.ttTake=1
+            allow_stretch: True
             group:'toms'
             size_hint:(.05, .05)
             pos_hint: {"x": .675, 'y':0.70}
@@ -495,6 +503,7 @@ MyScreenManager:
             background_radio_disabled_normal : './UiImg/green' + 'Three' + '.png'
             background_radio_disabled_down :'./UiImg/green' + 'Three' + 'Act.png'
             on_active:root.ttTake=2
+            allow_stretch: True
             group:'toms'
             size_hint:(.05, .05)
             pos_hint: {"x": .725, 'y':0.70}
@@ -523,12 +532,12 @@ MyScreenManager:
             text: 'Floor Toms'
             size_hint:(.25, .05)
             pos_hint: {"x": 0, 'y':0.65}
-        TextInput:
-            id: rdn
-            input_filter: 'int'
-            hint_text:''
-            size_hint:(.25, .05)
-            pos_hint: {"x": .625, 'y':0.65}
+        #TextInput:
+        #    id: rdn
+        #    input_filter: 'int'
+        #    hint_text:''
+        #    size_hint:(.25, .05)
+        #    pos_hint: {"x": .625, 'y':0.65}
         NumberButton:
             id:ft0
             background_radio_normal : './UiImg/red' + 'One' + '.png'
@@ -536,6 +545,7 @@ MyScreenManager:
             background_radio_disabled_normal : './UiImg/green' + 'One' + '.png'
             background_radio_disabled_down :'./UiImg/green' + 'One' + 'Act.png'
             active:True
+            allow_stretch: True
             on_active:root.ftTake=0
             group:'floortoms'
             size_hint:(.05, .05)
@@ -547,6 +557,7 @@ MyScreenManager:
             background_radio_disabled_normal : './UiImg/green' + 'Two' + '.png'
             background_radio_disabled_down :'./UiImg/green' + 'Two' + 'Act.png'
             on_active:root.ftTake=1
+            allow_stretch: True
             group:'floortoms'
             size_hint:(.05, .05)
             pos_hint: {"x": .675, 'y':0.65}
@@ -576,12 +587,12 @@ MyScreenManager:
             text: 'Ride'
             size_hint:(.25, .05)
             pos_hint: {"x": 0, 'y':0.60}
-        TextInput:
-            id: crn
-            input_filter: 'int'
-            hint_text:''
-            size_hint:(.25, .05)
-            pos_hint: {"x": .625, 'y':0.60}
+        #TextInput:
+        #    id: crn
+        #    input_filter: 'int'
+        #    hint_text:''
+        #    size_hint:(.25, .05)
+        #    pos_hint: {"x": .625, 'y':0.60}
         NumberButton:
             id:rd0
             background_radio_normal : './UiImg/red' + 'One' + '.png'
@@ -620,12 +631,12 @@ MyScreenManager:
             text: 'Crashes'
             size_hint:(.25, .05)
             pos_hint: {"x": 0, 'y':0.55}
-        TextInput:
-            id: ton
-            input_filter: 'int'
-            hint_text:''
-            size_hint:(.25, .05)
-            pos_hint: {"x": .625, 'y':0.55}
+        #TextInput:
+        #    id: ton
+        #    input_filter: 'int'
+        #    hint_text:''
+        #    size_hint:(.25, .05)
+        #    pos_hint: {"x": .625, 'y':0.55}
 
         NumberButton:
             id:cr0
@@ -648,6 +659,7 @@ MyScreenManager:
             group:'crashes'
             size_hint:(.05, .05)
             pos_hint: {"x": .675, 'y':0.55}
+
         NumberButton:
             id:cr2
             background_radio_normal : './UiImg/red' + 'Three' + '.png'
