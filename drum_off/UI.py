@@ -80,7 +80,7 @@ class StopButton(ButtonBehavior, Image):
             self.isActive=True
             self.source = "./UiImg/StopBtn.png"
 
-class NumberButton(Image,PicCheckBox,ButtonBehavior):
+class NumberButton(PicCheckBox,ButtonBehavior):
     activeNumber=None
     pass
 
