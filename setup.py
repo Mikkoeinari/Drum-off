@@ -19,11 +19,12 @@ package_data= ['Sounds/*.wav',
                'Sounds/bigkit/*.wav',
                'Sounds/bigkit/mono/*.wav',
                'UiImg/*.png',
-               'UI.kv']
+               'UI.kv',
+               'click.wav']
 
 setuptools.setup(
     name="drum_off",
-    version="0.0.dev16",
+    version="0.0.dev17",
     author="Mikko Hakila",
     author_email="hakila@gmail.com",
     description="Drum-Off, a live drumming game",
