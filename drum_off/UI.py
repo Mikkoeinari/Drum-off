@@ -22,6 +22,7 @@ import pickle
 import drum_off.drumsynth as drumsynth
 import drum_off.learner as mgu
 import numpy as np
+import sys, traceback
 kivy.require('1.10.1')
 Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
 
@@ -275,7 +276,9 @@ class SoundCheckScreen(Screen):
             game.initKitBG(fullPath, int(sum(app.NrOfDrums)))
             pickle.dump(self.model_type,open(fullPath+'/model_type.cfg','wb'))
             model_type=self.model_type
-            mgu.buildVocabulary(hits=utils.get_possible_notes([i.get_name()[0] for i in game.drumkit]))
+            #mgu.buildVocabulary(hits=utils.get_possible_notes([i.get_name()[0] for i in game.drumkit]))
+            #build full for mult2multi
+            mgu.buildVocabulary(hits=utils.get_possible_notes([0, 1, 2, 3, 5, 8, 9, 10, 11, 12, 13]))
             mgu.initModel(kitPath=fullPath+'/',destroy_old=True, model_type=model_type)
             app.KitInit = 'Initialized'
             app.root.current = 'MainMenu'
@@ -521,6 +524,7 @@ class PlayScreen(Screen):
                     self.doPlayerTurn()
             except Exception as e:
                 print('playback ui: ',e)
+                traceback.print_exc(file=sys.stdout)
                 self.halt = True
                 self.pBtnMessage = 'Play'
         t = threading.Thread(target=callback)
@@ -543,10 +547,10 @@ class PlayScreen(Screen):
                 #    except Exception as e:
                 #        print(e)
                 #TODO: make user adjustable length
-                self.lastGenPart = mgu.generatePart(
-                        mgu.train(fullPath, sampleMul=self.trSize,
-                                  forceGen=False, updateModel=self.modify, model_type=model_type),
-                    partLength=100, temp=self.temperature, model_type=model_type)
+                seed=mgu.train(fullPath, sampleMul=self.trSize,
+                          forceGen=False, updateModel=self.modify, model_type=model_type)
+                self.lastGenPart = mgu.generatePart(seed,
+                    partLength=1000, temp=self.temperature, model_type=model_type)
                 self.createLast(self.lastGenPart,outFile='./generated.wav',addCountInAndCountOut=(not self.step))
                 #Remove hack!!
                 while self.lastMessage!='./generated.wav':
@@ -558,6 +562,7 @@ class PlayScreen(Screen):
                     self.playBackLast()
             except Exception as e:
                 print('virhe! computer turn: ',e)
+                traceback.print_exc(file=sys.stdout)
                 self.halt = True
                 self.pBtnMessage = 'Play'
         t = threading.Thread(target=callback)
@@ -639,12 +644,14 @@ class LoadScreen(Screen):
             print(filename[0]+'/')
             game.loadKit(filename[0])
             model_type=pickle.load(open(filename[0]+'/model_type.cfg','rb'))
-            mgu.buildVocabulary(hits=utils.get_possible_notes([i.get_name()[0] for i in game.drumkit]))
+            #mgu.buildVocabulary(hits=utils.get_possible_notes([i.get_name()[0] for i in game.drumkit]))
+            #have a MAX_DRUMS in the vocabulary
+            mgu.buildVocabulary(hits=utils.get_possible_notes([0, 1, 2, 3, 5, 8, 9, 10, 11, 12, 13]))
             mgu.initModel(kitPath=filename[0]+'/', destroy_old=False, model_type=model_type)
             app = App.get_running_app()
             app.KitName = (filename[0].split('/')[-1])
             app.KitInit = 'Initialized'
-            app.Model='Loaded'
+            app.Model=model_type
             #app.NrOfDrums = [0] * len(game.drums)
             #No need for this unless initialization parameters changed
             #game.initKitBG(filename[0],len(game.drums))
@@ -666,7 +673,7 @@ root_widget =Builder.load_file("UI.kv")
 
 class DrumOffApp(App):
 
-    NrOfDrums = np.zeros(24).astype(int)
+    NrOfDrums = np.zeros(14).astype(int)
     KitName = 'none'
     Model = 'model not loaded'
     KitInit = 'Kit not initialized'

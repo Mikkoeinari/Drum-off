@@ -35,7 +35,7 @@ set_random_seed(2)
 # os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 #sys.setrecursionlimit(10000)
 t0 = time()
-seqLen=128
+seqLen=333
 #parallel MGU divisors
 dvs=np.array([2 ** i for i in range(16)])
 #dvs=[1,4,16,64]
@@ -203,8 +203,12 @@ def initModel(seqLen=seqLen,kitPath=None, destroy_old=False, model_type='single_
             raise ValueError('old model destroyed!!!')
         else:
             model = load_model('{}model_{}.hdf5'.format(filePath, model_type), custom_objects={'MGU': MGU})
-            optr = nadam(lr=0.001)
-            model.compile(loss='sparse_categorical_crossentropy', metrics=['accuracy'], optimizer=optr)
+            optr = adam(lr=0.001)
+            if model_type == 'multi2multi':
+                model.compile(loss='binary_crossentropy', metrics=['accuracy'], optimizer=optr)
+
+            else:
+                model.compile(loss='sparse_categorical_crossentropy', metrics=['accuracy'], optimizer=optr)
     except Exception as e:
         print('Making new model')
         model = Sequential()
@@ -894,9 +898,8 @@ def train(filename=None, seqLen=seqLen, sampleMul=1., forceGen=False, bigFile=No
     else:
         return seed#,history.hist
 
-def generatePart(data,partLength=123,seqLen=seqLen, temp=None, include_seed=False, model_type='parallel_mgu'):
+def generatePart(data,partLength=500,seqLen=seqLen, temp=None, include_seed=False, model_type='parallel_mgu'):
 
-    #print(data)
     if data is None:
         data=np.zeros(seqLen)
     seed = data
@@ -939,6 +942,7 @@ def generatePart(data,partLength=123,seqLen=seqLen, temp=None, include_seed=Fals
         # choices = range(len(a))
         # return np.random.choice(choices, p=a)
     def sample_multi(a, flam_inhibitor, temperature, pause_threshold):
+
         # helper function to sample an index from a probability array
         # this version is for the multi output network
         if(max(a)<=pause_threshold):return np.zeros_like(a).astype('int')
@@ -980,7 +984,7 @@ def generatePart(data,partLength=123,seqLen=seqLen, temp=None, include_seed=Fals
         with graph.as_default():
             pred = model.predict(datas, verbose=0)
 
-        if model_type is 'multi2multi':
+        if model_type =='multi2multi':
             next_notes = np.array(pred).flatten()
             #sample hit
             next_notes=sample_multi(next_notes,flam_inhibitor, fuzz, pause_threshold=0.1)
@@ -993,7 +997,7 @@ def generatePart(data,partLength=123,seqLen=seqLen, temp=None, include_seed=Fals
             #append to generated part
             generated.append(next_char)
 
-        elif model_type is 'multi2one':
+        elif model_type == 'multi2one':
             next_index = sample(pred[0], fuzz)
             next_char = Ichar.get(next_index, 0)
             generated.append(next_char)
@@ -1186,7 +1190,7 @@ def debug():
     ##vectorizeCSV('./Kits/Default/takes/testbeat1535385910.271116.csv')
     #
     ##print(takes)
-    seqLen=256
+    seqLen=128
     temp=1.2
     from keras.utils import plot_model
     if True:
@@ -1203,7 +1207,7 @@ def debug():
             model = initModel(seqLen=seqLen, destroy_old=True, model_type=model_type[0])
             seed, history = train('testbeat3.csv', seqLen=seqLen, sampleMul=3, model_type=model_type[0], updateModel=True, return_history=True)
 
-            file = generatePart(seed, partLength=1000, seqLen=seqLen, temp=temp, include_seed=False, model_type=model_type[0])
+            file = generatePart(seed, partLength=500, seqLen=seqLen, temp=temp, include_seed=False, model_type=model_type[0])
 
             drumsynth.createWav(file, './gen_ex/trainSamplet_test.wav', addCountInAndCountOut=False,
                                 deltaTempo=1,
@@ -1212,11 +1216,11 @@ def debug():
 
         for j in model_type:
             log=[]
-            model = initModel(seqLen=seqLen, destroy_old=True, model_type=j)
+            model = initModel(seqLen=seqLen, destroy_old=False, model_type=j)
 
             takes = ['./Kits/MDC_Stack/takes/{}'.format(f) for f in os.listdir('./Kits/MDC_Stack/takes/') if not f.startswith('.')]
             takes.sort()
-            takes2 = ['./Kits/timedist/takes/{}'.format(f) for f in os.listdir('./Kits/timedist/takes/') if not f.startswith('.')]
+            takes2 = ['./Kits/minikit/takes/{}'.format(f) for f in os.listdir('./Kits/minikit/takes/') if not f.startswith('.')]
             takes2.sort()
             data = []
 
