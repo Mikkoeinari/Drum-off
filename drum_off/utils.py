@@ -319,8 +319,9 @@ def get_possible_notes(drum_kit=None):
     """
     from itertools import combinations
     global possible_hits
-    # Pause notes[-1,...,-32]
-    pauses = [-i for i in range(1, 32)]
+    # Pause notes[-1,...,-MAX_PAUSE]
+    pauses = [-i for i in range(1, MAX_PAUSE)]
+    #pauses=[-1]
     # remove kick from combinations, add back later
     kickless = drum_kit[1:]
     # Possible hits with 2 hands
@@ -771,7 +772,7 @@ def truncZeros(frames):
         if frames[i] == 0:
             zeros += 1
             # longest pause
-            if zeros == 32:
+            if zeros == MAX_PAUSE:
                 frames[i - zeros + 1] = -zeros
                 zeros = 0
                 continue
@@ -889,16 +890,29 @@ def dec_to_binary(f, str_len=MAX_DRUMS, ret_type='str'):
     :param f: an integer
     :return: A binary array representation of f
     """
-    bin_form=np.array(list(format(f, "0{}b".format(str_len)))).astype(ret_type)
+    if f<0:
+        leading_zeros=list(format(-f, "0{}b".format(str_len - MAX_DRUMS)))
+        leading_zeros.extend(list(format(0, "0{}b".format(MAX_DRUMS))))
+
+        bin_form=np.array(leading_zeros).astype(ret_type)
+    else:
+        bin_form=np.array(list(format(f, "0{}b".format(str_len)))).astype(ret_type)
     return list(bin_form)
 
-def enc_to_int(a):
+def enc_to_int(a, is_long=False):
     int_form=0
+    sign=1
+    origa=a
+    if is_long:
+        if enc_to_int(a[MAX_DRUMS:])>0:
+            sign=-1
+            a=a[MAX_DRUMS:]
     for i in range(len(a)):
         if a[i]==1:
             int_form = np.bitwise_or(int_form, 2 ** i)
 
-    return int_form
+    if int_form==0 and sign==-1:print(origa);int_form=1
+    return sign*int_form
 
 
 #########################################################

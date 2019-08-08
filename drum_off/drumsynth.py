@@ -92,7 +92,7 @@ def createWav(filePath, outName=None, addCountInAndCountOut=True, deltaTempo=1.0
     d = gen.values
     # file pointer
     cursor = 0
-    if d.size<1:
+    if d.size<=1:
         return None
     # max file size
     fileLength = int((d[-1][0] * 44100 / 8) + len(sounds[int(d[-1][1])]))

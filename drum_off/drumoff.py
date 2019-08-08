@@ -1,4 +1,3 @@
-import drum_off.UI
-
+from drum_off.UI import DrumOffApp
 if __name__ == "__main__":
-    drum_off.UI.DrumOffApp().run()
+    DrumOffApp().run()
