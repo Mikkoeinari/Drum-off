@@ -682,7 +682,7 @@ class LoadScreen(Screen):
             model_type = pickle.load(open(filename[0] + '/model_type.cfg', 'rb'))
             # mgu.buildVocabulary(hits=utils.get_possible_notes([i.get_name()[0] for i in game.drumkit]))
             # have a MAX_DRUMS in the vocabulary
-            mgu.buildVocabulary(hits=utils.get_possible_notes([0, 1, 2, 3, 5, 8, 9, 10, 11, 12, 13]))
+            mgu.buildVocabulary(hits=game.get_possible_notes([0, 1, 2, 3, 5, 8, 9, 10, 11, 12, 13]))
             mgu.initModel(kitPath=filename[0] + '/', destroy_old=False, model_type=model_type)
             app = App.get_running_app()
             app.KitName = (filename[0].split('/')[-1])

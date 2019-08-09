@@ -25,7 +25,7 @@ package_data= ['Sounds/*.wav',
 
 setuptools.setup(
     name="drum_off",
-    version="0.0.dev19",
+    version="0.0.dev20",
     author="Mikko Hakila",
     author_email="hakila@gmail.com",
     description="Drum-Off, a live drumming game",

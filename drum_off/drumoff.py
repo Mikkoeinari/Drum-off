@@ -1,3 +1,10 @@
-from drum_off.UI import DrumOffApp
+import importlib
+importlib.invalidate_caches()
+
+from drum_off import UI
+
 if __name__ == "__main__":
-    DrumOffApp().run()
+    #from drum_off import UI
+    #UI.mainthread()
+
+    UI.DrumOffApp().run()
